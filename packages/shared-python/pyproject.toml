@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunrise-shared"
+version = "0.1.0"
+description = "Shared Python utilities and contracts for the Sunrise HES platform."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.setuptools]
+packages = ["sunrise_shared"]

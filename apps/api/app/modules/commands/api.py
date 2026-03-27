@@ -1,0 +1,166 @@
+import uuid
+
+from fastapi import APIRouter, Depends, Query, Request, status
+from sqlalchemy.orm import Session
+
+from app.core.db import get_db_session
+from app.modules.audit.service import record_audit_event
+from app.modules.auth.dependencies import require_permission
+from app.modules.commands.schemas import (
+    CommandExecutionAttemptListResponse,
+    CommandTemplateCreate,
+    CommandTemplateListResponse,
+    CommandTemplateResponse,
+    CommandTemplateUpdate,
+    MeterCommandCreate,
+    MeterCommandDetailResponse,
+    MeterCommandListResponse,
+    MeterCommandResponse,
+)
+from app.modules.commands.service import (
+    create_command_template,
+    create_meter_command,
+    get_meter_command,
+    get_command_template,
+    list_command_attempts,
+    list_command_templates,
+    list_meter_commands,
+    serialize_command_template,
+    serialize_meter_command,
+    serialize_meter_command_detail,
+    update_command_template,
+)
+from app.modules.users.models import User
+
+command_templates_router = APIRouter(prefix="/command-templates", tags=["command-templates"])
+meter_commands_router = APIRouter(prefix="/meters", tags=["meter-commands"])
+commands_router = APIRouter(prefix="/commands", tags=["commands"])
+
+
+@command_templates_router.get("", response_model=CommandTemplateListResponse)
+def list_command_templates_endpoint(
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.templates.read")),
+) -> CommandTemplateListResponse:
+    return list_command_templates(session)
+
+
+@command_templates_router.post("", response_model=CommandTemplateResponse, status_code=status.HTTP_201_CREATED)
+def create_command_template_endpoint(
+    payload: CommandTemplateCreate,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.templates.write")),
+) -> CommandTemplateResponse:
+    template = create_command_template(session, payload)
+    response = serialize_command_template(template)
+    record_audit_event(
+        session,
+        action="commands.templates.create",
+        resource_type="command_templates",
+        resource_id=template.id,
+        actor_user_id=current_user.id,
+        description="Command template created.",
+        details={"code": template.code, "category": template.category.value},
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@command_templates_router.get("/{template_id}", response_model=CommandTemplateResponse)
+def get_command_template_endpoint(
+    template_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.templates.read")),
+) -> CommandTemplateResponse:
+    template = get_command_template(session, template_id)
+    return serialize_command_template(template)
+
+
+@command_templates_router.patch("/{template_id}", response_model=CommandTemplateResponse)
+def update_command_template_endpoint(
+    template_id: uuid.UUID,
+    payload: CommandTemplateUpdate,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.templates.write")),
+) -> CommandTemplateResponse:
+    template = update_command_template(session, template_id=template_id, payload=payload)
+    response = serialize_command_template(template)
+    record_audit_event(
+        session,
+        action="commands.templates.update",
+        resource_type="command_templates",
+        resource_id=template.id,
+        actor_user_id=current_user.id,
+        description="Command template updated.",
+        details=payload.model_dump(exclude_unset=True),
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.post(
+    "/{meter_id}/commands",
+    response_model=MeterCommandResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_meter_command_endpoint(
+    meter_id: uuid.UUID,
+    payload: MeterCommandCreate,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> MeterCommandResponse:
+    command = create_meter_command(
+        session,
+        meter_id=meter_id,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    response = serialize_meter_command(command)
+    record_audit_event(
+        session,
+        action="commands.requests.create",
+        resource_type="commands",
+        resource_id=command.id,
+        actor_user_id=current_user.id,
+        description="Meter command requested.",
+        details={
+            "meter_id": str(meter_id),
+            "template_code": command.command_template.code,
+            "priority": command.priority.value,
+            "idempotency_key": command.idempotency_key,
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.get("/{meter_id}/commands", response_model=MeterCommandListResponse)
+def list_meter_commands_endpoint(
+    meter_id: uuid.UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> MeterCommandListResponse:
+    return list_meter_commands(session, meter_id=meter_id, limit=limit)
+
+
+@commands_router.get("/{command_id}", response_model=MeterCommandDetailResponse)
+def get_command_endpoint(
+    command_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> MeterCommandDetailResponse:
+    command = get_meter_command(session, command_id)
+    return serialize_meter_command_detail(command)
+
+
+@commands_router.get("/{command_id}/attempts", response_model=CommandExecutionAttemptListResponse)
+def list_command_attempts_endpoint(
+    command_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> CommandExecutionAttemptListResponse:
+    return list_command_attempts(session, command_id=command_id)

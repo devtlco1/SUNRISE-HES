@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunrise-hes-worker"
+version = "0.1.0"
+description = "Worker placeholder for Sunrise HES queue-based jobs."
+requires-python = ">=3.12"
+dependencies = [
+  "redis",
+]
+
+[tool.setuptools]
+packages = ["worker"]

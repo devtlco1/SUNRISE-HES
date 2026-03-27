@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    platform: linux/amd64
+    container_name: sunrise-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sunrise_hes}
+      POSTGRES_USER: ${POSTGRES_USER:-sunrise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sunrise}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sunrise} -d ${POSTGRES_DB:-sunrise_hes}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sunrise-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: sunrise-api
+    environment:
+      APP_ENV: development
+      PROJECT_NAME: ${PROJECT_NAME:-sunrise-hes-platform}
+      COMPANY_NAME: "${COMPANY_NAME:-Abraj Al Anwar Contracting, General Trading and Commercial Agencies Company}"
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sunrise}:${POSTGRES_PASSWORD:-sunrise}@postgres:5432/${POSTGRES_DB:-sunrise_hes}
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: INFO
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-before-production-with-at-least-32-characters}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      JWT_ISSUER: ${JWT_ISSUER:-sunrise-hes-platform}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-sunrise-internal-token-change-me}
+      BOOTSTRAP_SUPER_ADMIN_USERNAME: ${BOOTSTRAP_SUPER_ADMIN_USERNAME:-}
+      BOOTSTRAP_SUPER_ADMIN_EMAIL: ${BOOTSTRAP_SUPER_ADMIN_EMAIL:-}
+      BOOTSTRAP_SUPER_ADMIN_FULL_NAME: ${BOOTSTRAP_SUPER_ADMIN_FULL_NAME:-Platform Super Admin}
+      BOOTSTRAP_SUPER_ADMIN_PASSWORD: ${BOOTSTRAP_SUPER_ADMIN_PASSWORD:-}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./apps/api:/workspace/apps/api
+      - ./packages/shared-python:/workspace/packages/shared-python
+      - ./pyproject.toml:/workspace/pyproject.toml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: sunrise-web
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-8000}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - ./apps/web:/workspace/apps/web
+      - ./packages/shared-types:/workspace/packages/shared-types
+      - ./package.json:/workspace/package.json
+      - ./tsconfig.base.json:/workspace/tsconfig.base.json
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redis-data:

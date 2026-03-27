@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sunrise-hes-api"
+version = "0.1.0"
+description = "FastAPI service for the Sunrise HES platform."
+requires-python = ">=3.12"
+dependencies = [
+  "alembic",
+  "croniter",
+  "email-validator",
+  "fastapi",
+  "geoalchemy2",
+  "pwdlib[argon2]",
+  "PyJWT",
+  "pydantic-settings",
+  "psycopg[binary]",
+  "redis",
+  "sqlalchemy",
+  "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black",
+  "httpx",
+  "mypy",
+  "pydantic",
+  "pytest",
+  "ruff",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
