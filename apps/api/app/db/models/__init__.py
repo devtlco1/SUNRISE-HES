@@ -9,7 +9,7 @@ from app.modules.connectivity.models import (
     ProtocolAssociationProfile,
 )
 from app.modules.consumers.models import Consumer, MeterAccountAssignment, ServicePoint
-from app.modules.events.models import MeterEvent
+from app.modules.events.models import MeterEventIngestion
 from app.modules.gis.models import Feeder, Region, Sector, Substation, Transformer
 from app.modules.jobs.models import JobDefinition, JobRun
 from app.modules.meters.models import (
@@ -20,6 +20,13 @@ from app.modules.meters.models import (
     MeterModel,
     MeterProfile,
     MeterStatusHistory,
+)
+from app.modules.readings.models import (
+    LoadProfileChannel,
+    LoadProfileInterval,
+    MeterReading,
+    MeterReadingBatch,
+    MeterRegisterSnapshot,
 )
 from app.modules.users.models import Permission, Role, RolePermission, User, UserRoleAssignment
 
@@ -36,15 +43,20 @@ __all__ = [
     "Feeder",
     "JobDefinition",
     "JobRun",
+    "LoadProfileChannel",
+    "LoadProfileInterval",
     "Meter",
     "MeterCommand",
     "MeterAccountAssignment",
     "MeterEndpointAssignment",
-    "MeterEvent",
+    "MeterEventIngestion",
     "MeterFirmwareVersion",
     "MeterManufacturer",
     "MeterModel",
     "MeterProfile",
+    "MeterReading",
+    "MeterReadingBatch",
+    "MeterRegisterSnapshot",
     "MeterStatusHistory",
     "Permission",
     "ProtocolAssociationProfile",

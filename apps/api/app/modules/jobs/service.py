@@ -36,6 +36,8 @@ from app.modules.jobs.schemas import (
     JobDefinitionUpdate,
     GenerateDueRunsRequest,
     GenerateDueRunsResponse,
+    PrepareForExecutionRequest,
+    PrepareForExecutionResponse,
     JobRunCompleteRequest,
     JobRunFailRequest,
     JobRunListResponse,
@@ -600,6 +602,37 @@ def _ensure_worker_owns_job_run(job_run: JobRun, worker_identifier: str) -> None
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job run is claimed by another worker.")
 
 
+def prepare_job_run_for_execution(
+    session: Session,
+    *,
+    job_run_id: uuid.UUID,
+    payload: PrepareForExecutionRequest,
+) -> PrepareForExecutionResponse:
+    claimed = _claim_specific_job_run(
+        session,
+        job_run_id=job_run_id,
+        worker_identifier=payload.worker_identifier,
+        lease_seconds=payload.lease_seconds,
+    )
+    materialized = materialize_job_run_command(session, job_run_id=job_run_id)
+    command = get_meter_command(session, materialized.command.id)
+    attempt, started = _get_or_start_attempt_for_prepared_job_run(
+        session,
+        job_run_id=job_run_id,
+        command_id=command.id,
+        worker_identifier=payload.worker_identifier,
+    )
+    refreshed_job_run = get_job_run(session, job_run_id)
+    return PrepareForExecutionResponse(
+        job_run_claimed=claimed,
+        command_materialized=materialized.materialized,
+        attempt_started=started,
+        job_run=serialize_job_run(refreshed_job_run),
+        related_command=serialize_meter_command(command),
+        created_or_existing_attempt=serialize_command_attempt(attempt),
+    )
+
+
 def _resolve_generation_targets(job_definition: JobDefinition) -> list[uuid.UUID | None]:
     if job_definition.schedule_type not in SCHEDULABLE_JOB_DEFINITION_TYPES:
         return []
@@ -608,6 +641,57 @@ def _resolve_generation_targets(job_definition: JobDefinition) -> list[uuid.UUID
     if job_definition.target_type.value == "system":
         return [None]
     return []
+
+
+def _claim_specific_job_run(
+    session: Session,
+    *,
+    job_run_id: uuid.UUID,
+    worker_identifier: str,
+    lease_seconds: int,
+) -> bool:
+    now = datetime.now(UTC)
+    claim_expires_at = now + timedelta(seconds=lease_seconds)
+    job_run = session.scalar(
+        select(JobRun)
+        .where(JobRun.id == job_run_id)
+        .with_for_update()
+    )
+    if job_run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job run not found.")
+
+    if job_run.status == JobRunStatus.PENDING:
+        if job_run.available_at > now:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job run is not yet due for execution.")
+        job_run.claimed_at = now
+        job_run.claim_expires_at = claim_expires_at
+        job_run.worker_identifier = worker_identifier
+        job_run.status = JobRunStatus.CLAIMED
+        session.add(job_run)
+        session.commit()
+        return True
+
+    if job_run.status == JobRunStatus.CLAIMED:
+        if job_run.worker_identifier == worker_identifier:
+            return False
+        if job_run.claim_expires_at is not None and job_run.claim_expires_at <= now:
+            job_run.claimed_at = now
+            job_run.claim_expires_at = claim_expires_at
+            job_run.worker_identifier = worker_identifier
+            session.add(job_run)
+            session.commit()
+            return True
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job run is already claimed by another worker.")
+
+    if job_run.status == JobRunStatus.RUNNING:
+        if job_run.worker_identifier != worker_identifier:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job run is already running on another worker.")
+        return False
+
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"Job run cannot be prepared from status {job_run.status.value}.",
+    )
 
 
 def _compute_due_occurrences(
@@ -671,6 +755,41 @@ def _find_existing_job_run(
     else:
         statement = statement.where(JobRun.target_meter_id == target_meter_id)
     return session.scalar(statement)
+
+
+def _get_or_start_attempt_for_prepared_job_run(
+    session: Session,
+    *,
+    job_run_id: uuid.UUID,
+    command_id: uuid.UUID,
+    worker_identifier: str,
+) -> tuple[CommandExecutionAttempt, bool]:
+    active_attempt = session.scalar(
+        select(CommandExecutionAttempt).where(
+            CommandExecutionAttempt.meter_command_id == command_id,
+            CommandExecutionAttempt.ended_at.is_(None),
+            CommandExecutionAttempt.status.in_(
+                [CommandExecutionAttemptStatus.STARTED, CommandExecutionAttemptStatus.RUNNING]
+            ),
+        )
+    )
+    if active_attempt is not None:
+        if active_attempt.worker_identifier != worker_identifier:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Command already has an active execution attempt owned by another worker.",
+            )
+        return active_attempt, False
+
+    attempt = start_command_attempt(
+        session,
+        job_run_id=job_run_id,
+        payload=StartCommandAttemptRequest(
+            worker_identifier=worker_identifier,
+            meter_command_id=command_id,
+        ),
+    )
+    return attempt, True
 
 
 def _materialize_job_run_command_locked(

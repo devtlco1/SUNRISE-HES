@@ -179,6 +179,24 @@ class MaterializeCommandResponse(BaseModel):
     command: "MeterCommandResponse"
 
 
+class PrepareForExecutionRequest(BaseModel):
+    worker_identifier: str = Field(min_length=1, max_length=128)
+    lease_seconds: int = Field(default=60, ge=5, le=3600)
+    endpoint_id: UUID | None = None
+    session_history_id: UUID | None = None
+    request_snapshot: dict[str, object] | None = None
+    execution_metadata: dict[str, object] | None = None
+
+
+class PrepareForExecutionResponse(BaseModel):
+    job_run_claimed: bool
+    command_materialized: bool
+    attempt_started: bool
+    job_run: JobRunResponse
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: CommandExecutionAttemptResponse
+
+
 class GenerateDueRunsRequest(BaseModel):
     as_of: datetime | None = None
     window_seconds: int = Field(default=300, ge=1, le=86400)

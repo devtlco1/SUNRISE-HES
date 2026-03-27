@@ -167,6 +167,36 @@ DEFAULT_PERMISSION_DEFINITIONS = [
         "action": "generate_internal",
         "description": "Internal scheduler run generation capability.",
     },
+    {
+        "code": "readings.read",
+        "resource": "readings",
+        "action": "read",
+        "description": "View ingested meter readings and snapshots.",
+    },
+    {
+        "code": "readings.write",
+        "resource": "readings",
+        "action": "write",
+        "description": "Internal ingestion of meter readings.",
+    },
+    {
+        "code": "profiles.read",
+        "resource": "load_profiles",
+        "action": "read",
+        "description": "View load profile channels and intervals.",
+    },
+    {
+        "code": "profiles.write",
+        "resource": "load_profiles",
+        "action": "write",
+        "description": "Manage load profile channels.",
+    },
+    {
+        "code": "events.read",
+        "resource": "events",
+        "action": "read",
+        "description": "View ingested meter events.",
+    },
 ]
 
 DEFAULT_ROLE_DEFINITIONS = [
@@ -210,6 +240,11 @@ DEFAULT_ROLE_DEFINITIONS = [
             "jobs.runs.read",
             "jobs.targets.read",
             "jobs.targets.write",
+            "readings.read",
+            "readings.write",
+            "profiles.read",
+            "profiles.write",
+            "events.read",
         ],
     },
     {
@@ -231,6 +266,9 @@ DEFAULT_ROLE_DEFINITIONS = [
             "jobs.read",
             "jobs.runs.read",
             "jobs.targets.read",
+            "readings.read",
+            "profiles.read",
+            "events.read",
         ],
     },
 ]

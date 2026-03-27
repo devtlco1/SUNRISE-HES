@@ -30,8 +30,8 @@ from app.modules.jobs.schemas import (
     MaterializeCommandResponse,
     MarkCommandAttemptRunningRequest,
     ManualJobRunCreate,
-    PrepareJobRunForExecutionRequest,
-    PrepareJobRunForExecutionResponse,
+    PrepareForExecutionRequest,
+    PrepareForExecutionResponse,
     StartCommandAttemptRequest,
     WorkerClaimRequest,
     WorkerClaimResponse,
@@ -277,14 +277,14 @@ def materialize_job_run_command_endpoint(
 
 @internal_job_runs_router.post(
     "/{job_run_id}/prepare-for-execution",
-    response_model=PrepareJobRunForExecutionResponse,
+    response_model=PrepareForExecutionResponse,
     dependencies=[Depends(require_internal_api_token)],
 )
 def prepare_job_run_for_execution_endpoint(
     job_run_id: uuid.UUID,
-    payload: PrepareJobRunForExecutionRequest,
+    payload: PrepareForExecutionRequest,
     session: Session = Depends(get_db_session),
-) -> PrepareJobRunForExecutionResponse:
+) -> PrepareForExecutionResponse:
     return prepare_job_run_for_execution(session, job_run_id=job_run_id, payload=payload)
 
 

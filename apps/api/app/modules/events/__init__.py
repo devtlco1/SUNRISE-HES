@@ -1,1 +1,1 @@
-"""Operational events and alarms domain."""
+"""Append-only ingested meter events and alarms."""
