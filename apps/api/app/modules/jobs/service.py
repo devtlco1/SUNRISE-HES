@@ -93,6 +93,7 @@ COMMAND_TRANSITIONS = {
         CommandStatus.TIMED_OUT,
     },
     CommandStatus.RETRY_WAIT: {
+        CommandStatus.IN_PROGRESS,
         CommandStatus.QUEUED,
         CommandStatus.CANCELLED,
         CommandStatus.TIMED_OUT,
@@ -1101,6 +1102,7 @@ def fail_command_attempt(
     attempt_id: uuid.UUID,
     payload: CommandAttemptFailRequest,
     timed_out: bool = False,
+    retry_allowed: bool | None = None,
 ) -> CommandExecutionAttempt:
     attempt = _get_active_attempt(session, attempt_id)
     _ensure_worker_owns_attempt(attempt, payload.worker_identifier)
@@ -1120,7 +1122,9 @@ def fail_command_attempt(
     attempt.latency_ms = getattr(payload, "latency_ms", None)
     attempt.session_history_id = payload.session_history_id or attempt.session_history_id
 
-    retryable = command.retry_count < command.max_retries
+    retryable = (command.retry_count < command.max_retries) if retry_allowed is None else (
+        retry_allowed and command.retry_count < command.max_retries
+    )
     command.retry_count += 1
     if retryable:
         apply_command_status_transition(
@@ -1166,6 +1170,7 @@ def timeout_command_attempt(
     *,
     attempt_id: uuid.UUID,
     payload: CommandAttemptTimeoutRequest,
+    retry_allowed: bool | None = None,
 ) -> CommandExecutionAttempt:
     fail_payload = CommandAttemptFailRequest(
         worker_identifier=payload.worker_identifier,
@@ -1179,7 +1184,13 @@ def timeout_command_attempt(
         session_history_id=payload.session_history_id,
         retry_delay_seconds=payload.retry_delay_seconds,
     )
-    return fail_command_attempt(session, attempt_id=attempt_id, payload=fail_payload, timed_out=True)
+    return fail_command_attempt(
+        session,
+        attempt_id=attempt_id,
+        payload=fail_payload,
+        timed_out=True,
+        retry_allowed=retry_allowed,
+    )
 
 
 def _get_active_attempt(session: Session, attempt_id: uuid.UUID) -> CommandExecutionAttempt:

@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     api_port: int = 8000
     database_url: str = "postgresql+psycopg://sunrise:sunrise@postgres:5432/sunrise_hes"
     redis_url: str = "redis://redis:6379/0"
+    redis_queue_stream_name: str = "hes:dispatch"
+    redis_queue_consumer_group_name: str = "hes-worker-group"
+    redis_queue_claim_timeout_seconds: int = 300
+    redis_queue_stale_claim_threshold_seconds: int = 300
+    redis_queue_dead_letter_stream_name: str | None = None
+    redis_queue_validate_on_startup: bool = False
+    redis_queue_ensure_stream_on_startup: bool = False
+    redis_queue_ensure_consumer_group_on_startup: bool = False
+    queue_backend: str = "mock"
     log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
     jwt_secret_key: str = "change-me-before-production-with-at-least-32-characters"
@@ -25,6 +34,7 @@ class Settings(BaseSettings):
     bootstrap_super_admin_email: str | None = None
     bootstrap_super_admin_full_name: str = "Platform Super Admin"
     bootstrap_super_admin_password: str | None = Field(default=None, min_length=12)
+    enable_runtime_relay_control_gurux_mapper: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -64,6 +74,69 @@ class Settings(BaseSettings):
         if len(value) < 16:
             raise ValueError("Internal API token must be at least 16 characters.")
         return value
+
+    @field_validator("queue_backend")
+    @classmethod
+    def normalize_queue_backend(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("queue_backend must not be empty.")
+        return normalized
+
+    @field_validator("redis_queue_stream_name")
+    @classmethod
+    def validate_redis_queue_stream_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("redis_queue_stream_name must not be empty.")
+        return normalized
+
+    @field_validator("redis_queue_consumer_group_name")
+    @classmethod
+    def validate_redis_queue_consumer_group_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("redis_queue_consumer_group_name must not be empty.")
+        return normalized
+
+    @field_validator("redis_queue_claim_timeout_seconds")
+    @classmethod
+    def validate_redis_queue_claim_timeout_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("redis_queue_claim_timeout_seconds must be greater than zero.")
+        return value
+
+    @field_validator("redis_queue_stale_claim_threshold_seconds")
+    @classmethod
+    def validate_redis_queue_stale_claim_threshold_seconds(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("redis_queue_stale_claim_threshold_seconds must not be negative.")
+        return value
+
+    @field_validator("redis_queue_dead_letter_stream_name", mode="before")
+    @classmethod
+    def normalize_redis_queue_dead_letter_stream_name(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_redis_transport_startup_policy(self) -> "Settings":
+        if (
+            self.redis_queue_ensure_stream_on_startup
+            or self.redis_queue_ensure_consumer_group_on_startup
+        ) and not self.redis_queue_validate_on_startup:
+            raise ValueError(
+                "redis_queue_validate_on_startup must be enabled when Redis startup ensure "
+                "flags are enabled."
+            )
+        return self
 
 
 @lru_cache

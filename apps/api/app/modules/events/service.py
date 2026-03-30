@@ -42,6 +42,7 @@ def ingest_meter_events(
     *,
     meter_id: uuid.UUID,
     payload: IngestMeterEventsRequest,
+    commit: bool = True,
 ) -> IngestMeterEventsResponse:
     meter = session.get(Meter, meter_id)
     if meter is None:
@@ -65,9 +66,12 @@ def ingest_meter_events(
         )
         session.add(item)
         items.append(item)
-    session.commit()
-    for item in items:
-        session.refresh(item)
+    if commit:
+        session.commit()
+        for item in items:
+            session.refresh(item)
+    else:
+        session.flush()
     return IngestMeterEventsResponse(
         total_ingested=len(items),
         items=[serialize_ingested_event(item) for item in items],

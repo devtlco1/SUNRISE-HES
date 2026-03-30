@@ -56,10 +56,68 @@ make up
 make down
 make logs
 make test-api
+make test-runtime-foundations
 make lint-api
 make format-api
 make typecheck-api
 ```
+
+## Focused Runtime Tests
+
+The preferred local path for the runtime placeholder foundation suite is Docker-backed, because those tests expect both PostgreSQL and Redis to be available.
+
+1. Copy the environment templates if you have not already:
+
+   ```bash
+   cp .env.example .env
+   cp apps/api/.env.example apps/api/.env
+   ```
+
+2. Run the focused runtime suite:
+
+   ```bash
+   make test-runtime-foundations
+   ```
+
+This target starts `postgres` and `redis` if needed, then runs:
+
+```bash
+pytest \
+  tests/test_runtime_execution_claim_to_work_foundation.py \
+  tests/test_runtime_execution_lease_foundation.py \
+  tests/test_runtime_execution_invocation_gate_foundation.py \
+  tests/test_runtime_execution_session_heartbeat_foundation.py
+```
+
+### Optional Host-Python Path
+
+If you prefer to run the focused suite from a local Python environment instead of Docker:
+
+1. Create and activate a Python 3.12 virtual environment.
+2. Install the API package with its dev extras:
+
+   ```bash
+   python3 -m pip install -e packages/shared-python -e "apps/api[dev]"
+   ```
+
+3. Ensure local PostgreSQL and Redis are reachable on `127.0.0.1`.
+4. Copy the API test environment template:
+
+   ```bash
+   cp apps/api/.env.test.example apps/api/.env
+   ```
+
+5. Run the same focused suite from `apps/api`:
+
+   ```bash
+   python3 -m pytest \
+     tests/test_runtime_execution_claim_to_work_foundation.py \
+     tests/test_runtime_execution_lease_foundation.py \
+     tests/test_runtime_execution_invocation_gate_foundation.py \
+     tests/test_runtime_execution_session_heartbeat_foundation.py
+   ```
+
+The Docker-backed path is the supported default because it matches the repository's existing local service topology and avoids host-specific database and Redis setup drift.
 
 ## Initial Scaffold Notes
 

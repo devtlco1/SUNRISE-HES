@@ -4,7 +4,13 @@ from abc import ABC, abstractmethod
 from typing import Protocol
 
 from app.modules.connectivity.enums import ProtocolFamily
-from app.runtime.contracts import ProtocolExecutionPlan, RuntimeCommandRequest, RuntimeCommandResult
+from app.runtime.contracts import (
+    ProtocolExecutionPlan,
+    RuntimeCommandRequest,
+    RuntimeCommandResult,
+    RuntimeRelayControlAdapterRequest,
+    RuntimeRelayControlExecutionResult,
+)
 
 
 class RuntimeAdapter(Protocol):
@@ -16,6 +22,13 @@ class RuntimeAdapter(Protocol):
     def build_request(self, plan: ProtocolExecutionPlan) -> RuntimeCommandRequest: ...
 
     def execute(self, plan: ProtocolExecutionPlan) -> RuntimeCommandResult: ...
+
+    def supports_relay_control(self, request: RuntimeRelayControlAdapterRequest) -> bool: ...
+
+    def execute_relay_control(
+        self,
+        request: RuntimeRelayControlAdapterRequest,
+    ) -> RuntimeRelayControlExecutionResult: ...
 
 
 class BaseRuntimeAdapter(ABC):
@@ -31,3 +44,14 @@ class BaseRuntimeAdapter(ABC):
     @abstractmethod
     def execute(self, plan: ProtocolExecutionPlan) -> RuntimeCommandResult:
         raise NotImplementedError("Runtime execution is not implemented in the protocol foundation phase.")
+
+    def supports_relay_control(self, request: RuntimeRelayControlAdapterRequest) -> bool:
+        return False
+
+    def execute_relay_control(
+        self,
+        request: RuntimeRelayControlAdapterRequest,
+    ) -> RuntimeRelayControlExecutionResult:
+        raise NotImplementedError(
+            "Relay-control execution is not implemented for this adapter."
+        )

@@ -2,17 +2,29 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from pydantic import BaseModel
+
+from app.core.config import settings
 from app.modules.connectivity.enums import ConnectivitySessionStatus, ProtocolFamily
 from app.modules.events.enums import EventSeverity, EventState
 from app.modules.readings.enums import ReadingBatchStatus, ReadingSourceType, ReadingType
 from app.runtime.adapters.base import BaseRuntimeAdapter
 from app.runtime.contracts import (
     ProtocolExecutionPlan,
+    RuntimeRelayControlAdapterAcknowledgmentState,
+    RuntimeRelayControlAdapterRequest,
+    RuntimeRelayControlErrorCategory,
+    RuntimeRelayControlExecutionResult,
+    RuntimeRelayControlExecutionStatus,
+    RuntimeRelayControlOperation,
+    RuntimeRelayControlProtocolStageOutcome,
     RuntimeCommandOutcome,
     RuntimeCommandResult,
     RuntimeEventPayload,
+    RuntimeLoadProfileIntervalPayload,
     RuntimeReadingBatchPayload,
     RuntimeReadingPayload,
+    RuntimeRegisterSnapshotPayload,
     RuntimeSessionResult,
 )
 
@@ -26,6 +38,12 @@ class DlmsCosemRuntimeAdapter(BaseRuntimeAdapter):
             "DLMS/COSEM runtime execution is intentionally not implemented yet. "
             "This adapter only defines the worker-facing contract boundary."
         )
+
+    def supports_relay_control(self, request: RuntimeRelayControlAdapterRequest) -> bool:
+        return request.operation in {
+            RuntimeRelayControlOperation.DISCONNECT,
+            RuntimeRelayControlOperation.RECONNECT,
+        }
 
 
 class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
@@ -59,7 +77,10 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
         )
 
         reading_batch = None
-        if mock_execution.get("include_placeholder_readings"):
+        explicit_reading_batch = mock_execution.get("reading_batch")
+        if isinstance(explicit_reading_batch, dict):
+            reading_batch = RuntimeReadingBatchPayload.model_validate(explicit_reading_batch)
+        elif mock_execution.get("include_placeholder_readings"):
             reading_batch = RuntimeReadingBatchPayload(
                 source_type=ReadingSourceType.COMMAND_RESULT,
                 captured_at=now,
@@ -77,10 +98,27 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
                         metadata={"placeholder": True},
                     )
                 ],
+                register_snapshots=[
+                    RuntimeRegisterSnapshotPayload(
+                        snapshot_type="billing",
+                        captured_at=now,
+                        payload={"1.0.1.8.0.255": "123.456"},
+                    )
+                ]
+                if mock_execution.get("include_placeholder_snapshots")
+                else [],
+                load_profile_intervals=[
+                    RuntimeLoadProfileIntervalPayload.model_validate(item)
+                    for item in mock_execution.get("placeholder_intervals", [])
+                ],
             )
 
-        events: list[RuntimeEventPayload] = []
-        if mock_execution.get("include_placeholder_events"):
+        explicit_events = mock_execution.get("events")
+        if isinstance(explicit_events, list):
+            events = [RuntimeEventPayload.model_validate(event) for event in explicit_events]
+        else:
+            events = []
+        if not events and mock_execution.get("include_placeholder_events"):
             events.append(
                 RuntimeEventPayload(
                     event_code="RUNTIME_PLACEHOLDER_EVENT",
@@ -110,6 +148,772 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
             reading_batch=reading_batch,
             events=events,
         )
+
+    def execute_relay_control(
+        self,
+        request: RuntimeRelayControlAdapterRequest,
+    ) -> RuntimeRelayControlExecutionResult:
+        now = datetime.now(UTC)
+        gurux_operation = _map_relay_control_operation_to_gurux_definition(
+            request.operation
+        )
+        payload = request.normalized_payload or request.request_payload or {}
+        mock_execution = payload.get("mock_execution", {}) if isinstance(payload, dict) else {}
+        resolved_transport_profile = _resolve_gurux_relay_control_transport_profile(
+            request,
+            gurux_operation,
+        )
+        validated_target = _validate_gurux_relay_control_target_object(
+            request,
+            resolved_transport_profile,
+        )
+        normalized_request = _normalize_gurux_relay_control_request(
+            request,
+            resolved_transport_profile,
+            validated_target,
+        )
+        invocation_request = _build_gurux_relay_control_invocation_stub_request(
+            normalized_request,
+        )
+        invocation_response = _invoke_gurux_relay_control_stub(
+            invocation_request,
+            mock_execution=mock_execution,
+        )
+        requested_outcome = RuntimeCommandOutcome(
+            mock_execution.get("outcome", RuntimeCommandOutcome.SUCCEEDED.value)
+        )
+        error_detail = mock_execution.get("error_detail") or mock_execution.get("error_message")
+        interpreted_result = _interpret_gurux_relay_control_stub_response(
+            invocation_response,
+            requested_outcome=requested_outcome,
+            error_detail=error_detail,
+        )
+        execution_audit_summary = _build_gurux_relay_control_execution_audit_summary(
+            request=request,
+            gurux_operation=gurux_operation,
+            resolved_transport_profile=resolved_transport_profile,
+            validated_target=validated_target,
+            normalized_request=normalized_request,
+            invocation_response=invocation_response,
+            interpreted_result=interpreted_result,
+        )
+        execution_phase_progression = _project_gurux_relay_control_execution_phase_state(
+            request=request,
+            gurux_operation=gurux_operation,
+            resolved_transport_profile=resolved_transport_profile,
+            validated_target=validated_target,
+            normalized_request=normalized_request,
+            invocation_response=invocation_response,
+            interpreted_result=interpreted_result,
+            execution_audit_summary=execution_audit_summary,
+        )
+
+        trace_references = request.trace_references
+        return RuntimeRelayControlExecutionResult(
+            status=RuntimeRelayControlExecutionStatus.COMPLETED,
+            relay_control_execution_record_id=(
+                "runtime-relay-control:"
+                f"{request.execution_context.command_attempt_id}:{request.execution_context.request_id or request.execution_context.command_id}"
+            ),
+            session_identifier=str(trace_references["session_identifier"]),
+            dispatch_envelope_record_id=request.dispatch_envelope_record_id,
+            delivery_contract_record_id=str(trace_references["delivery_contract_record_id"]),
+            envelope_record_id=str(trace_references["envelope_record_id"]),
+            publication_contract_record_id=str(
+                trace_references["publication_contract_record_id"]
+            ),
+            attestation_record_id=str(trace_references["attestation_record_id"]),
+            settlement_record_id=str(trace_references["settlement_record_id"]),
+            reconciliation_record_id=str(trace_references["reconciliation_record_id"]),
+            interpretation_record_id=str(trace_references["interpretation_record_id"]),
+            observation_record_id=str(trace_references["observation_record_id"]),
+            invocation_result_record_id=str(
+                trace_references["invocation_result_record_id"]
+            ),
+            dispatch_request_record_id=str(trace_references["dispatch_request_record_id"]),
+            selection_record_id=str(trace_references["selection_record_id"]),
+            intent_record_id=str(trace_references["intent_record_id"]),
+            closure_record_id=str(trace_references["closure_record_id"]),
+            materialization_record_id=str(trace_references["materialization_record_id"]),
+            post_processing_record_id=str(trace_references["post_processing_record_id"]),
+            disposition_record_id=str(trace_references["disposition_record_id"]),
+            outcome_record_id=str(trace_references["outcome_record_id"]),
+            executor_identifier=str(request.execution_context.worker_identifier),
+            job_run_id=str(request.execution_context.job_run_id),
+            related_command_id=str(request.execution_context.command_id),
+            command_attempt_id=str(request.execution_context.command_attempt_id),
+            adapter_key=self.adapter_key,
+            protocol_family=request.protocol_family,
+            relay_operation=request.operation,
+            command_category=request.command_category,
+            adapter_acknowledgment_state=interpreted_result.adapter_acknowledgment_state,
+            protocol_stage_outcome=interpreted_result.protocol_stage_outcome,
+            execution_outcome=interpreted_result.execution_outcome,
+            correlation_id=request.execution_context.correlation_id,
+            request_id=request.execution_context.request_id,
+            execution_started_at=now.isoformat(),
+            execution_finished_at=now.isoformat(),
+            adapter_result_summary={
+                "adapter_key": self.adapter_key,
+                "operation": request.operation.value,
+                "protocol_family": request.protocol_family.value,
+                "adapter_acknowledged": invocation_response.acknowledged,
+                "vertical_slice": "relay_control",
+                "gurux_operation": gurux_operation.model_dump(mode="json"),
+                "gurux_resolved_transport_profile": resolved_transport_profile.model_dump(
+                    mode="json"
+                ),
+                "gurux_validated_target": validated_target.model_dump(mode="json"),
+                "gurux_normalized_request": normalized_request.model_dump(mode="json"),
+                "gurux_invocation_stub": invocation_response.model_dump(mode="json"),
+                "gurux_interpreter": interpreted_result.model_dump(mode="json"),
+                "gurux_execution_audit_summary": execution_audit_summary.model_dump(
+                    mode="json"
+                ),
+                "gurux_execution_phase_progression": execution_phase_progression.model_dump(
+                    mode="json"
+                ),
+            },
+            adapter_response_snapshot={
+                "adapter": self.adapter_key,
+                "operation": request.operation.value,
+                "target_meter_id": str(request.target.meter_id),
+                "endpoint_id": str(request.target.endpoint_id),
+                "protocol_profile_id": str(request.target.protocol_association_profile_id),
+                "gurux_operation": gurux_operation.model_dump(mode="json"),
+                "gurux_resolved_transport_profile": resolved_transport_profile.model_dump(
+                    mode="json"
+                ),
+                "gurux_validated_target": validated_target.model_dump(mode="json"),
+                "gurux_normalized_request": normalized_request.model_dump(mode="json"),
+                "gurux_invocation_request": invocation_request.model_dump(mode="json"),
+                "gurux_invocation_stub": invocation_response.model_dump(mode="json"),
+                "gurux_interpreter": interpreted_result.model_dump(mode="json"),
+                "gurux_execution_audit_summary": execution_audit_summary.model_dump(
+                    mode="json"
+                ),
+                "gurux_execution_phase_progression": execution_phase_progression.model_dump(
+                    mode="json"
+                ),
+            },
+            error_category=interpreted_result.error_category,
+            error_detail=interpreted_result.error_detail,
+            relay_control_recorded_by_executor_identifier=str(
+                request.execution_context.worker_identifier
+            ),
+            already_recorded=False,
+            summary=interpreted_result.interpreter_summary,
+            lineage=request.lineage,
+        )
+
+
+class GuruxRelayControlOperationDefinition(BaseModel):
+    operation: RuntimeRelayControlOperation
+    interface_class: str
+    class_id: int
+    obis_code: str
+    method_name: str
+    method_index: int
+
+
+class GuruxRelayControlValidatedTarget(BaseModel):
+    gurux_operation: GuruxRelayControlOperationDefinition
+    target_object: dict[str, object]
+    endpoint_identity: dict[str, object]
+    protocol_profile: dict[str, object]
+    transport_prerequisites_present: bool
+    security_prerequisites_present: bool
+    trace_references: dict[str, object]
+
+
+class GuruxRelayControlResolvedTransportProfile(BaseModel):
+    gurux_operation: GuruxRelayControlOperationDefinition
+    endpoint_identity: dict[str, object]
+    transport_profile: dict[str, object]
+    protocol_profile: dict[str, object]
+    security_profile: dict[str, object]
+    trace_references: dict[str, object]
+
+
+class GuruxRelayControlNormalizedRequest(BaseModel):
+    adapter_key: str
+    command_attempt_id: str
+    dispatch_envelope_record_id: str
+    gurux_operation: GuruxRelayControlOperationDefinition
+    target_object: dict[str, object]
+    transport_context: dict[str, object]
+    security_context: dict[str, object]
+    invocation_context: dict[str, object]
+    trace_references: dict[str, object]
+
+
+class GuruxRelayControlInvocationStubRequest(BaseModel):
+    adapter_key: str
+    command_attempt_id: str
+    dispatch_envelope_record_id: str
+    correlation_id: str | None = None
+    request_id: str | None = None
+    target_meter_id: str
+    endpoint_id: str
+    protocol_profile_id: str
+    transport_type: str
+    transport_locator: str
+    port: int | None = None
+    authentication_mode: str
+    password_secret_ref: str | None = None
+    operation: GuruxRelayControlOperationDefinition
+
+
+class GuruxRelayControlInvocationStubResponse(BaseModel):
+    transport_adapter: str
+    invocation_status: str
+    acknowledged: bool
+    invocation_reference: str
+    request_shape: dict[str, object]
+    response_shape: dict[str, object]
+
+
+class GuruxRelayControlInterpretedResult(BaseModel):
+    invocation_status: str
+    adapter_acknowledgment_state: RuntimeRelayControlAdapterAcknowledgmentState
+    protocol_stage_outcome: RuntimeRelayControlProtocolStageOutcome
+    execution_outcome: RuntimeCommandOutcome
+    error_category: RuntimeRelayControlErrorCategory | None = None
+    error_detail: str | None = None
+    interpreter_summary: str
+
+
+class GuruxRelayControlExecutionAuditSummary(BaseModel):
+    gurux_feature_flag_enabled: bool
+    gurux_path_selected: bool
+    relay_operation: str | None = None
+    gurux_method_name: str | None = None
+    resolved_transport_profile_present: bool
+    validated_target_present: bool
+    normalized_request_present: bool
+    invocation_attempted: bool
+    interpreted_result_present: bool
+    resolved_transport_locator: str | None = None
+    resolved_protocol_profile_id: str | None = None
+    transport_prerequisites_present: bool | None = None
+    security_prerequisites_present: bool | None = None
+    terminal_invocation_status: str | None = None
+    terminal_execution_outcome: RuntimeCommandOutcome | None = None
+    correlation_id: str | None = None
+    request_id: str | None = None
+    session_identifier: str | None = None
+    stopped_at_stage: str | None = None
+
+
+class GuruxRelayControlExecutionPhaseProgression(BaseModel):
+    gurux_feature_flag_enabled: bool
+    gurux_path_selected: bool
+    relay_operation: str | None = None
+    resolver_stage_state: str
+    validator_stage_state: str
+    normalizer_stage_state: str
+    invocation_stage_state: str
+    interpreter_stage_state: str
+    stopped_at_stage: str | None = None
+    terminal_invocation_status: str | None = None
+    terminal_execution_outcome: RuntimeCommandOutcome | None = None
+    correlation_id: str | None = None
+    request_id: str | None = None
+    session_identifier: str | None = None
+
+
+def _map_relay_control_operation_to_gurux_definition(
+    operation: RuntimeRelayControlOperation | str,
+) -> GuruxRelayControlOperationDefinition:
+    if not settings.enable_runtime_relay_control_gurux_mapper:
+        raise NotImplementedError(
+            "Runtime relay-control Gurux mapper is disabled."
+        )
+
+    normalized = operation.value if isinstance(operation, RuntimeRelayControlOperation) else str(operation)
+    if normalized == RuntimeRelayControlOperation.DISCONNECT.value:
+        return GuruxRelayControlOperationDefinition(
+            operation=RuntimeRelayControlOperation.DISCONNECT,
+            interface_class="disconnect_control",
+            class_id=70,
+            obis_code="0.0.96.3.10.255",
+            method_name="remote_disconnect",
+            method_index=1,
+        )
+    if normalized == RuntimeRelayControlOperation.RECONNECT.value:
+        return GuruxRelayControlOperationDefinition(
+            operation=RuntimeRelayControlOperation.RECONNECT,
+            interface_class="disconnect_control",
+            class_id=70,
+            obis_code="0.0.96.3.10.255",
+            method_name="remote_reconnect",
+            method_index=2,
+        )
+    raise ValueError(
+        f"Unsupported relay operation '{normalized}' for the Gurux relay-control mapper."
+    )
+
+
+def _resolve_gurux_relay_control_transport_profile(
+    request: RuntimeRelayControlAdapterRequest,
+    operation: GuruxRelayControlOperationDefinition,
+) -> GuruxRelayControlResolvedTransportProfile:
+    if not settings.enable_runtime_relay_control_gurux_mapper:
+        raise NotImplementedError(
+            "Runtime relay-control Gurux mapper is disabled."
+        )
+
+    transport_locator = (
+        request.transport.host
+        or request.transport.ip_address
+        or request.transport.serial_port_name
+        or request.transport.gateway_identifier
+    )
+    if not request.target.endpoint_code or transport_locator is None:
+        raise ValueError(
+            "Missing adapter prerequisites for the relay-control Gurux transport/profile resolver."
+        )
+    if request.transport.endpoint_transport_type is None:
+        raise ValueError(
+            "Missing adapter prerequisites for the relay-control Gurux transport/profile resolver."
+        )
+    if request.target.protocol_association_profile_id is None:
+        raise ValueError(
+            "Missing adapter prerequisites for the relay-control Gurux transport/profile resolver."
+        )
+    if request.security.authentication_mode is None:
+        raise ValueError(
+            "Missing adapter prerequisites for the relay-control Gurux transport/profile resolver."
+        )
+
+    return GuruxRelayControlResolvedTransportProfile(
+        gurux_operation=operation,
+        endpoint_identity={
+            "endpoint_id": str(request.target.endpoint_id),
+            "endpoint_code": request.target.endpoint_code,
+            "endpoint_assignment_id": str(request.target.endpoint_assignment_id),
+        },
+        transport_profile={
+            "transport_type": request.transport.endpoint_transport_type.value,
+            "transport_locator": transport_locator,
+            "port": request.transport.port,
+        },
+        protocol_profile={
+            "protocol_family": request.protocol_family.value,
+            "protocol_profile_id": str(request.target.protocol_association_profile_id),
+        },
+        security_profile={
+            "authentication_mode": request.security.authentication_mode.value,
+            "password_secret_ref": request.security.password_secret_ref,
+            "security_suite": request.security.security_suite,
+        },
+        trace_references={
+            "dispatch_envelope_record_id": request.dispatch_envelope_record_id,
+            **request.trace_references,
+        },
+    )
+
+
+def _validate_gurux_relay_control_target_object(
+    request: RuntimeRelayControlAdapterRequest,
+    resolved_transport_profile: GuruxRelayControlResolvedTransportProfile,
+) -> GuruxRelayControlValidatedTarget:
+    if not settings.enable_runtime_relay_control_gurux_mapper:
+        raise NotImplementedError(
+            "Runtime relay-control Gurux mapper is disabled."
+        )
+
+    if not request.target.serial_number:
+        raise ValueError(
+            "Missing adapter prerequisites for the relay-control Gurux target-object validator."
+        )
+    if not request.target.manufacturer_code or not request.target.meter_model_code:
+        raise ValueError(
+            "Missing adapter prerequisites for the relay-control Gurux target-object validator."
+        )
+
+    transport_prerequisites_present = (
+        resolved_transport_profile.transport_profile.get("transport_type") is not None
+        and resolved_transport_profile.transport_profile.get("transport_locator") is not None
+    )
+    security_prerequisites_present = (
+        resolved_transport_profile.security_profile.get("authentication_mode") is not None
+    )
+    if not transport_prerequisites_present or not security_prerequisites_present:
+        raise ValueError(
+            "Missing adapter prerequisites for the relay-control Gurux target-object validator."
+        )
+
+    return GuruxRelayControlValidatedTarget(
+        gurux_operation=resolved_transport_profile.gurux_operation,
+        target_object={
+            "meter_id": str(request.target.meter_id),
+            "serial_number": request.target.serial_number,
+            "manufacturer_code": request.target.manufacturer_code,
+            "meter_model_code": request.target.meter_model_code,
+        },
+        endpoint_identity=resolved_transport_profile.endpoint_identity,
+        protocol_profile=resolved_transport_profile.protocol_profile,
+        transport_prerequisites_present=transport_prerequisites_present,
+        security_prerequisites_present=security_prerequisites_present,
+        trace_references=resolved_transport_profile.trace_references,
+    )
+
+
+def _normalize_gurux_relay_control_request(
+    request: RuntimeRelayControlAdapterRequest,
+    resolved_transport_profile: GuruxRelayControlResolvedTransportProfile,
+    validated_target: GuruxRelayControlValidatedTarget,
+) -> GuruxRelayControlNormalizedRequest:
+    if not settings.enable_runtime_relay_control_gurux_mapper:
+        raise NotImplementedError(
+            "Runtime relay-control Gurux mapper is disabled."
+        )
+
+    transport_locator = resolved_transport_profile.transport_profile.get("transport_locator")
+    if not transport_locator:
+        raise ValueError(
+            "Missing adapter prerequisites for the relay-control Gurux request normalizer."
+        )
+
+    return GuruxRelayControlNormalizedRequest(
+        adapter_key=request.adapter_key,
+        command_attempt_id=str(request.execution_context.command_attempt_id),
+        dispatch_envelope_record_id=request.dispatch_envelope_record_id,
+        gurux_operation=validated_target.gurux_operation,
+        target_object={
+            **validated_target.target_object,
+            "endpoint_id": validated_target.endpoint_identity["endpoint_id"],
+            "protocol_profile_id": validated_target.protocol_profile["protocol_profile_id"],
+        },
+        transport_context={
+            "transport_type": resolved_transport_profile.transport_profile["transport_type"],
+            "transport_locator": transport_locator,
+            "port": resolved_transport_profile.transport_profile.get("port"),
+            "transport_prerequisites_present": validated_target.transport_prerequisites_present,
+        },
+        security_context={
+            "authentication_mode": resolved_transport_profile.security_profile["authentication_mode"],
+            "password_secret_ref": resolved_transport_profile.security_profile.get(
+                "password_secret_ref"
+            ),
+            "security_suite": resolved_transport_profile.security_profile.get(
+                "security_suite"
+            ),
+            "security_prerequisites_present": validated_target.security_prerequisites_present,
+        },
+        invocation_context={
+            "correlation_id": request.execution_context.correlation_id,
+            "request_id": request.execution_context.request_id,
+            "worker_identifier": request.execution_context.worker_identifier,
+            "command_category": request.command_category.value,
+            "relay_operation": request.operation.value,
+        },
+        trace_references=validated_target.trace_references,
+    )
+
+
+def _build_gurux_relay_control_invocation_stub_request(
+    normalized_request: GuruxRelayControlNormalizedRequest,
+) -> GuruxRelayControlInvocationStubRequest:
+    return GuruxRelayControlInvocationStubRequest(
+        adapter_key=normalized_request.adapter_key,
+        command_attempt_id=normalized_request.command_attempt_id,
+        dispatch_envelope_record_id=normalized_request.dispatch_envelope_record_id,
+        correlation_id=normalized_request.invocation_context.get("correlation_id"),
+        request_id=normalized_request.invocation_context.get("request_id"),
+        target_meter_id=str(normalized_request.target_object["meter_id"]),
+        endpoint_id=str(normalized_request.target_object["endpoint_id"]),
+        protocol_profile_id=str(normalized_request.target_object["protocol_profile_id"]),
+        transport_type=str(normalized_request.transport_context["transport_type"]),
+        transport_locator=str(normalized_request.transport_context["transport_locator"]),
+        port=(
+            int(normalized_request.transport_context["port"])
+            if normalized_request.transport_context.get("port") is not None
+            else None
+        ),
+        authentication_mode=str(normalized_request.security_context["authentication_mode"]),
+        password_secret_ref=(
+            str(normalized_request.security_context["password_secret_ref"])
+            if normalized_request.security_context.get("password_secret_ref") is not None
+            else None
+        ),
+        operation=normalized_request.gurux_operation,
+    )
+
+
+def _invoke_gurux_relay_control_stub(
+    request: GuruxRelayControlInvocationStubRequest,
+    *,
+    mock_execution: dict[str, object],
+) -> GuruxRelayControlInvocationStubResponse:
+    invocation_status = str(
+        mock_execution.get(
+            "invocation_status",
+            "acknowledged" if bool(mock_execution.get("adapter_acknowledged", True)) else "rejected",
+        )
+    )
+    acknowledged = invocation_status == "acknowledged"
+    invocation_reference = (
+        "gurux-relay-invocation:"
+        f"{request.command_attempt_id}:{request.operation.method_name}"
+    )
+    return GuruxRelayControlInvocationStubResponse(
+        transport_adapter="gurux_stub",
+        invocation_status=invocation_status,
+        acknowledged=acknowledged,
+        invocation_reference=invocation_reference,
+        request_shape={
+            "interface_class": request.operation.interface_class,
+            "class_id": request.operation.class_id,
+            "obis_code": request.operation.obis_code,
+            "method_name": request.operation.method_name,
+            "method_index": request.operation.method_index,
+            "transport_type": request.transport_type,
+            "transport_locator": request.transport_locator,
+            "port": request.port,
+        },
+        response_shape={
+            "invocation_status": invocation_status,
+            "invocation_reference": invocation_reference,
+            "target_meter_id": request.target_meter_id,
+            "acknowledged_path": acknowledged,
+        },
+    )
+
+
+def _interpret_gurux_relay_control_stub_response(
+    response: GuruxRelayControlInvocationStubResponse,
+    *,
+    requested_outcome: RuntimeCommandOutcome,
+    error_detail: str | None,
+) -> GuruxRelayControlInterpretedResult:
+    if not settings.enable_runtime_relay_control_gurux_mapper:
+        raise NotImplementedError(
+            "Runtime relay-control Gurux mapper is disabled."
+        )
+
+    if response.invocation_status == "acknowledged":
+        return GuruxRelayControlInterpretedResult(
+            invocation_status=response.invocation_status,
+            adapter_acknowledgment_state=(
+                RuntimeRelayControlAdapterAcknowledgmentState.ACCEPTED
+            ),
+            protocol_stage_outcome=(
+                RuntimeRelayControlProtocolStageOutcome.RELAY_OPERATION_COMPLETED
+                if requested_outcome == RuntimeCommandOutcome.SUCCEEDED
+                else RuntimeRelayControlProtocolStageOutcome.RELAY_OPERATION_FAILED
+            ),
+            execution_outcome=requested_outcome,
+            error_category=(
+                None
+                if requested_outcome == RuntimeCommandOutcome.SUCCEEDED
+                else RuntimeRelayControlErrorCategory.EXECUTION_FAILED
+            ),
+            error_detail=error_detail,
+            interpreter_summary=(
+                "Gurux relay-control invocation was acknowledged and interpreted "
+                "into bounded relay-control terminal semantics."
+            ),
+        )
+
+    if response.invocation_status == "rejected":
+        return GuruxRelayControlInterpretedResult(
+            invocation_status=response.invocation_status,
+            adapter_acknowledgment_state=(
+                RuntimeRelayControlAdapterAcknowledgmentState.REJECTED
+            ),
+            protocol_stage_outcome=(
+                RuntimeRelayControlProtocolStageOutcome.RELAY_OPERATION_FAILED
+            ),
+            execution_outcome=RuntimeCommandOutcome.FAILED,
+            error_category=RuntimeRelayControlErrorCategory.ADAPTER_REJECTED,
+            error_detail=error_detail or "Gurux relay-control invocation was rejected.",
+            interpreter_summary=(
+                "Gurux relay-control invocation was explicitly rejected and "
+                "interpreted as a bounded terminal relay-control failure."
+            ),
+        )
+
+    if response.invocation_status == "unavailable":
+        return GuruxRelayControlInterpretedResult(
+            invocation_status=response.invocation_status,
+            adapter_acknowledgment_state=(
+                RuntimeRelayControlAdapterAcknowledgmentState.REJECTED
+            ),
+            protocol_stage_outcome=(
+                RuntimeRelayControlProtocolStageOutcome.RELAY_OPERATION_FAILED
+            ),
+            execution_outcome=RuntimeCommandOutcome.FAILED,
+            error_category=RuntimeRelayControlErrorCategory.EXECUTION_FAILED,
+            error_detail=error_detail or "Gurux relay-control invocation path is unavailable.",
+            interpreter_summary=(
+                "Gurux relay-control invocation path was unavailable and interpreted "
+                "as a bounded terminal relay-control failure."
+            ),
+        )
+
+    raise ValueError(
+        "Unusable Gurux relay-control invocation stub response for interpreter."
+    )
+
+
+def _build_gurux_relay_control_execution_audit_summary(
+    *,
+    request: RuntimeRelayControlAdapterRequest | None,
+    gurux_operation: GuruxRelayControlOperationDefinition | None,
+    resolved_transport_profile: GuruxRelayControlResolvedTransportProfile | None,
+    validated_target: GuruxRelayControlValidatedTarget | None,
+    normalized_request: GuruxRelayControlNormalizedRequest | None,
+    invocation_response: GuruxRelayControlInvocationStubResponse | None,
+    interpreted_result: GuruxRelayControlInterpretedResult | None,
+) -> GuruxRelayControlExecutionAuditSummary:
+    stopped_at_stage = None
+    if gurux_operation is None:
+        stopped_at_stage = "mapping"
+    elif resolved_transport_profile is None:
+        stopped_at_stage = "resolution"
+    elif validated_target is None:
+        stopped_at_stage = "validation"
+    elif normalized_request is None:
+        stopped_at_stage = "normalization"
+    elif invocation_response is None:
+        stopped_at_stage = "invocation"
+    elif interpreted_result is None:
+        stopped_at_stage = "interpretation"
+
+    return GuruxRelayControlExecutionAuditSummary(
+        gurux_feature_flag_enabled=settings.enable_runtime_relay_control_gurux_mapper,
+        gurux_path_selected=gurux_operation is not None,
+        relay_operation=(
+            gurux_operation.operation.value
+            if gurux_operation is not None
+            else None
+        ),
+        gurux_method_name=gurux_operation.method_name if gurux_operation is not None else None,
+        resolved_transport_profile_present=resolved_transport_profile is not None,
+        validated_target_present=validated_target is not None,
+        normalized_request_present=normalized_request is not None,
+        invocation_attempted=invocation_response is not None,
+        interpreted_result_present=interpreted_result is not None,
+        resolved_transport_locator=(
+            str(resolved_transport_profile.transport_profile.get("transport_locator"))
+            if resolved_transport_profile is not None
+            and resolved_transport_profile.transport_profile.get("transport_locator") is not None
+            else None
+        ),
+        resolved_protocol_profile_id=(
+            str(resolved_transport_profile.protocol_profile.get("protocol_profile_id"))
+            if resolved_transport_profile is not None
+            and resolved_transport_profile.protocol_profile.get("protocol_profile_id") is not None
+            else None
+        ),
+        transport_prerequisites_present=(
+            validated_target.transport_prerequisites_present
+            if validated_target is not None
+            else None
+        ),
+        security_prerequisites_present=(
+            validated_target.security_prerequisites_present
+            if validated_target is not None
+            else None
+        ),
+        terminal_invocation_status=(
+            invocation_response.invocation_status
+            if invocation_response is not None
+            else None
+        ),
+        terminal_execution_outcome=(
+            interpreted_result.execution_outcome
+            if interpreted_result is not None
+            else None
+        ),
+        correlation_id=(
+            request.execution_context.correlation_id if request is not None else None
+        ),
+        request_id=request.execution_context.request_id if request is not None else None,
+        session_identifier=(
+            str(request.trace_references.get("session_identifier"))
+            if request is not None and request.trace_references.get("session_identifier") is not None
+            else None
+        ),
+        stopped_at_stage=stopped_at_stage,
+    )
+
+
+def _project_gurux_relay_control_execution_phase_state(
+    *,
+    request: RuntimeRelayControlAdapterRequest | None,
+    gurux_operation: GuruxRelayControlOperationDefinition | None,
+    resolved_transport_profile: GuruxRelayControlResolvedTransportProfile | None,
+    validated_target: GuruxRelayControlValidatedTarget | None,
+    normalized_request: GuruxRelayControlNormalizedRequest | None,
+    invocation_response: GuruxRelayControlInvocationStubResponse | None,
+    interpreted_result: GuruxRelayControlInterpretedResult | None,
+    execution_audit_summary: GuruxRelayControlExecutionAuditSummary,
+) -> GuruxRelayControlExecutionPhaseProgression:
+    return GuruxRelayControlExecutionPhaseProgression(
+        gurux_feature_flag_enabled=execution_audit_summary.gurux_feature_flag_enabled,
+        gurux_path_selected=execution_audit_summary.gurux_path_selected,
+        relay_operation=(
+            gurux_operation.operation.value
+            if gurux_operation is not None
+            else execution_audit_summary.relay_operation
+        ),
+        resolver_stage_state=(
+            "resolved"
+            if resolved_transport_profile is not None
+            else (
+                "not_started"
+                if gurux_operation is None
+                else "failed"
+            )
+        ),
+        validator_stage_state=(
+            "validated"
+            if validated_target is not None
+            else (
+                "not_started"
+                if resolved_transport_profile is None
+                else "failed"
+            )
+        ),
+        normalizer_stage_state=(
+            "normalized"
+            if normalized_request is not None
+            else (
+                "not_started"
+                if validated_target is None
+                else "failed"
+            )
+        ),
+        invocation_stage_state=(
+            invocation_response.invocation_status
+            if invocation_response is not None
+            else (
+                "not_started"
+                if normalized_request is None
+                else "failed"
+            )
+        ),
+        interpreter_stage_state=(
+            interpreted_result.adapter_acknowledgment_state.value
+            if interpreted_result is not None
+            else (
+                "not_started"
+                if invocation_response is None
+                else "failed"
+            )
+        ),
+        stopped_at_stage=execution_audit_summary.stopped_at_stage,
+        terminal_invocation_status=execution_audit_summary.terminal_invocation_status,
+        terminal_execution_outcome=execution_audit_summary.terminal_execution_outcome,
+        correlation_id=(
+            request.execution_context.correlation_id if request is not None else None
+        ),
+        request_id=request.execution_context.request_id if request is not None else None,
+        session_identifier=execution_audit_summary.session_identifier,
+    )
 
 
 def _map_outcome_to_session_status(outcome: RuntimeCommandOutcome) -> ConnectivitySessionStatus:

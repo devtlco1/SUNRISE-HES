@@ -183,6 +183,8 @@ def ingest_reading_batch(
     *,
     meter_id: uuid.UUID,
     payload: IngestReadingBatchRequest,
+    commit: bool = True,
+    ignore_duplicate_intervals: bool = False,
 ) -> IngestReadingBatchResponse:
     meter = session.get(Meter, meter_id)
     if meter is None:
@@ -234,6 +236,8 @@ def ingest_reading_batch(
         session.add(snapshot)
         snapshots.append(snapshot)
 
+    skipped_duplicate_interval_count = 0
+    seen_interval_windows: set[tuple[uuid.UUID, object, object]] = set()
     for item in payload.load_profile_intervals:
         channel = session.get(LoadProfileChannel, item.channel_id)
         if channel is None or channel.meter_id != meter_id:
@@ -241,6 +245,22 @@ def ingest_reading_batch(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Load profile interval channel is invalid for this meter.",
             )
+        interval_key = (item.channel_id, item.interval_start, item.interval_end)
+        if ignore_duplicate_intervals:
+            if interval_key in seen_interval_windows:
+                skipped_duplicate_interval_count += 1
+                continue
+            existing_interval = session.scalar(
+                select(LoadProfileInterval).where(
+                    LoadProfileInterval.channel_id == item.channel_id,
+                    LoadProfileInterval.interval_start == item.interval_start,
+                    LoadProfileInterval.interval_end == item.interval_end,
+                )
+            )
+            if existing_interval is not None:
+                skipped_duplicate_interval_count += 1
+                continue
+            seen_interval_windows.add(interval_key)
         session.add(
             LoadProfileInterval(
                 meter_id=meter_id,
@@ -254,7 +274,10 @@ def ingest_reading_batch(
         )
 
     try:
-        session.commit()
+        if commit:
+            session.commit()
+        else:
+            session.flush()
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(
@@ -262,7 +285,21 @@ def ingest_reading_batch(
             detail="Duplicate load profile interval window detected.",
         ) from exc
 
-    session.refresh(batch)
+    if skipped_duplicate_interval_count and batch.reading_context is None:
+        batch.reading_context = {}
+    if skipped_duplicate_interval_count:
+        batch.reading_context = {
+            **(batch.reading_context or {}),
+            "skipped_duplicate_interval_count": skipped_duplicate_interval_count,
+        }
+        session.add(batch)
+        if commit:
+            session.commit()
+        else:
+            session.flush()
+
+    if commit:
+        session.refresh(batch)
     batch = session.scalar(
         select(MeterReadingBatch)
         .options(

@@ -8,11 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.commands.enums import CommandExecutionAttemptStatus
-from app.modules.commands.models import CommandExecutionAttempt
+from app.modules.commands.models import CommandExecutionAttempt, MeterCommand
 from app.modules.commands.service import serialize_command_attempt
 from app.modules.connectivity.enums import ConnectivitySessionStatus
 from app.modules.connectivity.models import ConnectivitySessionHistory
 from app.modules.connectivity.service import serialize_connectivity_session
+from app.modules.jobs.models import JobRun
 from app.modules.jobs.schemas import (
     CommandAttemptFailRequest,
     CommandAttemptSucceedRequest,
@@ -32,8 +33,13 @@ from app.runtime.contracts import (
 )
 from app.runtime.normalization import to_command_result_summary
 from app.runtime.schemas import ExecuteRuntimePlanResponse
+from app.runtime.services.downstream import consume_downstream_signals
+from app.runtime.services.ingestion import persist_runtime_result_telemetry
+from app.runtime.services.postprocessing import post_process_runtime_outcome
+from app.runtime.services.runtime_execution_guard import (
+    build_runtime_execution_guard_metadata,
+)
 from app.runtime.services.runtime_plan_builder import build_runtime_plan_for_command
-
 
 EXECUTABLE_ATTEMPT_STATUSES = {
     CommandExecutionAttemptStatus.STARTED,
@@ -52,6 +58,15 @@ def execute_runtime_plan_for_attempt(
     attempt = _get_active_attempt_for_execution(session, attempt_id=attempt_id)
     _ensure_worker_owns_attempt(attempt, worker_identifier)
     _ensure_attempt_is_executable(attempt)
+    guard_metadata = build_runtime_execution_guard_metadata(
+        execution_metadata=attempt.execution_metadata,
+        executor_identifier=worker_identifier,
+        attempt_id=str(attempt.id),
+    )
+    attempt.execution_metadata = _merge_execution_metadata(
+        attempt.execution_metadata,
+        guard_metadata,
+    )
 
     if plan is None:
         plan = build_runtime_plan_for_command(
@@ -89,7 +104,47 @@ def execute_runtime_plan_for_attempt(
     )
     _apply_session_result(session_history=session_history, session_result=session_result)
 
-    normalized_summary = to_command_result_summary(result)
+    ingestion_result = persist_runtime_result_telemetry(
+        session,
+        meter_id=plan.target.meter_id,
+        command_id=plan.execution_context.command_id,
+        attempt_id=attempt.id,
+        session_history_id=session_history.id,
+        result=result,
+    )
+    command = session.get(MeterCommand, attempt.meter_command_id)
+    if command is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Command not found for attempt.")
+    post_processing = post_process_runtime_outcome(
+        result=result,
+        session_result=session_result,
+        ingestion_result=ingestion_result,
+        attempt=attempt,
+        command=command,
+    )
+    normalized_summary = {
+        **to_command_result_summary(result),
+        "execution_guard": guard_metadata["runtime_execution_guard"],
+        "post_processing": post_processing.summary,
+        "ingestion": {
+            "ingested_batch_id": (
+                str(ingestion_result.ingested_batch.id) if ingestion_result.ingested_batch is not None else None
+            ),
+            "persisted_reading_count": (
+                len(ingestion_result.ingested_batch.readings)
+                if ingestion_result.ingested_batch is not None
+                else 0
+            ),
+            "persisted_snapshot_count": (
+                len(ingestion_result.ingested_batch.register_snapshots)
+                if ingestion_result.ingested_batch is not None
+                else 0
+            ),
+            "persisted_interval_count": ingestion_result.persisted_interval_count,
+            "skipped_duplicate_interval_count": ingestion_result.skipped_duplicate_interval_count,
+            "persisted_event_count": len(ingestion_result.ingested_events),
+        },
+    }
     execution_metadata = _merge_execution_metadata(
         attempt.execution_metadata,
         {
@@ -99,6 +154,7 @@ def execute_runtime_plan_for_attempt(
                 "placeholder": True,
                 "outcome": result.outcome.value,
                 "session_history_id": str(session_history.id),
+                "post_processing": post_processing.summary,
             }
         },
     )
@@ -111,8 +167,21 @@ def execute_runtime_plan_for_attempt(
         normalized_summary=normalized_summary,
         session_history_id=session_history.id,
         execution_metadata=execution_metadata,
+        post_processing=post_processing,
     )
     finalized_attempt.execution_metadata = execution_metadata
+    refreshed_command = session.get(MeterCommand, finalized_attempt.meter_command_id)
+    if refreshed_command is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Command not found after finalization.")
+    job_run = session.get(JobRun, finalized_attempt.job_run_id) if finalized_attempt.job_run_id is not None else None
+    downstream_consumption = consume_downstream_signals(
+        session,
+        post_processing=post_processing,
+        attempt=finalized_attempt,
+        command=refreshed_command,
+        session_history=session_history,
+        job_run=job_run,
+    )
     session.add_all([session_history, finalized_attempt])
     session.commit()
     session.refresh(finalized_attempt)
@@ -125,6 +194,12 @@ def execute_runtime_plan_for_attempt(
         outcome=result.outcome,
         result_summary=normalized_summary,
         response_snapshot=result.response_snapshot,
+        ingested_batch=ingestion_result.ingested_batch,
+        ingested_events=ingestion_result.ingested_events,
+        persisted_interval_count=ingestion_result.persisted_interval_count,
+        skipped_duplicate_interval_count=ingestion_result.skipped_duplicate_interval_count,
+        post_processing=post_processing,
+        downstream_consumption=downstream_consumption,
     )
 
 
@@ -324,8 +399,9 @@ def _finalize_attempt(
     normalized_summary: dict[str, object],
     session_history_id: uuid.UUID,
     execution_metadata: dict[str, object],
+    post_processing,
 ) -> CommandExecutionAttempt:
-    if result.outcome == RuntimeCommandOutcome.SUCCEEDED:
+    if result.outcome in {RuntimeCommandOutcome.SUCCEEDED, RuntimeCommandOutcome.PARTIAL}:
         return succeed_command_attempt(
             session,
             attempt_id=attempt_id,
@@ -348,8 +424,9 @@ def _finalize_attempt(
                 error_message=result.latest_error_message,
                 execution_metadata=execution_metadata,
                 session_history_id=session_history_id,
-                retry_delay_seconds=0,
+                retry_delay_seconds=post_processing.retry.retry_delay_seconds,
             ),
+            retry_allowed=post_processing.retry.retry_allowed_by_policy,
         )
     if result.outcome == RuntimeCommandOutcome.FAILED:
         return fail_command_attempt(
@@ -365,15 +442,14 @@ def _finalize_attempt(
                 bytes_received=result.session_result.bytes_received if result.session_result else None,
                 latency_ms=result.session_result.transport_latency_ms if result.session_result else None,
                 session_history_id=session_history_id,
-                retry_delay_seconds=0,
+                retry_delay_seconds=post_processing.retry.retry_delay_seconds,
             ),
+            retry_allowed=post_processing.retry.retry_allowed_by_policy,
         )
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail=f"Runtime executor does not support outcome {result.outcome.value} in this phase.",
     )
-
-
 def _merge_execution_metadata(
     existing: dict[str, object] | None,
     extra: dict[str, object] | None,
