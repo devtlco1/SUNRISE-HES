@@ -10,8 +10,14 @@ from app.modules.commands.profile_capture_execute_now import execute_profile_cap
 from app.modules.commands.profile_capture_execution_orchestration import (
     orchestrate_profile_capture_command_execution,
 )
+from app.modules.commands.relay_control_execution_orchestration import (
+    orchestrate_relay_control_command_execution,
+)
 from app.modules.commands.relay_control_runtime_handoff import (
     handoff_relay_control_command_to_runtime,
+)
+from app.modules.commands.relay_control_runtime_terminalization import (
+    terminalize_relay_control_runtime_execution,
 )
 from app.modules.commands.profile_capture_status_readback import (
     get_profile_capture_execution_status,
@@ -46,8 +52,12 @@ from app.modules.commands.schemas import (
     ProfileCaptureRuntimeTerminalizationResponse,
     RelayControlAttemptBootstrapRequest,
     RelayControlAttemptBootstrapResponse,
+    RelayControlExecutionOrchestrationRequest,
+    RelayControlExecutionOrchestrationResponse,
     RelayControlRuntimeHandoffRequest,
     RelayControlRuntimeHandoffResponse,
+    RelayControlRuntimeTerminalizationRequest,
+    RelayControlRuntimeTerminalizationResponse,
     RelayControlCommandCreate,
 )
 from app.modules.jobs.dependencies import require_internal_api_token
@@ -376,6 +386,40 @@ def handoff_relay_control_to_runtime_endpoint(
     session: Session = Depends(get_db_session),
 ) -> RelayControlRuntimeHandoffResponse:
     return handoff_relay_control_command_to_runtime(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/terminalize-relay-control-runtime",
+    response_model=RelayControlRuntimeTerminalizationResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def terminalize_relay_control_runtime_endpoint(
+    command_id: uuid.UUID,
+    payload: RelayControlRuntimeTerminalizationRequest,
+    session: Session = Depends(get_db_session),
+) -> RelayControlRuntimeTerminalizationResponse:
+    return terminalize_relay_control_runtime_execution(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/execute-relay-control-in-process",
+    response_model=RelayControlExecutionOrchestrationResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def execute_relay_control_in_process_endpoint(
+    command_id: uuid.UUID,
+    payload: RelayControlExecutionOrchestrationRequest,
+    session: Session = Depends(get_db_session),
+) -> RelayControlExecutionOrchestrationResponse:
+    return orchestrate_relay_control_command_execution(
         session,
         command_id=command_id,
         payload=payload,

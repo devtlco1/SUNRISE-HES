@@ -155,6 +155,69 @@ class RelayControlRuntimeHandoffResponse(BaseModel):
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
+class RelayControlRuntimeTerminalizationRequest(BaseModel):
+    terminalization_identifier: str = Field(min_length=1, max_length=128)
+    executor_identifier: str = Field(min_length=1, max_length=128)
+    terminalization_reason: str | None = Field(default=None, max_length=255)
+
+
+class RelayControlRuntimeTerminalizationResult(BaseModel):
+    terminalization_status: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    job_run_id: UUID | None = None
+    terminalization_identifier: str
+    executor_identifier: str
+    runtime_relay_control_execution_record_id: str
+    relay_control_operation: RelayControlCommandOperation
+    relay_control_execution_outcome: str
+    attempt_final_status: CommandExecutionAttemptStatus
+    command_final_status: CommandStatus
+    job_run_final_status: JobRunStatus | None = None
+    terminalization_reason_category: str
+    terminalized_at: datetime
+    reused_existing_terminalization: bool
+    terminalization_record: dict[str, object]
+
+
+class RelayControlRuntimeTerminalizationResponse(BaseModel):
+    result: RelayControlRuntimeTerminalizationResult
+    job_run: dict[str, object] | None = None
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
+class RelayControlExecutionOrchestrationRequest(BaseModel):
+    orchestration_identifier: str = Field(min_length=1, max_length=128)
+    executor_identifier: str = Field(min_length=1, max_length=128)
+    orchestration_reason: str | None = Field(default=None, max_length=255)
+    lease_seconds: int = Field(default=300, ge=5, le=3600)
+    session_timeout_seconds: int = Field(default=300, ge=5, le=3600)
+
+
+class RelayControlExecutionOrchestrationResult(BaseModel):
+    orchestration_status: str
+    orchestration_identifier: str
+    executor_identifier: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    job_run_id: UUID | None = None
+    runtime_relay_control_execution_record_id: str
+    relay_control_operation: RelayControlCommandOperation
+    terminalization_artifact_present: bool
+    reused_existing_orchestration: bool
+    orchestrated_at: datetime
+    orchestration_reason_category: str | None = None
+    orchestration_record: dict[str, object]
+
+
+class RelayControlExecutionOrchestrationResponse(BaseModel):
+    result: RelayControlExecutionOrchestrationResult
+    job_run: dict[str, object] | None = None
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
 class ProfileCaptureAttemptBootstrapRequest(BaseModel):
     bootstrap_identifier: str = Field(min_length=1, max_length=128)
     bootstrap_reason: str | None = Field(default=None, max_length=255)
