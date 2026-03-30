@@ -12,6 +12,7 @@ from app.modules.commands.enums import (
     CommandCategory,
     CommandExecutionAttemptStatus,
     CommandStatus,
+    OnDemandReadCommandOperation,
     RelayControlCommandOperation,
 )
 from app.modules.commands.schemas import (
@@ -26,6 +27,10 @@ from app.modules.commands.schemas import (
     MeterCommandDetailResponse,
     MeterCommandListResponse,
     MeterCommandResponse,
+    OnDemandReadAttemptBootstrapRequest,
+    OnDemandReadAttemptBootstrapResponse,
+    OnDemandReadAttemptBootstrapResult,
+    OnDemandReadCommandCreate,
     ProfileCaptureAttemptBootstrapRequest,
     ProfileCaptureAttemptBootstrapResponse,
     ProfileCaptureAttemptBootstrapResult,
@@ -37,6 +42,7 @@ from app.modules.commands.schemas import (
 from app.modules.connectivity.enums import EndpointAssignmentStatus, ProtocolFamily
 from app.modules.connectivity.models import MeterEndpointAssignment, ProtocolAssociationProfile
 from app.modules.meters.models import Meter
+from app.modules.readings.enums import SnapshotType
 from app.modules.readings.models import LoadProfileChannel
 
 
@@ -300,6 +306,8 @@ def submit_capture_load_profile_command(
 RELAY_CONTROL_TARGET_INTERFACE_CLASS = "disconnect_control"
 RELAY_CONTROL_TARGET_CLASS_ID = 70
 RELAY_CONTROL_TARGET_OBIS_CODE = "0.0.96.3.10.255"
+ON_DEMAND_READ_SNAPSHOT_TYPE = SnapshotType.BILLING
+ON_DEMAND_READ_RUNTIME_OPERATION = OnDemandReadCommandOperation.READ_BILLING_SNAPSHOT.value
 
 
 def submit_relay_control_command(
@@ -446,6 +454,294 @@ def _normalize_relay_control_submission(
             "command_category": expected_category.value,
         },
     }
+
+
+def submit_on_demand_read_command(
+    session: Session,
+    *,
+    meter_id: uuid.UUID,
+    payload: OnDemandReadCommandCreate,
+    requested_by_user_id: uuid.UUID | None,
+) -> MeterCommand:
+    meter = session.get(Meter, meter_id)
+    if meter is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meter not found.")
+
+    template = get_command_template(session, payload.command_template_id)
+    if template.category != CommandCategory.ON_DEMAND_READ:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Selected template is not compatible with the on-demand-read command submission slice.",
+        )
+    if not template.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot request a command from an inactive template.",
+        )
+
+    if payload.idempotency_key:
+        existing = session.scalar(
+            select(MeterCommand).where(MeterCommand.idempotency_key == payload.idempotency_key)
+        )
+        if existing is not None:
+            if existing.meter_id != meter_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A command with that idempotency key already exists for another meter.",
+                )
+            existing = get_meter_command(session, existing.id)
+            if existing.command_template.category != CommandCategory.ON_DEMAND_READ:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A command with that idempotency key already exists for another command policy.",
+                )
+            return existing
+
+    assignment = session.get(MeterEndpointAssignment, payload.endpoint_assignment_id)
+    if assignment is None or assignment.meter_id != meter_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Endpoint assignment is invalid for the selected meter.",
+        )
+    if assignment.assignment_status != EndpointAssignmentStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Endpoint assignment is not active for the selected meter.",
+        )
+
+    profile = session.get(ProtocolAssociationProfile, payload.protocol_association_profile_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Protocol association profile not found.",
+        )
+    if not profile.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Protocol association profile is not active.",
+        )
+    if profile.protocol_family != ProtocolFamily.DLMS_COSEM:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Protocol association profile is not compatible with the on-demand-read command submission slice.",
+        )
+
+    normalized_payload = _normalize_on_demand_read_submission(payload)
+    command = create_meter_command(
+        session,
+        meter_id=meter_id,
+        payload=MeterCommandCreate(
+            command_template_id=payload.command_template_id,
+            priority=payload.priority,
+            scheduled_at=payload.scheduled_at,
+            correlation_id=payload.correlation_id,
+            idempotency_key=payload.idempotency_key,
+            request_payload={
+                "on_demand_read_operation": payload.on_demand_read_operation.value,
+                "on_demand_read": {
+                    "snapshot_type": ON_DEMAND_READ_SNAPSHOT_TYPE.value,
+                },
+            },
+            normalized_payload=normalized_payload,
+            endpoint_assignment_id=payload.endpoint_assignment_id,
+            protocol_association_profile_id=payload.protocol_association_profile_id,
+            notes=payload.notes,
+        ),
+        requested_by_user_id=requested_by_user_id,
+    )
+    return command
+
+
+def _normalize_on_demand_read_submission(
+    payload: OnDemandReadCommandCreate,
+) -> dict[str, object]:
+    return {
+        "on_demand_read_operation": payload.on_demand_read_operation.value,
+        "on_demand_read": {
+            "operation": payload.on_demand_read_operation.value,
+            "snapshot_type": ON_DEMAND_READ_SNAPSHOT_TYPE.value,
+            "command_category": CommandCategory.ON_DEMAND_READ.value,
+            "bounded_contract": {
+                "adapter_operation": ON_DEMAND_READ_RUNTIME_OPERATION,
+                "read_family": "billing_snapshot",
+            },
+        },
+    }
+
+
+def bootstrap_on_demand_read_command_attempt(
+    session: Session,
+    *,
+    command_id: uuid.UUID,
+    payload: OnDemandReadAttemptBootstrapRequest,
+) -> OnDemandReadAttemptBootstrapResponse:
+    command = get_meter_command(session, command_id)
+    template = command.command_template
+    if template.category != CommandCategory.ON_DEMAND_READ:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Selected command is not compatible with the on-demand-read bootstrap slice.",
+        )
+    if command.current_status in {
+        CommandStatus.SUCCEEDED,
+        CommandStatus.FAILED,
+        CommandStatus.CANCELLED,
+        CommandStatus.TIMED_OUT,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command is not bootstrap-eligible from its current state.",
+        )
+
+    normalized_payload = _validate_on_demand_read_normalized_payload(command)
+    on_demand_read_operation = OnDemandReadCommandOperation(
+        str(normalized_payload["on_demand_read_operation"])
+    )
+    snapshot_type = SnapshotType(
+        str(normalized_payload["on_demand_read"]["snapshot_type"])
+    )
+    assignment = _validate_on_demand_read_endpoint_assignment(
+        session,
+        meter_id=command.meter_id,
+        endpoint_assignment_id=command.endpoint_assignment_id,
+    )
+    profile = _validate_on_demand_read_protocol_profile(
+        session,
+        protocol_association_profile_id=command.protocol_association_profile_id,
+    )
+
+    active_attempt = session.scalar(
+        select(CommandExecutionAttempt)
+        .where(
+            CommandExecutionAttempt.meter_command_id == command.id,
+            CommandExecutionAttempt.ended_at.is_(None),
+            CommandExecutionAttempt.status.in_(
+                [CommandExecutionAttemptStatus.STARTED, CommandExecutionAttemptStatus.RUNNING]
+            ),
+        )
+        .order_by(CommandExecutionAttempt.attempt_number.desc())
+    )
+    if active_attempt is not None:
+        existing_bootstrap = _load_on_demand_read_attempt_bootstrap(active_attempt.execution_metadata)
+        if existing_bootstrap is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="On-demand-read command already has an incompatible active execution attempt.",
+            )
+        if existing_bootstrap.get("bootstrap_identifier") != payload.bootstrap_identifier:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="On-demand-read command already has an active execution attempt owned by another bootstrap identifier.",
+            )
+        result = OnDemandReadAttemptBootstrapResult(
+            bootstrap_status="bootstrapped",
+            command_id=command.id,
+            command_execution_attempt_id=active_attempt.id,
+            reused_existing_attempt=True,
+            bootstrapped_at=datetime.fromisoformat(str(existing_bootstrap["bootstrapped_at"])),
+            bootstrap_identifier=str(existing_bootstrap["bootstrap_identifier"]),
+            correlation_id=command.correlation_id,
+            endpoint_assignment_id=assignment.id,
+            endpoint_id=assignment.endpoint_id,
+            protocol_association_profile_id=profile.id,
+            on_demand_read_operation=on_demand_read_operation,
+            snapshot_type=snapshot_type,
+            bootstrap_record=existing_bootstrap,
+        )
+        return OnDemandReadAttemptBootstrapResponse(
+            result=result,
+            related_command=serialize_meter_command(command),
+            created_or_existing_attempt=serialize_command_attempt(active_attempt),
+        )
+
+    previous_bootstrapped_attempt = session.scalar(
+        select(CommandExecutionAttempt)
+        .where(CommandExecutionAttempt.meter_command_id == command.id)
+        .order_by(CommandExecutionAttempt.attempt_number.desc())
+    )
+    if previous_bootstrapped_attempt is not None:
+        previous_bootstrap = _load_on_demand_read_attempt_bootstrap(
+            previous_bootstrapped_attempt.execution_metadata
+        )
+        if previous_bootstrap is not None and previous_bootstrapped_attempt.ended_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="On-demand-read command already has a completed bootstrap attempt history.",
+            )
+
+    next_attempt_number = (
+        session.scalar(
+            select(func.max(CommandExecutionAttempt.attempt_number)).where(
+                CommandExecutionAttempt.meter_command_id == command.id
+            )
+        )
+        or 0
+    ) + 1
+    now = datetime.now(UTC)
+    bootstrap_record = {
+        "bootstrap_status": "bootstrapped",
+        "command_id": str(command.id),
+        "command_execution_attempt_id": None,
+        "reused_existing_attempt": False,
+        "bootstrapped_at": now.isoformat(),
+        "bootstrap_identifier": payload.bootstrap_identifier,
+        "bootstrap_reason": payload.bootstrap_reason,
+        "correlation_id": command.correlation_id,
+        "endpoint_assignment_id": str(assignment.id),
+        "endpoint_id": str(assignment.endpoint_id),
+        "protocol_association_profile_id": str(profile.id),
+        "on_demand_read_operation": on_demand_read_operation.value,
+        "snapshot_type": snapshot_type.value,
+    }
+
+    apply_command_status_transition(command, new_status=CommandStatus.IN_PROGRESS, now=now)
+    attempt = CommandExecutionAttempt(
+        meter_command_id=command.id,
+        job_run_id=None,
+        attempt_number=next_attempt_number,
+        status=CommandExecutionAttemptStatus.STARTED,
+        started_at=now,
+        worker_identifier=payload.bootstrap_identifier,
+        endpoint_id=assignment.endpoint_id,
+        session_history_id=None,
+        request_snapshot=normalized_payload,
+        execution_metadata={"on_demand_read_attempt_bootstrap": bootstrap_record},
+    )
+    session.add(command)
+    session.add(attempt)
+    session.flush()
+    bootstrap_record["command_execution_attempt_id"] = str(attempt.id)
+    attempt.execution_metadata = {"on_demand_read_attempt_bootstrap": bootstrap_record}
+    command.result_summary = {
+        **(command.result_summary or {}),
+        "on_demand_read_attempt_bootstrap": bootstrap_record,
+    }
+    session.add(command)
+    session.add(attempt)
+    session.commit()
+    session.refresh(attempt)
+    refreshed_command = get_meter_command(session, command.id)
+
+    result = OnDemandReadAttemptBootstrapResult(
+        bootstrap_status="bootstrapped",
+        command_id=refreshed_command.id,
+        command_execution_attempt_id=attempt.id,
+        reused_existing_attempt=False,
+        bootstrapped_at=now,
+        bootstrap_identifier=payload.bootstrap_identifier,
+        correlation_id=refreshed_command.correlation_id,
+        endpoint_assignment_id=assignment.id,
+        endpoint_id=assignment.endpoint_id,
+        protocol_association_profile_id=profile.id,
+        on_demand_read_operation=on_demand_read_operation,
+        snapshot_type=snapshot_type,
+        bootstrap_record=bootstrap_record,
+    )
+    return OnDemandReadAttemptBootstrapResponse(
+        result=result,
+        related_command=serialize_meter_command(refreshed_command),
+        created_or_existing_attempt=serialize_command_attempt(attempt),
+    )
 
 
 def bootstrap_relay_control_command_attempt(
@@ -840,6 +1136,56 @@ def _validate_capture_load_profile_normalized_payload(command: MeterCommand) -> 
     return normalized_payload
 
 
+def _validate_on_demand_read_normalized_payload(command: MeterCommand) -> dict[str, object]:
+    normalized_payload = command.normalized_payload
+    if not isinstance(normalized_payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command is missing normalized payload for bootstrap.",
+        )
+    if normalized_payload.get("on_demand_read_operation") != ON_DEMAND_READ_RUNTIME_OPERATION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has incompatible normalized payload for bootstrap.",
+        )
+    on_demand_read = normalized_payload.get("on_demand_read")
+    if not isinstance(on_demand_read, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has incompatible normalized payload for bootstrap.",
+        )
+    if on_demand_read.get("operation") != ON_DEMAND_READ_RUNTIME_OPERATION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has incompatible normalized payload for bootstrap.",
+        )
+    if on_demand_read.get("snapshot_type") != ON_DEMAND_READ_SNAPSHOT_TYPE.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has inconsistent billing-snapshot linkage for bootstrap.",
+        )
+    if on_demand_read.get("command_category") != command.command_template.category.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has incompatible normalized payload for bootstrap.",
+        )
+    bounded_contract = on_demand_read.get("bounded_contract")
+    if not isinstance(bounded_contract, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has incompatible normalized payload for bootstrap.",
+        )
+    if (
+        bounded_contract.get("adapter_operation") != ON_DEMAND_READ_RUNTIME_OPERATION
+        or bounded_contract.get("read_family") != "billing_snapshot"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has inconsistent billing-snapshot linkage for bootstrap.",
+        )
+    return normalized_payload
+
+
 def _validate_relay_control_normalized_payload(command: MeterCommand) -> dict[str, object]:
     normalized_payload = command.normalized_payload
     if not isinstance(normalized_payload, dict):
@@ -910,6 +1256,31 @@ def _validate_relay_control_endpoint_assignment(
     return assignment
 
 
+def _validate_on_demand_read_endpoint_assignment(
+    session: Session,
+    *,
+    meter_id: uuid.UUID,
+    endpoint_assignment_id: uuid.UUID | None,
+) -> MeterEndpointAssignment:
+    if endpoint_assignment_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command is missing endpoint continuity for bootstrap.",
+        )
+    assignment = session.get(MeterEndpointAssignment, endpoint_assignment_id)
+    if assignment is None or assignment.meter_id != meter_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has invalid endpoint continuity for bootstrap.",
+        )
+    if assignment.assignment_status != EndpointAssignmentStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has inactive endpoint continuity for bootstrap.",
+        )
+    return assignment
+
+
 def _validate_relay_control_protocol_profile(
     session: Session,
     *,
@@ -930,6 +1301,30 @@ def _validate_relay_control_protocol_profile(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Relay-control command has incompatible protocol continuity for bootstrap.",
+        )
+    return profile
+
+
+def _validate_on_demand_read_protocol_profile(
+    session: Session,
+    *,
+    protocol_association_profile_id: uuid.UUID | None,
+) -> ProtocolAssociationProfile:
+    if protocol_association_profile_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command is missing protocol continuity for bootstrap.",
+        )
+    profile = session.get(ProtocolAssociationProfile, protocol_association_profile_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has invalid protocol continuity for bootstrap.",
+        )
+    if not profile.is_active or profile.protocol_family != ProtocolFamily.DLMS_COSEM:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="On-demand-read command has incompatible protocol continuity for bootstrap.",
         )
     return profile
 
@@ -989,6 +1384,15 @@ def _load_profile_capture_attempt_bootstrap(
     if not isinstance(execution_metadata, dict):
         return None
     payload = execution_metadata.get("profile_capture_attempt_bootstrap")
+    return payload if isinstance(payload, dict) else None
+
+
+def _load_on_demand_read_attempt_bootstrap(
+    execution_metadata: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if not isinstance(execution_metadata, dict):
+        return None
+    payload = execution_metadata.get("on_demand_read_attempt_bootstrap")
     return payload if isinstance(payload, dict) else None
 
 

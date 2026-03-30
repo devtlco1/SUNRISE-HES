@@ -46,3 +46,12 @@ class CommandPriority(StringEnum):
 class RelayControlCommandOperation(StringEnum):
     DISCONNECT = "disconnect"
     RECONNECT = "reconnect"
+
+
+class OnDemandReadCommandOperation(StringEnum):
+    READ_BILLING_SNAPSHOT = "read_billing_snapshot"
+
+
+class CommandOperationalFamily(StringEnum):
+    PROFILE_CAPTURE = "profile_capture"
+    RELAY_CONTROL = "relay_control"

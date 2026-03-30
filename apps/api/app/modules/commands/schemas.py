@@ -8,12 +8,15 @@ from pydantic import BaseModel, Field
 from app.modules.commands.enums import (
     CommandCategory,
     CommandExecutionAttemptStatus,
+    CommandOperationalFamily,
     CommandPriority,
     CommandStatus,
     CommandTargetScope,
+    OnDemandReadCommandOperation,
     RelayControlCommandOperation,
 )
 from app.modules.jobs.enums import JobRunStatus
+from app.modules.readings.enums import SnapshotType
 
 
 class CommandTemplateCreate(BaseModel):
@@ -94,6 +97,45 @@ class RelayControlCommandCreate(BaseModel):
     correlation_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)
     notes: str | None = None
+
+
+class OnDemandReadCommandCreate(BaseModel):
+    command_template_id: UUID
+    on_demand_read_operation: OnDemandReadCommandOperation
+    endpoint_assignment_id: UUID
+    protocol_association_profile_id: UUID
+    priority: CommandPriority = CommandPriority.NORMAL
+    scheduled_at: datetime | None = None
+    correlation_id: str | None = Field(default=None, max_length=128)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+    notes: str | None = None
+
+
+class OnDemandReadAttemptBootstrapRequest(BaseModel):
+    bootstrap_identifier: str = Field(min_length=1, max_length=128)
+    bootstrap_reason: str | None = Field(default=None, max_length=255)
+
+
+class OnDemandReadAttemptBootstrapResult(BaseModel):
+    bootstrap_status: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    reused_existing_attempt: bool
+    bootstrapped_at: datetime
+    bootstrap_identifier: str
+    correlation_id: str | None = None
+    endpoint_assignment_id: UUID
+    endpoint_id: UUID
+    protocol_association_profile_id: UUID
+    on_demand_read_operation: OnDemandReadCommandOperation
+    snapshot_type: SnapshotType
+    bootstrap_record: dict[str, object]
+
+
+class OnDemandReadAttemptBootstrapResponse(BaseModel):
+    result: "OnDemandReadAttemptBootstrapResult"
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
 class RelayControlAttemptBootstrapRequest(BaseModel):
@@ -483,6 +525,66 @@ class MeterCommandResponse(BaseModel):
 
 class MeterCommandDetailResponse(MeterCommandResponse):
     attempts: list[CommandExecutionAttemptResponse]
+
+
+class CommandOperationalDetailResult(BaseModel):
+    command_id: UUID
+    command_family: CommandOperationalFamily
+    command_category: CommandCategory
+    command_status: CommandStatus
+    meter_id: UUID
+    command_template_code: str
+    latest_command_execution_attempt_id: UUID | None = None
+    latest_command_execution_attempt_status: CommandExecutionAttemptStatus | None = None
+    runtime_execution_record_id: str | None = None
+    family_specific_outcome_summary: dict[str, object] = Field(default_factory=dict)
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    execute_now_artifact_present: bool
+    created_at: datetime
+    latest_updated_at: datetime
+    projection_record: dict[str, object] = Field(default_factory=dict)
+
+
+class CommandOperationalDetailResponse(BaseModel):
+    result: CommandOperationalDetailResult
+
+
+class CommandOperationalRecentListItem(BaseModel):
+    command_id: UUID
+    command_family: CommandOperationalFamily
+    command_category: CommandCategory
+    command_status: CommandStatus
+    meter_id: UUID
+    command_template_code: str
+    latest_command_execution_attempt_id: UUID | None = None
+    latest_command_execution_attempt_status: CommandExecutionAttemptStatus | None = None
+    runtime_execution_record_id: str | None = None
+    family_specific_outcome_summary: dict[str, object] = Field(default_factory=dict)
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    execute_now_artifact_present: bool
+    created_at: datetime
+    latest_updated_at: datetime
+
+
+class CommandOperationalRecentListResponse(BaseModel):
+    total: int
+    limit: int
+    family_filter: CommandOperationalFamily | None = None
+    items: list[CommandOperationalRecentListItem]
+
+
+class MeterScopedCommandOperationalRecentListItem(CommandOperationalRecentListItem):
+    pass
+
+
+class MeterScopedCommandOperationalRecentListResponse(BaseModel):
+    meter_id: UUID
+    total: int
+    limit: int
+    family_filter: CommandOperationalFamily | None = None
+    items: list[MeterScopedCommandOperationalRecentListItem]
 
 
 class MeterCommandListResponse(BaseModel):

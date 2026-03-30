@@ -7,6 +7,11 @@ from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
 from app.modules.commands.profile_capture_execute_now import execute_profile_capture_now
+from app.modules.commands.operational_read_model import (
+    get_command_operational_detail,
+    list_recent_command_operational_items,
+    list_recent_meter_command_operational_items,
+)
 from app.modules.commands.relay_control_execute_now import execute_relay_control_now
 from app.modules.commands.relay_control_status_readback import (
     get_relay_control_execution_status,
@@ -35,6 +40,9 @@ from app.modules.commands.profile_capture_runtime_terminalization import (
 from app.modules.commands.schemas import (
     CaptureLoadProfileCommandCreate,
     CommandExecutionAttemptListResponse,
+    CommandOperationalDetailResponse,
+    CommandOperationalFamily,
+    CommandOperationalRecentListResponse,
     CommandTemplateCreate,
     CommandTemplateListResponse,
     CommandTemplateResponse,
@@ -43,6 +51,10 @@ from app.modules.commands.schemas import (
     MeterCommandDetailResponse,
     MeterCommandListResponse,
     MeterCommandResponse,
+    MeterScopedCommandOperationalRecentListResponse,
+    OnDemandReadAttemptBootstrapRequest,
+    OnDemandReadAttemptBootstrapResponse,
+    OnDemandReadCommandCreate,
     ProfileCaptureAttemptBootstrapRequest,
     ProfileCaptureAttemptBootstrapResponse,
     ProfileCaptureExecuteNowRequest,
@@ -69,11 +81,13 @@ from app.modules.commands.schemas import (
 )
 from app.modules.jobs.dependencies import require_internal_api_token
 from app.modules.commands.service import (
+    bootstrap_on_demand_read_command_attempt,
     bootstrap_profile_capture_command_attempt,
     bootstrap_relay_control_command_attempt,
     create_command_template,
     create_meter_command,
     submit_capture_load_profile_command,
+    submit_on_demand_read_command,
     submit_relay_control_command,
     get_meter_command,
     get_command_template,
@@ -232,6 +246,45 @@ def execute_profile_capture_now_endpoint(
 
 
 @meter_commands_router.post(
+    "/{meter_id}/commands/on-demand-read",
+    response_model=MeterCommandResponse,
+)
+def submit_on_demand_read_command_endpoint(
+    meter_id: uuid.UUID,
+    payload: OnDemandReadCommandCreate,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> MeterCommandResponse:
+    command = submit_on_demand_read_command(
+        session,
+        meter_id=meter_id,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    response = serialize_meter_command(command)
+    record_audit_event(
+        session,
+        action="commands.requests.create_on_demand_read",
+        resource_type="commands",
+        resource_id=command.id,
+        actor_user_id=current_user.id,
+        description="On-demand-read command requested.",
+        details={
+            "meter_id": str(meter_id),
+            "template_code": command.command_template.code,
+            "priority": command.priority.value,
+            "idempotency_key": command.idempotency_key,
+            "on_demand_read_operation": command.normalized_payload.get("on_demand_read_operation")
+            if isinstance(command.normalized_payload, dict)
+            else None,
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.post(
     "/{meter_id}/commands/relay-control",
     response_model=MeterCommandResponse,
 )
@@ -357,6 +410,42 @@ def list_meter_commands_endpoint(
     return list_meter_commands(session, meter_id=meter_id, limit=limit)
 
 
+@meter_commands_router.get(
+    "/{meter_id}/commands/recent",
+    response_model=MeterScopedCommandOperationalRecentListResponse,
+)
+def list_recent_meter_command_operational_items_endpoint(
+    meter_id: uuid.UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    family: CommandOperationalFamily | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> MeterScopedCommandOperationalRecentListResponse:
+    return list_recent_meter_command_operational_items(
+        session,
+        meter_id=meter_id,
+        limit=limit,
+        family_filter=family,
+    )
+
+
+@commands_router.get(
+    "/recent",
+    response_model=CommandOperationalRecentListResponse,
+)
+def list_recent_command_operational_items_endpoint(
+    limit: int = Query(default=20, ge=1, le=100),
+    family: CommandOperationalFamily | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> CommandOperationalRecentListResponse:
+    return list_recent_command_operational_items(
+        session,
+        limit=limit,
+        family_filter=family,
+    )
+
+
 @commands_router.get("/{command_id}", response_model=MeterCommandDetailResponse)
 def get_command_endpoint(
     command_id: uuid.UUID,
@@ -365,6 +454,18 @@ def get_command_endpoint(
 ) -> MeterCommandDetailResponse:
     command = get_meter_command(session, command_id)
     return serialize_meter_command_detail(command)
+
+
+@commands_router.get(
+    "/{command_id}/detail",
+    response_model=CommandOperationalDetailResponse,
+)
+def get_command_operational_detail_endpoint(
+    command_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> CommandOperationalDetailResponse:
+    return get_command_operational_detail(session, command_id=command_id)
 
 
 @commands_router.get(
@@ -398,6 +499,23 @@ def list_command_attempts_endpoint(
     _: User = Depends(require_permission("commands.read")),
 ) -> CommandExecutionAttemptListResponse:
     return list_command_attempts(session, command_id=command_id)
+
+
+@internal_commands_router.post(
+    "/{command_id}/bootstrap-on-demand-read-attempt",
+    response_model=OnDemandReadAttemptBootstrapResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def bootstrap_on_demand_read_attempt_endpoint(
+    command_id: uuid.UUID,
+    payload: OnDemandReadAttemptBootstrapRequest,
+    session: Session = Depends(get_db_session),
+) -> OnDemandReadAttemptBootstrapResponse:
+    return bootstrap_on_demand_read_command_attempt(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
 
 
 @internal_commands_router.post(
