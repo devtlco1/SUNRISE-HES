@@ -207,6 +207,12 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
             interpreted_result=interpreted_result,
             execution_audit_summary=execution_audit_summary,
         )
+        terminal_adapter_status = _project_gurux_relay_control_terminal_adapter_status(
+            request=request,
+            execution_phase_progression=execution_phase_progression,
+            execution_audit_summary=execution_audit_summary,
+            interpreted_result=interpreted_result,
+        )
 
         trace_references = request.trace_references
         return RuntimeRelayControlExecutionResult(
@@ -273,6 +279,9 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
                 "gurux_execution_phase_progression": execution_phase_progression.model_dump(
                     mode="json"
                 ),
+                "gurux_terminal_adapter_status": terminal_adapter_status.model_dump(
+                    mode="json"
+                ),
             },
             adapter_response_snapshot={
                 "adapter": self.adapter_key,
@@ -293,6 +302,9 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
                     mode="json"
                 ),
                 "gurux_execution_phase_progression": execution_phase_progression.model_dump(
+                    mode="json"
+                ),
+                "gurux_terminal_adapter_status": terminal_adapter_status.model_dump(
                     mode="json"
                 ),
             },
@@ -417,6 +429,20 @@ class GuruxRelayControlExecutionPhaseProgression(BaseModel):
     stopped_at_stage: str | None = None
     terminal_invocation_status: str | None = None
     terminal_execution_outcome: RuntimeCommandOutcome | None = None
+    correlation_id: str | None = None
+    request_id: str | None = None
+    session_identifier: str | None = None
+
+
+class GuruxRelayControlTerminalAdapterStatus(BaseModel):
+    gurux_feature_flag_enabled: bool
+    gurux_path_selected: bool
+    relay_operation: str | None = None
+    adapter_terminal_state: str
+    terminal_acknowledgment_class: str | None = None
+    final_execution_disposition: RuntimeCommandOutcome | None = None
+    terminal_invocation_status: str | None = None
+    stopped_at_stage: str | None = None
     correlation_id: str | None = None
     request_id: str | None = None
     session_identifier: str | None = None
@@ -908,6 +934,55 @@ def _project_gurux_relay_control_execution_phase_state(
         stopped_at_stage=execution_audit_summary.stopped_at_stage,
         terminal_invocation_status=execution_audit_summary.terminal_invocation_status,
         terminal_execution_outcome=execution_audit_summary.terminal_execution_outcome,
+        correlation_id=(
+            request.execution_context.correlation_id if request is not None else None
+        ),
+        request_id=request.execution_context.request_id if request is not None else None,
+        session_identifier=execution_audit_summary.session_identifier,
+    )
+
+
+def _project_gurux_relay_control_terminal_adapter_status(
+    *,
+    request: RuntimeRelayControlAdapterRequest | None,
+    execution_phase_progression: GuruxRelayControlExecutionPhaseProgression,
+    execution_audit_summary: GuruxRelayControlExecutionAuditSummary,
+    interpreted_result: GuruxRelayControlInterpretedResult | None,
+) -> GuruxRelayControlTerminalAdapterStatus:
+    if execution_phase_progression.stopped_at_stage in {"resolution", "validation", "normalization"}:
+        adapter_terminal_state = "blocked_pre_invocation"
+    elif execution_phase_progression.stopped_at_stage == "invocation":
+        adapter_terminal_state = "unavailable"
+    elif execution_phase_progression.stopped_at_stage == "interpretation":
+        adapter_terminal_state = "unusable_response"
+    elif interpreted_result is not None:
+        if (
+            interpreted_result.adapter_acknowledgment_state
+            == RuntimeRelayControlAdapterAcknowledgmentState.ACCEPTED
+        ):
+            adapter_terminal_state = "acknowledged"
+        elif execution_audit_summary.terminal_invocation_status == "unavailable":
+            adapter_terminal_state = "unavailable"
+        else:
+            adapter_terminal_state = "rejected"
+    else:
+        adapter_terminal_state = "blocked_mid_pipeline"
+
+    terminal_acknowledgment_class = (
+        interpreted_result.adapter_acknowledgment_state.value
+        if interpreted_result is not None
+        else None
+    )
+
+    return GuruxRelayControlTerminalAdapterStatus(
+        gurux_feature_flag_enabled=execution_phase_progression.gurux_feature_flag_enabled,
+        gurux_path_selected=execution_phase_progression.gurux_path_selected,
+        relay_operation=execution_phase_progression.relay_operation,
+        adapter_terminal_state=adapter_terminal_state,
+        terminal_acknowledgment_class=terminal_acknowledgment_class,
+        final_execution_disposition=execution_phase_progression.terminal_execution_outcome,
+        terminal_invocation_status=execution_phase_progression.terminal_invocation_status,
+        stopped_at_stage=execution_phase_progression.stopped_at_stage,
         correlation_id=(
             request.execution_context.correlation_id if request is not None else None
         ),

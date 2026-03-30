@@ -21,6 +21,7 @@ from app.runtime.adapters.dlms_cosem import (
     _interpret_gurux_relay_control_stub_response,
     _map_relay_control_operation_to_gurux_definition,
     _normalize_gurux_relay_control_request,
+    _project_gurux_relay_control_terminal_adapter_status,
     _project_gurux_relay_control_execution_phase_state,
     _resolve_gurux_relay_control_transport_profile,
     _validate_gurux_relay_control_target_object,
@@ -15340,6 +15341,14 @@ def test_runtime_relay_control_adapter_executes_for_valid_disconnect_chain(
         payload["result"]["adapter_result_summary"]["gurux_execution_phase_progression"]["interpreter_stage_state"]
         == "accepted"
     )
+    assert (
+        payload["result"]["adapter_result_summary"]["gurux_terminal_adapter_status"]["adapter_terminal_state"]
+        == "acknowledged"
+    )
+    assert (
+        payload["result"]["adapter_result_summary"]["gurux_terminal_adapter_status"]["terminal_acknowledgment_class"]
+        == "accepted"
+    )
 
     attempt = db_session.get(CommandExecutionAttempt, uuid.UUID(attempt_id))
     meter_command = db_session.get(MeterCommand, uuid.UUID(command_id))
@@ -15464,6 +15473,10 @@ def test_runtime_relay_control_adapter_executes_for_valid_reconnect_chain(
     assert (
         payload["result"]["adapter_result_summary"]["gurux_execution_phase_progression"]["stopped_at_stage"]
         is None
+    )
+    assert (
+        payload["result"]["adapter_result_summary"]["gurux_terminal_adapter_status"]["adapter_terminal_state"]
+        == "acknowledged"
     )
 
 
@@ -16013,6 +16026,216 @@ def test_runtime_relay_control_gurux_execution_phase_progression_handles_partial
     assert complete_progression.terminal_execution_outcome == RuntimeCommandOutcome.SUCCEEDED
 
 
+def test_runtime_relay_control_gurux_terminal_adapter_status_handles_partial_stages() -> None:
+    request = RuntimeRelayControlAdapterRequest(
+        adapter_key="gurux-dlms-bridge",
+        protocol_family=ProtocolFamily.DLMS_COSEM,
+        operation=RuntimeRelayControlOperation.DISCONNECT,
+        command_category=CommandCategory.REMOTE_DISCONNECT,
+        execution_context=RuntimeExecutionContext(
+            command_id=uuid.uuid4(),
+            job_run_id=uuid.uuid4(),
+            command_attempt_id=uuid.uuid4(),
+            correlation_id="corr-1",
+            worker_identifier="worker-runtime-1",
+            request_id="req-1",
+            triggered_at=datetime.now(UTC),
+        ),
+        target=MeterRuntimeTarget(
+            meter_id=uuid.uuid4(),
+            serial_number="meter-001",
+            manufacturer_code="GURUX",
+            meter_model_code="DLMS-1",
+            meter_model_name="DLMS Test",
+            endpoint_assignment_id=uuid.uuid4(),
+            endpoint_id=uuid.uuid4(),
+            endpoint_code="endpoint-001",
+            protocol_association_profile_id=uuid.uuid4(),
+        ),
+        transport=RuntimeTransportConfig(
+            endpoint_transport_type=ConnectivityTransportType.TCP_IP,
+            host="127.0.0.1",
+            port=4059,
+        ),
+        security=RuntimeSecurityMaterialRefs(
+            authentication_mode=AssociationAuthenticationMode.LOW,
+            password_secret_ref="secret://relay/password",
+        ),
+        dispatch_envelope_record_id="dispatch-envelope-1",
+        trace_references={"session_identifier": "session-1"},
+        lineage=RuntimeExecutionSessionLineage(
+            dispatch_request_identity="dispatch-identity-1",
+            queue_message_id="queue-message-1",
+            claim_token="claim-token-1",
+            intended_worker_path="runtime-relay-control",
+        ),
+    )
+    operation = _map_relay_control_operation_to_gurux_definition(
+        RuntimeRelayControlOperation.DISCONNECT
+    )
+    resolved_transport_profile = _resolve_gurux_relay_control_transport_profile(
+        request,
+        operation,
+    )
+    validated_target = _validate_gurux_relay_control_target_object(
+        request,
+        resolved_transport_profile,
+    )
+    normalized_request = _normalize_gurux_relay_control_request(
+        request,
+        resolved_transport_profile,
+        validated_target,
+    )
+    invocation_response = GuruxRelayControlInvocationStubResponse(
+        transport_adapter="gurux_stub",
+        invocation_status="acknowledged",
+        acknowledged=True,
+        invocation_reference="gurux-relay-invocation:test:remote_disconnect",
+        request_shape={"method_name": "remote_disconnect"},
+        response_shape={"invocation_status": "acknowledged"},
+    )
+    interpreted_result = _interpret_gurux_relay_control_stub_response(
+        invocation_response,
+        requested_outcome=RuntimeCommandOutcome.SUCCEEDED,
+        error_detail=None,
+    )
+
+    resolution_audit = _build_gurux_relay_control_execution_audit_summary(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=None,
+        validated_target=None,
+        normalized_request=None,
+        invocation_response=None,
+        interpreted_result=None,
+    )
+    resolution_progression = _project_gurux_relay_control_execution_phase_state(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=None,
+        validated_target=None,
+        normalized_request=None,
+        invocation_response=None,
+        interpreted_result=None,
+        execution_audit_summary=resolution_audit,
+    )
+    validation_audit = _build_gurux_relay_control_execution_audit_summary(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=resolved_transport_profile,
+        validated_target=None,
+        normalized_request=None,
+        invocation_response=None,
+        interpreted_result=None,
+    )
+    validation_progression = _project_gurux_relay_control_execution_phase_state(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=resolved_transport_profile,
+        validated_target=None,
+        normalized_request=None,
+        invocation_response=None,
+        interpreted_result=None,
+        execution_audit_summary=validation_audit,
+    )
+    invocation_audit = _build_gurux_relay_control_execution_audit_summary(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=resolved_transport_profile,
+        validated_target=validated_target,
+        normalized_request=normalized_request,
+        invocation_response=None,
+        interpreted_result=None,
+    )
+    invocation_progression = _project_gurux_relay_control_execution_phase_state(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=resolved_transport_profile,
+        validated_target=validated_target,
+        normalized_request=normalized_request,
+        invocation_response=None,
+        interpreted_result=None,
+        execution_audit_summary=invocation_audit,
+    )
+    interpretation_audit = _build_gurux_relay_control_execution_audit_summary(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=resolved_transport_profile,
+        validated_target=validated_target,
+        normalized_request=normalized_request,
+        invocation_response=invocation_response,
+        interpreted_result=None,
+    )
+    interpretation_progression = _project_gurux_relay_control_execution_phase_state(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=resolved_transport_profile,
+        validated_target=validated_target,
+        normalized_request=normalized_request,
+        invocation_response=invocation_response,
+        interpreted_result=None,
+        execution_audit_summary=interpretation_audit,
+    )
+    complete_audit = _build_gurux_relay_control_execution_audit_summary(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=resolved_transport_profile,
+        validated_target=validated_target,
+        normalized_request=normalized_request,
+        invocation_response=invocation_response,
+        interpreted_result=interpreted_result,
+    )
+    complete_progression = _project_gurux_relay_control_execution_phase_state(
+        request=request,
+        gurux_operation=operation,
+        resolved_transport_profile=resolved_transport_profile,
+        validated_target=validated_target,
+        normalized_request=normalized_request,
+        invocation_response=invocation_response,
+        interpreted_result=interpreted_result,
+        execution_audit_summary=complete_audit,
+    )
+
+    resolution_status = _project_gurux_relay_control_terminal_adapter_status(
+        request=request,
+        execution_phase_progression=resolution_progression,
+        execution_audit_summary=resolution_audit,
+        interpreted_result=None,
+    )
+    validation_status = _project_gurux_relay_control_terminal_adapter_status(
+        request=request,
+        execution_phase_progression=validation_progression,
+        execution_audit_summary=validation_audit,
+        interpreted_result=None,
+    )
+    invocation_status = _project_gurux_relay_control_terminal_adapter_status(
+        request=request,
+        execution_phase_progression=invocation_progression,
+        execution_audit_summary=invocation_audit,
+        interpreted_result=None,
+    )
+    interpretation_status = _project_gurux_relay_control_terminal_adapter_status(
+        request=request,
+        execution_phase_progression=interpretation_progression,
+        execution_audit_summary=interpretation_audit,
+        interpreted_result=None,
+    )
+    complete_status = _project_gurux_relay_control_terminal_adapter_status(
+        request=request,
+        execution_phase_progression=complete_progression,
+        execution_audit_summary=complete_audit,
+        interpreted_result=interpreted_result,
+    )
+
+    assert resolution_status.adapter_terminal_state == "blocked_pre_invocation"
+    assert validation_status.adapter_terminal_state == "blocked_pre_invocation"
+    assert invocation_status.adapter_terminal_state == "unavailable"
+    assert interpretation_status.adapter_terminal_state == "unusable_response"
+    assert complete_status.adapter_terminal_state == "acknowledged"
+    assert complete_status.terminal_acknowledgment_class == "accepted"
+    assert complete_status.final_execution_disposition == RuntimeCommandOutcome.SUCCEEDED
+
+
 def test_runtime_relay_control_adapter_interprets_rejected_stub_outcome(
     client,
     db_session: Session,
@@ -16043,6 +16266,10 @@ def test_runtime_relay_control_adapter_interprets_rejected_stub_outcome(
     assert payload["result"]["protocol_stage_outcome"] == "relay_operation_failed"
     assert payload["result"]["execution_outcome"] == "failed"
     assert payload["result"]["error_category"] == "adapter_rejected"
+    assert (
+        payload["result"]["adapter_result_summary"]["gurux_terminal_adapter_status"]["adapter_terminal_state"]
+        == "rejected"
+    )
     assert (
         payload["result"]["adapter_result_summary"]["gurux_interpreter"]["interpreter_summary"]
         .lower()
