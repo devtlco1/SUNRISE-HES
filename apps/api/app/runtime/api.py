@@ -87,6 +87,8 @@ from app.runtime.schemas import (
     RuntimeDeliveryContractBridgeResponse,
     RuntimeDispatchEnvelopeBridgeRequest,
     RuntimeDispatchEnvelopeBridgeResponse,
+    RuntimeOnDemandReadExecutionRequest,
+    RuntimeOnDemandReadExecutionResponse,
     RuntimeProfileReadExecutionRequest,
     RuntimeProfileReadExecutionResponse,
     RuntimeRelayControlExecutionRequest,
@@ -119,6 +121,7 @@ from app.runtime.services import (
     bridge_runtime_publication_contract_to_externalization_envelope,
     bridge_runtime_externalization_envelope_to_delivery_contract,
     bridge_runtime_delivery_contract_to_dispatch_envelope,
+    execute_runtime_on_demand_read_adapter,
     execute_runtime_profile_read_adapter,
     execute_runtime_relay_control_adapter,
     bootstrap_redis_consumer_group,
@@ -224,6 +227,23 @@ def heartbeat_runtime_execution_session_endpoint(
     session: Session = Depends(get_db_session),
 ) -> RuntimeExecutionSessionResponse:
     return heartbeat_runtime_execution_session(
+        session,
+        attempt_id=attempt_id,
+        payload=payload,
+    )
+
+
+@internal_runtime_attempts_router.post(
+    "/{attempt_id}/execute-on-demand-read-adapter",
+    response_model=RuntimeOnDemandReadExecutionResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def execute_runtime_on_demand_read_adapter_endpoint(
+    attempt_id: uuid.UUID,
+    payload: RuntimeOnDemandReadExecutionRequest,
+    session: Session = Depends(get_db_session),
+) -> RuntimeOnDemandReadExecutionResponse:
+    return execute_runtime_on_demand_read_adapter(
         session,
         attempt_id=attempt_id,
         payload=payload,

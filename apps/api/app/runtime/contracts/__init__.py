@@ -315,6 +315,15 @@ from app.runtime.contracts.runtime_profile_read import (
     RuntimeProfileReadOperation,
     RuntimeProfileReadProtocolStageOutcome,
 )
+from app.runtime.contracts.runtime_on_demand_read import (
+    RuntimeOnDemandReadAdapterAcknowledgmentState,
+    RuntimeOnDemandReadAdapterRequest,
+    RuntimeOnDemandReadErrorCategory,
+    RuntimeOnDemandReadExecutionResult,
+    RuntimeOnDemandReadExecutionStatus,
+    RuntimeOnDemandReadOperation,
+    RuntimeOnDemandReadProtocolStageOutcome,
+)
 from app.runtime.contracts.runtime_execution_invocation import (
     RuntimeExecutionInvocationGateResult,
     RuntimeExecutionInvocationLineage,
@@ -644,6 +653,13 @@ __all__ = [
     "RuntimeRelayControlExecutionStatus",
     "RuntimeRelayControlOperation",
     "RuntimeRelayControlProtocolStageOutcome",
+    "RuntimeOnDemandReadAdapterAcknowledgmentState",
+    "RuntimeOnDemandReadAdapterRequest",
+    "RuntimeOnDemandReadErrorCategory",
+    "RuntimeOnDemandReadExecutionResult",
+    "RuntimeOnDemandReadExecutionStatus",
+    "RuntimeOnDemandReadOperation",
+    "RuntimeOnDemandReadProtocolStageOutcome",
     "RuntimeProfileReadAdapterAcknowledgmentState",
     "RuntimeProfileReadAdapterRequest",
     "RuntimeCaptureLoadProfileExecutionCategory",

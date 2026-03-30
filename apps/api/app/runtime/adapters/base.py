@@ -8,6 +8,8 @@ from app.runtime.contracts import (
     ProtocolExecutionPlan,
     RuntimeCommandRequest,
     RuntimeCommandResult,
+    RuntimeOnDemandReadAdapterRequest,
+    RuntimeOnDemandReadExecutionResult,
     RuntimeProfileReadAdapterRequest,
     RuntimeProfileReadExecutionResult,
     RuntimeRelayControlAdapterRequest,
@@ -38,6 +40,16 @@ class RuntimeAdapter(Protocol):
         self,
         request: RuntimeProfileReadAdapterRequest,
     ) -> RuntimeProfileReadExecutionResult: ...
+
+    def supports_on_demand_read(
+        self,
+        request: RuntimeOnDemandReadAdapterRequest,
+    ) -> bool: ...
+
+    def execute_on_demand_read(
+        self,
+        request: RuntimeOnDemandReadAdapterRequest,
+    ) -> RuntimeOnDemandReadExecutionResult: ...
 
 
 class BaseRuntimeAdapter(ABC):
@@ -74,4 +86,18 @@ class BaseRuntimeAdapter(ABC):
     ) -> RuntimeProfileReadExecutionResult:
         raise NotImplementedError(
             "Profile-read execution is not implemented for this adapter."
+        )
+
+    def supports_on_demand_read(
+        self,
+        request: RuntimeOnDemandReadAdapterRequest,
+    ) -> bool:
+        return False
+
+    def execute_on_demand_read(
+        self,
+        request: RuntimeOnDemandReadAdapterRequest,
+    ) -> RuntimeOnDemandReadExecutionResult:
+        raise NotImplementedError(
+            "On-demand-read execution is not implemented for this adapter."
         )

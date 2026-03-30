@@ -7,10 +7,17 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.modules.connectivity.enums import ConnectivitySessionStatus, ProtocolFamily
 from app.modules.events.enums import EventSeverity, EventState
-from app.modules.readings.enums import ReadingBatchStatus, ReadingSourceType, ReadingType
+from app.modules.readings.enums import ReadingBatchStatus, ReadingSourceType, ReadingType, SnapshotType
 from app.runtime.adapters.base import BaseRuntimeAdapter
 from app.runtime.contracts import (
     ProtocolExecutionPlan,
+    RuntimeOnDemandReadAdapterAcknowledgmentState,
+    RuntimeOnDemandReadAdapterRequest,
+    RuntimeOnDemandReadErrorCategory,
+    RuntimeOnDemandReadExecutionResult,
+    RuntimeOnDemandReadExecutionStatus,
+    RuntimeOnDemandReadOperation,
+    RuntimeOnDemandReadProtocolStageOutcome,
     RuntimeRelayControlAdapterAcknowledgmentState,
     RuntimeRelayControlAdapterRequest,
     RuntimeRelayControlErrorCategory,
@@ -54,6 +61,9 @@ class DlmsCosemRuntimeAdapter(BaseRuntimeAdapter):
 
     def supports_profile_read(self, request: RuntimeProfileReadAdapterRequest) -> bool:
         return request.operation == RuntimeProfileReadOperation.CAPTURE_LOAD_PROFILE
+
+    def supports_on_demand_read(self, request: RuntimeOnDemandReadAdapterRequest) -> bool:
+        return request.operation == RuntimeOnDemandReadOperation.READ_BILLING_SNAPSHOT
 
 
 class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
@@ -325,6 +335,121 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
             ),
             already_recorded=False,
             summary=interpreted_result.interpreter_summary,
+            lineage=request.lineage,
+        )
+
+    def execute_on_demand_read(
+        self,
+        request: RuntimeOnDemandReadAdapterRequest,
+    ) -> RuntimeOnDemandReadExecutionResult:
+        now = datetime.now(UTC)
+        payload = request.normalized_payload or request.request_payload or {}
+        mock_execution = payload.get("mock_execution", {}) if isinstance(payload, dict) else {}
+        requested_outcome = RuntimeCommandOutcome(
+            mock_execution.get("outcome", RuntimeCommandOutcome.SUCCEEDED.value)
+        )
+        explicit_snapshot = mock_execution.get("register_snapshot")
+        if isinstance(explicit_snapshot, dict):
+            register_snapshot = RuntimeRegisterSnapshotPayload.model_validate(explicit_snapshot)
+        else:
+            register_snapshot = RuntimeRegisterSnapshotPayload(
+                snapshot_type=SnapshotType.BILLING,
+                captured_at=now,
+                payload={
+                    "1.0.1.8.0.255": mock_execution.get("billing_import_wh", "123.456"),
+                    "1.0.2.8.0.255": mock_execution.get("billing_export_wh", "0.000"),
+                },
+            )
+        if requested_outcome == RuntimeCommandOutcome.SUCCEEDED:
+            adapter_acknowledgment_state = (
+                RuntimeOnDemandReadAdapterAcknowledgmentState.ACCEPTED
+            )
+            protocol_stage_outcome = (
+                RuntimeOnDemandReadProtocolStageOutcome.BILLING_SNAPSHOT_COMPLETED
+            )
+            error_category = None
+            error_detail = None
+            summary = "ON_DEMAND_READ billing snapshot completed through the real adapter contract seam."
+        else:
+            adapter_acknowledgment_state = (
+                RuntimeOnDemandReadAdapterAcknowledgmentState.REJECTED
+            )
+            protocol_stage_outcome = (
+                RuntimeOnDemandReadProtocolStageOutcome.BILLING_SNAPSHOT_FAILED
+            )
+            error_category = RuntimeOnDemandReadErrorCategory.EXECUTION_FAILED
+            error_detail = mock_execution.get("error_detail") or mock_execution.get("error_message")
+            summary = "ON_DEMAND_READ billing snapshot failed through the real adapter contract seam."
+
+        trace_references = request.trace_references
+        return RuntimeOnDemandReadExecutionResult(
+            status=RuntimeOnDemandReadExecutionStatus.COMPLETED,
+            on_demand_read_execution_record_id=(
+                "runtime-on-demand-read:"
+                f"{request.execution_context.command_attempt_id}:{request.execution_context.request_id or request.execution_context.command_id}"
+            ),
+            session_identifier=str(trace_references["session_identifier"]),
+            dispatch_envelope_record_id=request.dispatch_envelope_record_id,
+            delivery_contract_record_id=str(trace_references["delivery_contract_record_id"]),
+            envelope_record_id=str(trace_references["envelope_record_id"]),
+            publication_contract_record_id=str(
+                trace_references["publication_contract_record_id"]
+            ),
+            attestation_record_id=str(trace_references["attestation_record_id"]),
+            settlement_record_id=str(trace_references["settlement_record_id"]),
+            reconciliation_record_id=str(trace_references["reconciliation_record_id"]),
+            interpretation_record_id=str(trace_references["interpretation_record_id"]),
+            observation_record_id=str(trace_references["observation_record_id"]),
+            invocation_result_record_id=str(trace_references["invocation_result_record_id"]),
+            dispatch_request_record_id=str(trace_references["dispatch_request_record_id"]),
+            selection_record_id=str(trace_references["selection_record_id"]),
+            intent_record_id=str(trace_references["intent_record_id"]),
+            closure_record_id=str(trace_references["closure_record_id"]),
+            materialization_record_id=str(trace_references["materialization_record_id"]),
+            post_processing_record_id=str(trace_references["post_processing_record_id"]),
+            disposition_record_id=str(trace_references["disposition_record_id"]),
+            outcome_record_id=str(trace_references["outcome_record_id"]),
+            executor_identifier=str(request.execution_context.worker_identifier),
+            job_run_id=str(request.execution_context.job_run_id),
+            related_command_id=str(request.execution_context.command_id),
+            command_attempt_id=str(request.execution_context.command_attempt_id),
+            adapter_key=self.adapter_key,
+            protocol_family=request.protocol_family,
+            on_demand_read_operation=request.operation,
+            snapshot_type=SnapshotType.BILLING,
+            command_category=request.command_category,
+            adapter_acknowledgment_state=adapter_acknowledgment_state,
+            protocol_stage_outcome=protocol_stage_outcome,
+            execution_outcome=requested_outcome,
+            correlation_id=request.execution_context.correlation_id,
+            request_id=request.execution_context.request_id,
+            execution_started_at=now.isoformat(),
+            execution_finished_at=now.isoformat(),
+            register_snapshot=register_snapshot,
+            adapter_result_summary={
+                "adapter_key": self.adapter_key,
+                "operation": request.operation.value,
+                "protocol_family": request.protocol_family.value,
+                "vertical_slice": "on_demand_read",
+                "snapshot_type": SnapshotType.BILLING.value,
+                "register_snapshot_present": register_snapshot is not None,
+            },
+            adapter_response_snapshot={
+                "adapter": self.adapter_key,
+                "operation": request.operation.value,
+                "target_meter_id": str(request.target.meter_id),
+                "endpoint_id": str(request.target.endpoint_id),
+                "protocol_profile_id": str(request.target.protocol_association_profile_id),
+                "snapshot_type": SnapshotType.BILLING.value,
+                "register_snapshot": register_snapshot.model_dump(mode="json"),
+            },
+            error_category=error_category,
+            error_detail=error_detail,
+            on_demand_read_recorded_by_executor_identifier=str(
+                request.execution_context.worker_identifier
+            ),
+            already_recorded=False,
+            summary=summary,
             lineage=request.lineage,
         )
 
