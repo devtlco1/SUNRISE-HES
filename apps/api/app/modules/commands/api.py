@@ -10,6 +10,9 @@ from app.modules.commands.profile_capture_execute_now import execute_profile_cap
 from app.modules.commands.profile_capture_execution_orchestration import (
     orchestrate_profile_capture_command_execution,
 )
+from app.modules.commands.profile_capture_status_readback import (
+    get_profile_capture_execution_status,
+)
 from app.modules.commands.profile_capture_runtime_handoff import (
     handoff_profile_capture_command_to_runtime,
 )
@@ -31,12 +34,14 @@ from app.modules.commands.schemas import (
     ProfileCaptureAttemptBootstrapResponse,
     ProfileCaptureExecuteNowRequest,
     ProfileCaptureExecuteNowResponse,
+    ProfileCaptureExecutionStatusResponse,
     ProfileCaptureExecutionOrchestrationRequest,
     ProfileCaptureExecutionOrchestrationResponse,
     ProfileCaptureRuntimeHandoffRequest,
     ProfileCaptureRuntimeHandoffResponse,
     ProfileCaptureRuntimeTerminalizationRequest,
     ProfileCaptureRuntimeTerminalizationResponse,
+    RelayControlCommandCreate,
 )
 from app.modules.jobs.dependencies import require_internal_api_token
 from app.modules.commands.service import (
@@ -44,6 +49,7 @@ from app.modules.commands.service import (
     create_command_template,
     create_meter_command,
     submit_capture_load_profile_command,
+    submit_relay_control_command,
     get_meter_command,
     get_command_template,
     list_command_attempts,
@@ -201,6 +207,45 @@ def execute_profile_capture_now_endpoint(
 
 
 @meter_commands_router.post(
+    "/{meter_id}/commands/relay-control",
+    response_model=MeterCommandResponse,
+)
+def submit_relay_control_command_endpoint(
+    meter_id: uuid.UUID,
+    payload: RelayControlCommandCreate,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> MeterCommandResponse:
+    command = submit_relay_control_command(
+        session,
+        meter_id=meter_id,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    response = serialize_meter_command(command)
+    record_audit_event(
+        session,
+        action="commands.requests.create_relay_control",
+        resource_type="commands",
+        resource_id=command.id,
+        actor_user_id=current_user.id,
+        description="Relay-control command requested.",
+        details={
+            "meter_id": str(meter_id),
+            "template_code": command.command_template.code,
+            "priority": command.priority.value,
+            "idempotency_key": command.idempotency_key,
+            "relay_control_operation": command.normalized_payload.get("relay_control_operation")
+            if isinstance(command.normalized_payload, dict)
+            else None,
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.post(
     "/{meter_id}/commands",
     response_model=MeterCommandResponse,
     status_code=status.HTTP_201_CREATED,
@@ -255,6 +300,18 @@ def get_command_endpoint(
 ) -> MeterCommandDetailResponse:
     command = get_meter_command(session, command_id)
     return serialize_meter_command_detail(command)
+
+
+@commands_router.get(
+    "/{command_id}/profile-capture-status",
+    response_model=ProfileCaptureExecutionStatusResponse,
+)
+def get_profile_capture_status_endpoint(
+    command_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> ProfileCaptureExecutionStatusResponse:
+    return get_profile_capture_execution_status(session, command_id=command_id)
 
 
 @commands_router.get("/{command_id}/attempts", response_model=CommandExecutionAttemptListResponse)

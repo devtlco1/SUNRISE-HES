@@ -11,6 +11,7 @@ from app.modules.commands.enums import (
     CommandPriority,
     CommandStatus,
     CommandTargetScope,
+    RelayControlCommandOperation,
 )
 from app.modules.jobs.enums import JobRunStatus
 
@@ -74,6 +75,20 @@ class CaptureLoadProfileCommandCreate(BaseModel):
     channel_ids: list[UUID] = Field(min_length=1)
     interval_start: datetime
     interval_end: datetime
+    priority: CommandPriority = CommandPriority.NORMAL
+    scheduled_at: datetime | None = None
+    correlation_id: str | None = Field(default=None, max_length=128)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+    notes: str | None = None
+
+
+class RelayControlCommandCreate(BaseModel):
+    command_template_id: UUID
+    relay_operation: RelayControlCommandOperation
+    endpoint_assignment_id: UUID
+    protocol_association_profile_id: UUID
+    relay_target_interface_class: str = Field(default="disconnect_control", min_length=1, max_length=64)
+    relay_target_obis_code: str = Field(default="0.0.96.3.10.255", min_length=1, max_length=64)
     priority: CommandPriority = CommandPriority.NORMAL
     scheduled_at: datetime | None = None
     correlation_id: str | None = Field(default=None, max_length=128)
@@ -222,6 +237,25 @@ class ProfileCaptureExecuteNowResponse(BaseModel):
     result: ProfileCaptureExecuteNowResult
     related_command: "MeterCommandResponse"
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
+class ProfileCaptureExecutionStatusResult(BaseModel):
+    command_id: UUID
+    command_status: CommandStatus
+    command_execution_attempt_id: UUID | None = None
+    runtime_profile_read_execution_record_id: str | None = None
+    terminal_status_category: str | None = None
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    execute_now_artifact_present: bool
+    reused_existing_execute_now: bool | None = None
+    reused_existing_orchestration: bool | None = None
+    reused_existing_terminalization: bool | None = None
+    status_record: dict[str, object]
+
+
+class ProfileCaptureExecutionStatusResponse(BaseModel):
+    result: ProfileCaptureExecutionStatusResult
 
 
 class CommandExecutionAttemptResponse(BaseModel):

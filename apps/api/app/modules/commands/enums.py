@@ -41,3 +41,8 @@ class CommandPriority(StringEnum):
     NORMAL = "normal"
     HIGH = "high"
     URGENT = "urgent"
+
+
+class RelayControlCommandOperation(StringEnum):
+    DISCONNECT = "disconnect"
+    RECONNECT = "reconnect"

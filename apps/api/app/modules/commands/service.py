@@ -8,7 +8,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.commands.models import CommandExecutionAttempt, CommandTemplate, MeterCommand
-from app.modules.commands.enums import CommandCategory, CommandExecutionAttemptStatus, CommandStatus
+from app.modules.commands.enums import (
+    CommandCategory,
+    CommandExecutionAttemptStatus,
+    CommandStatus,
+    RelayControlCommandOperation,
+)
 from app.modules.commands.schemas import (
     CaptureLoadProfileCommandCreate,
     CommandExecutionAttemptListResponse,
@@ -24,6 +29,7 @@ from app.modules.commands.schemas import (
     ProfileCaptureAttemptBootstrapRequest,
     ProfileCaptureAttemptBootstrapResponse,
     ProfileCaptureAttemptBootstrapResult,
+    RelayControlCommandCreate,
 )
 from app.modules.connectivity.enums import EndpointAssignmentStatus, ProtocolFamily
 from app.modules.connectivity.models import MeterEndpointAssignment, ProtocolAssociationProfile
@@ -286,6 +292,157 @@ def submit_capture_load_profile_command(
         requested_by_user_id=requested_by_user_id,
     )
     return command
+
+
+RELAY_CONTROL_TARGET_INTERFACE_CLASS = "disconnect_control"
+RELAY_CONTROL_TARGET_CLASS_ID = 70
+RELAY_CONTROL_TARGET_OBIS_CODE = "0.0.96.3.10.255"
+
+
+def submit_relay_control_command(
+    session: Session,
+    *,
+    meter_id: uuid.UUID,
+    payload: RelayControlCommandCreate,
+    requested_by_user_id: uuid.UUID | None,
+) -> MeterCommand:
+    meter = session.get(Meter, meter_id)
+    if meter is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meter not found.")
+
+    template = get_command_template(session, payload.command_template_id)
+    expected_category = _resolve_relay_control_category(payload.relay_operation)
+    if template.category != expected_category:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Selected template is not compatible with the relay-control command submission slice.",
+        )
+    if not template.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot request a command from an inactive template.",
+        )
+
+    if payload.idempotency_key:
+        existing = session.scalar(
+            select(MeterCommand).where(MeterCommand.idempotency_key == payload.idempotency_key)
+        )
+        if existing is not None:
+            if existing.meter_id != meter_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A command with that idempotency key already exists for another meter.",
+                )
+            existing = get_meter_command(session, existing.id)
+            if existing.command_template.category != expected_category:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A command with that idempotency key already exists for another command policy.",
+                )
+            return existing
+
+    assignment = session.get(MeterEndpointAssignment, payload.endpoint_assignment_id)
+    if assignment is None or assignment.meter_id != meter_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Endpoint assignment is invalid for the selected meter.",
+        )
+    if assignment.assignment_status != EndpointAssignmentStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Endpoint assignment is not active for the selected meter.",
+        )
+
+    profile = session.get(ProtocolAssociationProfile, payload.protocol_association_profile_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Protocol association profile not found.",
+        )
+    if not profile.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Protocol association profile is not active.",
+        )
+    if profile.protocol_family != ProtocolFamily.DLMS_COSEM:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Protocol association profile is not compatible with the relay-control command submission slice.",
+        )
+
+    _validate_relay_control_target(payload)
+    normalized_payload = _normalize_relay_control_submission(payload)
+    command = create_meter_command(
+        session,
+        meter_id=meter_id,
+        payload=MeterCommandCreate(
+            command_template_id=payload.command_template_id,
+            priority=payload.priority,
+            scheduled_at=payload.scheduled_at,
+            correlation_id=payload.correlation_id,
+            idempotency_key=payload.idempotency_key,
+            request_payload={
+                "relay_control_operation": payload.relay_operation.value,
+                "relay_control": {
+                    "target_interface_class": payload.relay_target_interface_class,
+                    "target_obis_code": payload.relay_target_obis_code,
+                },
+            },
+            normalized_payload=normalized_payload,
+            endpoint_assignment_id=payload.endpoint_assignment_id,
+            protocol_association_profile_id=payload.protocol_association_profile_id,
+            notes=payload.notes,
+        ),
+        requested_by_user_id=requested_by_user_id,
+    )
+    return command
+
+
+def _resolve_relay_control_category(
+    operation: RelayControlCommandOperation,
+) -> CommandCategory:
+    if operation == RelayControlCommandOperation.DISCONNECT:
+        return CommandCategory.REMOTE_DISCONNECT
+    return CommandCategory.REMOTE_RECONNECT
+
+
+def _validate_relay_control_target(payload: RelayControlCommandCreate) -> None:
+    if payload.relay_target_interface_class != RELAY_CONTROL_TARGET_INTERFACE_CLASS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command target assumptions are not compatible with the bounded relay-control slice.",
+        )
+    if payload.relay_target_obis_code != RELAY_CONTROL_TARGET_OBIS_CODE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command target assumptions are not compatible with the bounded relay-control slice.",
+        )
+
+
+def _normalize_relay_control_submission(
+    payload: RelayControlCommandCreate,
+) -> dict[str, object]:
+    expected_category = _resolve_relay_control_category(payload.relay_operation)
+    return {
+        "relay_control_operation": payload.relay_operation.value,
+        "relay_control": {
+            "operation": payload.relay_operation.value,
+            "target_object": {
+                "interface_class": payload.relay_target_interface_class,
+                "class_id": RELAY_CONTROL_TARGET_CLASS_ID,
+                "obis_code": payload.relay_target_obis_code,
+                "method_name": (
+                    "remote_disconnect"
+                    if payload.relay_operation == RelayControlCommandOperation.DISCONNECT
+                    else "remote_reconnect"
+                ),
+                "method_index": (
+                    1 if payload.relay_operation == RelayControlCommandOperation.DISCONNECT else 2
+                ),
+            },
+            "command_category": expected_category.value,
+        },
+    }
 
 
 def _normalize_capture_load_profile_submission(
