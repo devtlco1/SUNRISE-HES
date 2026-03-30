@@ -96,6 +96,65 @@ class RelayControlCommandCreate(BaseModel):
     notes: str | None = None
 
 
+class RelayControlAttemptBootstrapRequest(BaseModel):
+    bootstrap_identifier: str = Field(min_length=1, max_length=128)
+    bootstrap_reason: str | None = Field(default=None, max_length=255)
+
+
+class RelayControlAttemptBootstrapResult(BaseModel):
+    bootstrap_status: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    reused_existing_attempt: bool
+    bootstrapped_at: datetime
+    bootstrap_identifier: str
+    correlation_id: str | None = None
+    endpoint_assignment_id: UUID
+    endpoint_id: UUID
+    protocol_association_profile_id: UUID
+    relay_control_operation: RelayControlCommandOperation
+    bootstrap_record: dict[str, object]
+
+
+class RelayControlAttemptBootstrapResponse(BaseModel):
+    result: RelayControlAttemptBootstrapResult
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
+class RelayControlRuntimeHandoffRequest(BaseModel):
+    handoff_identifier: str = Field(min_length=1, max_length=128)
+    executor_identifier: str = Field(min_length=1, max_length=128)
+    handoff_reason: str | None = Field(default=None, max_length=255)
+    lease_seconds: int = Field(default=300, ge=5, le=3600)
+    session_timeout_seconds: int = Field(default=300, ge=5, le=3600)
+
+
+class RelayControlRuntimeHandoffResult(BaseModel):
+    handoff_status: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    job_run_id: UUID
+    handoff_identifier: str
+    executor_identifier: str
+    bootstrap_identifier: str
+    relay_control_operation: RelayControlCommandOperation
+    handed_off_at: datetime
+    session_identifier: str
+    runtime_relay_control_execution_present: bool
+    runtime_relay_control_execution_record_id: str | None = None
+    reused_existing_handoff: bool
+    reused_existing_runtime_execution: bool
+    handoff_record: dict[str, object]
+
+
+class RelayControlRuntimeHandoffResponse(BaseModel):
+    result: RelayControlRuntimeHandoffResult
+    job_run: dict[str, object]
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
 class ProfileCaptureAttemptBootstrapRequest(BaseModel):
     bootstrap_identifier: str = Field(min_length=1, max_length=128)
     bootstrap_reason: str | None = Field(default=None, max_length=255)

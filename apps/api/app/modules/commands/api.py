@@ -10,6 +10,9 @@ from app.modules.commands.profile_capture_execute_now import execute_profile_cap
 from app.modules.commands.profile_capture_execution_orchestration import (
     orchestrate_profile_capture_command_execution,
 )
+from app.modules.commands.relay_control_runtime_handoff import (
+    handoff_relay_control_command_to_runtime,
+)
 from app.modules.commands.profile_capture_status_readback import (
     get_profile_capture_execution_status,
 )
@@ -41,11 +44,16 @@ from app.modules.commands.schemas import (
     ProfileCaptureRuntimeHandoffResponse,
     ProfileCaptureRuntimeTerminalizationRequest,
     ProfileCaptureRuntimeTerminalizationResponse,
+    RelayControlAttemptBootstrapRequest,
+    RelayControlAttemptBootstrapResponse,
+    RelayControlRuntimeHandoffRequest,
+    RelayControlRuntimeHandoffResponse,
     RelayControlCommandCreate,
 )
 from app.modules.jobs.dependencies import require_internal_api_token
 from app.modules.commands.service import (
     bootstrap_profile_capture_command_attempt,
+    bootstrap_relay_control_command_attempt,
     create_command_template,
     create_meter_command,
     submit_capture_load_profile_command,
@@ -334,6 +342,40 @@ def bootstrap_profile_capture_attempt_endpoint(
     session: Session = Depends(get_db_session),
 ) -> ProfileCaptureAttemptBootstrapResponse:
     return bootstrap_profile_capture_command_attempt(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/bootstrap-relay-control-attempt",
+    response_model=RelayControlAttemptBootstrapResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def bootstrap_relay_control_attempt_endpoint(
+    command_id: uuid.UUID,
+    payload: RelayControlAttemptBootstrapRequest,
+    session: Session = Depends(get_db_session),
+) -> RelayControlAttemptBootstrapResponse:
+    return bootstrap_relay_control_command_attempt(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/handoff-relay-control-to-runtime",
+    response_model=RelayControlRuntimeHandoffResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def handoff_relay_control_to_runtime_endpoint(
+    command_id: uuid.UUID,
+    payload: RelayControlRuntimeHandoffRequest,
+    session: Session = Depends(get_db_session),
+) -> RelayControlRuntimeHandoffResponse:
+    return handoff_relay_control_command_to_runtime(
         session,
         command_id=command_id,
         payload=payload,

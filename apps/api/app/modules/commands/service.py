@@ -29,6 +29,9 @@ from app.modules.commands.schemas import (
     ProfileCaptureAttemptBootstrapRequest,
     ProfileCaptureAttemptBootstrapResponse,
     ProfileCaptureAttemptBootstrapResult,
+    RelayControlAttemptBootstrapRequest,
+    RelayControlAttemptBootstrapResponse,
+    RelayControlAttemptBootstrapResult,
     RelayControlCommandCreate,
 )
 from app.modules.connectivity.enums import EndpointAssignmentStatus, ProtocolFamily
@@ -445,6 +448,178 @@ def _normalize_relay_control_submission(
     }
 
 
+def bootstrap_relay_control_command_attempt(
+    session: Session,
+    *,
+    command_id: uuid.UUID,
+    payload: RelayControlAttemptBootstrapRequest,
+) -> RelayControlAttemptBootstrapResponse:
+    command = get_meter_command(session, command_id)
+    template = command.command_template
+    if template.category not in {
+        CommandCategory.REMOTE_DISCONNECT,
+        CommandCategory.REMOTE_RECONNECT,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Selected command is not compatible with the relay-control bootstrap slice.",
+        )
+    if command.current_status in {
+        CommandStatus.SUCCEEDED,
+        CommandStatus.FAILED,
+        CommandStatus.CANCELLED,
+        CommandStatus.TIMED_OUT,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command is not bootstrap-eligible from its current state.",
+        )
+
+    normalized_payload = _validate_relay_control_normalized_payload(command)
+    relay_operation = RelayControlCommandOperation(
+        str(normalized_payload["relay_control_operation"])
+    )
+    assignment = _validate_relay_control_endpoint_assignment(
+        session,
+        meter_id=command.meter_id,
+        endpoint_assignment_id=command.endpoint_assignment_id,
+    )
+    profile = _validate_relay_control_protocol_profile(
+        session,
+        protocol_association_profile_id=command.protocol_association_profile_id,
+    )
+
+    active_attempt = session.scalar(
+        select(CommandExecutionAttempt)
+        .where(
+            CommandExecutionAttempt.meter_command_id == command.id,
+            CommandExecutionAttempt.ended_at.is_(None),
+            CommandExecutionAttempt.status.in_(
+                [CommandExecutionAttemptStatus.STARTED, CommandExecutionAttemptStatus.RUNNING]
+            ),
+        )
+        .order_by(CommandExecutionAttempt.attempt_number.desc())
+    )
+    if active_attempt is not None:
+        existing_bootstrap = _load_relay_control_attempt_bootstrap(active_attempt.execution_metadata)
+        if existing_bootstrap is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Relay-control command already has an incompatible active execution attempt.",
+            )
+        if existing_bootstrap.get("bootstrap_identifier") != payload.bootstrap_identifier:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Relay-control command already has an active execution attempt owned by another bootstrap identifier.",
+            )
+        result = RelayControlAttemptBootstrapResult(
+            bootstrap_status="bootstrapped",
+            command_id=command.id,
+            command_execution_attempt_id=active_attempt.id,
+            reused_existing_attempt=True,
+            bootstrapped_at=datetime.fromisoformat(str(existing_bootstrap["bootstrapped_at"])),
+            bootstrap_identifier=str(existing_bootstrap["bootstrap_identifier"]),
+            correlation_id=command.correlation_id,
+            endpoint_assignment_id=assignment.id,
+            endpoint_id=assignment.endpoint_id,
+            protocol_association_profile_id=profile.id,
+            relay_control_operation=relay_operation,
+            bootstrap_record=existing_bootstrap,
+        )
+        return RelayControlAttemptBootstrapResponse(
+            result=result,
+            related_command=serialize_meter_command(command),
+            created_or_existing_attempt=serialize_command_attempt(active_attempt),
+        )
+
+    previous_bootstrapped_attempt = session.scalar(
+        select(CommandExecutionAttempt)
+        .where(CommandExecutionAttempt.meter_command_id == command.id)
+        .order_by(CommandExecutionAttempt.attempt_number.desc())
+    )
+    if previous_bootstrapped_attempt is not None:
+        previous_bootstrap = _load_relay_control_attempt_bootstrap(
+            previous_bootstrapped_attempt.execution_metadata
+        )
+        if previous_bootstrap is not None and previous_bootstrapped_attempt.ended_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Relay-control command already has a completed bootstrap attempt history.",
+            )
+
+    next_attempt_number = (
+        session.scalar(
+            select(func.max(CommandExecutionAttempt.attempt_number)).where(
+                CommandExecutionAttempt.meter_command_id == command.id
+            )
+        )
+        or 0
+    ) + 1
+    now = datetime.now(UTC)
+    bootstrap_record = {
+        "bootstrap_status": "bootstrapped",
+        "command_id": str(command.id),
+        "command_execution_attempt_id": None,
+        "reused_existing_attempt": False,
+        "bootstrapped_at": now.isoformat(),
+        "bootstrap_identifier": payload.bootstrap_identifier,
+        "bootstrap_reason": payload.bootstrap_reason,
+        "correlation_id": command.correlation_id,
+        "endpoint_assignment_id": str(assignment.id),
+        "endpoint_id": str(assignment.endpoint_id),
+        "protocol_association_profile_id": str(profile.id),
+        "relay_control_operation": relay_operation.value,
+    }
+
+    apply_command_status_transition(command, new_status=CommandStatus.IN_PROGRESS, now=now)
+    attempt = CommandExecutionAttempt(
+        meter_command_id=command.id,
+        job_run_id=None,
+        attempt_number=next_attempt_number,
+        status=CommandExecutionAttemptStatus.STARTED,
+        started_at=now,
+        worker_identifier=payload.bootstrap_identifier,
+        endpoint_id=assignment.endpoint_id,
+        session_history_id=None,
+        request_snapshot=normalized_payload,
+        execution_metadata={"relay_control_attempt_bootstrap": bootstrap_record},
+    )
+    session.add(command)
+    session.add(attempt)
+    session.flush()
+    bootstrap_record["command_execution_attempt_id"] = str(attempt.id)
+    attempt.execution_metadata = {"relay_control_attempt_bootstrap": bootstrap_record}
+    command.result_summary = {
+        **(command.result_summary or {}),
+        "relay_control_attempt_bootstrap": bootstrap_record,
+    }
+    session.add(command)
+    session.add(attempt)
+    session.commit()
+    session.refresh(attempt)
+    refreshed_command = get_meter_command(session, command.id)
+
+    result = RelayControlAttemptBootstrapResult(
+        bootstrap_status="bootstrapped",
+        command_id=refreshed_command.id,
+        command_execution_attempt_id=attempt.id,
+        reused_existing_attempt=False,
+        bootstrapped_at=now,
+        bootstrap_identifier=payload.bootstrap_identifier,
+        correlation_id=refreshed_command.correlation_id,
+        endpoint_assignment_id=assignment.id,
+        endpoint_id=assignment.endpoint_id,
+        protocol_association_profile_id=profile.id,
+        relay_control_operation=relay_operation,
+        bootstrap_record=bootstrap_record,
+    )
+    return RelayControlAttemptBootstrapResponse(
+        result=result,
+        related_command=serialize_meter_command(refreshed_command),
+        created_or_existing_attempt=serialize_command_attempt(attempt),
+    )
+
+
 def _normalize_capture_load_profile_submission(
     payload: CaptureLoadProfileCommandCreate,
     *,
@@ -665,6 +840,100 @@ def _validate_capture_load_profile_normalized_payload(command: MeterCommand) -> 
     return normalized_payload
 
 
+def _validate_relay_control_normalized_payload(command: MeterCommand) -> dict[str, object]:
+    normalized_payload = command.normalized_payload
+    if not isinstance(normalized_payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command is missing normalized payload for bootstrap.",
+        )
+    relay_control_operation = normalized_payload.get("relay_control_operation")
+    if relay_control_operation not in {
+        RelayControlCommandOperation.DISCONNECT.value,
+        RelayControlCommandOperation.RECONNECT.value,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has incompatible normalized payload for bootstrap.",
+        )
+    relay_control = normalized_payload.get("relay_control")
+    if not isinstance(relay_control, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has incompatible normalized payload for bootstrap.",
+        )
+    if relay_control.get("command_category") != command.command_template.category.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has incompatible normalized payload for bootstrap.",
+        )
+    target_object = relay_control.get("target_object")
+    if not isinstance(target_object, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has incompatible normalized payload for bootstrap.",
+        )
+    if (
+        target_object.get("interface_class") != RELAY_CONTROL_TARGET_INTERFACE_CLASS
+        or target_object.get("class_id") != RELAY_CONTROL_TARGET_CLASS_ID
+        or target_object.get("obis_code") != RELAY_CONTROL_TARGET_OBIS_CODE
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has inconsistent relay target linkage for bootstrap.",
+        )
+    return normalized_payload
+
+
+def _validate_relay_control_endpoint_assignment(
+    session: Session,
+    *,
+    meter_id: uuid.UUID,
+    endpoint_assignment_id: uuid.UUID | None,
+) -> MeterEndpointAssignment:
+    if endpoint_assignment_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command is missing endpoint continuity for bootstrap.",
+        )
+    assignment = session.get(MeterEndpointAssignment, endpoint_assignment_id)
+    if assignment is None or assignment.meter_id != meter_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has invalid endpoint continuity for bootstrap.",
+        )
+    if assignment.assignment_status != EndpointAssignmentStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has inactive endpoint continuity for bootstrap.",
+        )
+    return assignment
+
+
+def _validate_relay_control_protocol_profile(
+    session: Session,
+    *,
+    protocol_association_profile_id: uuid.UUID | None,
+) -> ProtocolAssociationProfile:
+    if protocol_association_profile_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command is missing protocol continuity for bootstrap.",
+        )
+    profile = session.get(ProtocolAssociationProfile, protocol_association_profile_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has invalid protocol continuity for bootstrap.",
+        )
+    if not profile.is_active or profile.protocol_family != ProtocolFamily.DLMS_COSEM:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Relay-control command has incompatible protocol continuity for bootstrap.",
+        )
+    return profile
+
+
 def _validate_profile_capture_endpoint_assignment(
     session: Session,
     *,
@@ -720,6 +989,15 @@ def _load_profile_capture_attempt_bootstrap(
     if not isinstance(execution_metadata, dict):
         return None
     payload = execution_metadata.get("profile_capture_attempt_bootstrap")
+    return payload if isinstance(payload, dict) else None
+
+
+def _load_relay_control_attempt_bootstrap(
+    execution_metadata: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if not isinstance(execution_metadata, dict):
+        return None
+    payload = execution_metadata.get("relay_control_attempt_bootstrap")
     return payload if isinstance(payload, dict) else None
 
 
