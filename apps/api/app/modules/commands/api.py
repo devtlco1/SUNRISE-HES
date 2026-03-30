@@ -7,6 +7,10 @@ from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
 from app.modules.commands.profile_capture_execute_now import execute_profile_capture_now
+from app.modules.commands.relay_control_execute_now import execute_relay_control_now
+from app.modules.commands.relay_control_status_readback import (
+    get_relay_control_execution_status,
+)
 from app.modules.commands.profile_capture_execution_orchestration import (
     orchestrate_profile_capture_command_execution,
 )
@@ -52,8 +56,11 @@ from app.modules.commands.schemas import (
     ProfileCaptureRuntimeTerminalizationResponse,
     RelayControlAttemptBootstrapRequest,
     RelayControlAttemptBootstrapResponse,
+    RelayControlExecuteNowRequest,
+    RelayControlExecuteNowResponse,
     RelayControlExecutionOrchestrationRequest,
     RelayControlExecutionOrchestrationResponse,
+    RelayControlExecutionStatusResponse,
     RelayControlRuntimeHandoffRequest,
     RelayControlRuntimeHandoffResponse,
     RelayControlRuntimeTerminalizationRequest,
@@ -264,6 +271,46 @@ def submit_relay_control_command_endpoint(
 
 
 @meter_commands_router.post(
+    "/{meter_id}/commands/relay-control/execute-now",
+    response_model=RelayControlExecuteNowResponse,
+)
+def execute_relay_control_now_endpoint(
+    meter_id: uuid.UUID,
+    payload: RelayControlExecuteNowRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> RelayControlExecuteNowResponse:
+    response = execute_relay_control_now(
+        session,
+        meter_id=meter_id,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    record_audit_event(
+        session,
+        action="commands.requests.execute_relay_control_now",
+        resource_type="commands",
+        resource_id=response.result.command_id,
+        actor_user_id=current_user.id,
+        description="Relay-control command executed through application-facing execute-now path.",
+        details={
+            "meter_id": str(meter_id),
+            "command_id": str(response.result.command_id),
+            "command_execution_attempt_id": str(response.result.command_execution_attempt_id),
+            "execute_now_identifier": response.result.execute_now_identifier,
+            "runtime_relay_control_execution_record_id": (
+                response.result.runtime_relay_control_execution_record_id
+            ),
+            "relay_control_execution_outcome": response.result.relay_control_execution_outcome,
+            "reused_existing_execute_now": response.result.reused_existing_execute_now,
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.post(
     "/{meter_id}/commands",
     response_model=MeterCommandResponse,
     status_code=status.HTTP_201_CREATED,
@@ -318,6 +365,18 @@ def get_command_endpoint(
 ) -> MeterCommandDetailResponse:
     command = get_meter_command(session, command_id)
     return serialize_meter_command_detail(command)
+
+
+@commands_router.get(
+    "/{command_id}/relay-control-status",
+    response_model=RelayControlExecutionStatusResponse,
+)
+def get_relay_control_status_endpoint(
+    command_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> RelayControlExecutionStatusResponse:
+    return get_relay_control_execution_status(session, command_id=command_id)
 
 
 @commands_router.get(

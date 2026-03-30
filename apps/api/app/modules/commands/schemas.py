@@ -218,6 +218,52 @@ class RelayControlExecutionOrchestrationResponse(BaseModel):
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
+class RelayControlExecuteNowRequest(RelayControlCommandCreate):
+    execute_now_reason: str | None = Field(default=None, max_length=255)
+
+
+class RelayControlExecuteNowResult(BaseModel):
+    execute_now_status: str
+    execute_now_identifier: str
+    command_id: UUID
+    command_status: CommandStatus
+    command_execution_attempt_id: UUID
+    runtime_relay_control_execution_record_id: str
+    relay_control_operation: RelayControlCommandOperation
+    relay_control_execution_outcome: str | None = None
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    reused_existing_execute_now: bool
+    executed_at: datetime
+    execute_now_record: dict[str, object]
+
+
+class RelayControlExecuteNowResponse(BaseModel):
+    result: RelayControlExecuteNowResult
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
+class RelayControlExecutionStatusResult(BaseModel):
+    command_id: UUID
+    command_status: CommandStatus
+    relay_control_operation: RelayControlCommandOperation | None = None
+    command_execution_attempt_id: UUID | None = None
+    runtime_relay_control_execution_record_id: str | None = None
+    relay_control_execution_outcome: str | None = None
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    execute_now_artifact_present: bool
+    reused_existing_execute_now: bool | None = None
+    reused_existing_orchestration: bool | None = None
+    reused_existing_terminalization: bool | None = None
+    status_record: dict[str, object]
+
+
+class RelayControlExecutionStatusResponse(BaseModel):
+    result: RelayControlExecutionStatusResult
+
+
 class ProfileCaptureAttemptBootstrapRequest(BaseModel):
     bootstrap_identifier: str = Field(min_length=1, max_length=128)
     bootstrap_reason: str | None = Field(default=None, max_length=255)
