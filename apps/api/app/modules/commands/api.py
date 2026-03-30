@@ -7,6 +7,7 @@ from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
 from app.modules.commands.schemas import (
+    CaptureLoadProfileCommandCreate,
     CommandExecutionAttemptListResponse,
     CommandTemplateCreate,
     CommandTemplateListResponse,
@@ -16,10 +17,15 @@ from app.modules.commands.schemas import (
     MeterCommandDetailResponse,
     MeterCommandListResponse,
     MeterCommandResponse,
+    ProfileCaptureAttemptBootstrapRequest,
+    ProfileCaptureAttemptBootstrapResponse,
 )
+from app.modules.jobs.dependencies import require_internal_api_token
 from app.modules.commands.service import (
+    bootstrap_profile_capture_command_attempt,
     create_command_template,
     create_meter_command,
+    submit_capture_load_profile_command,
     get_meter_command,
     get_command_template,
     list_command_attempts,
@@ -35,6 +41,7 @@ from app.modules.users.models import User
 command_templates_router = APIRouter(prefix="/command-templates", tags=["command-templates"])
 meter_commands_router = APIRouter(prefix="/meters", tags=["meter-commands"])
 commands_router = APIRouter(prefix="/commands", tags=["commands"])
+internal_commands_router = APIRouter(prefix="/internal/commands", tags=["internal-commands"])
 
 
 @command_templates_router.get("", response_model=CommandTemplateListResponse)
@@ -95,6 +102,43 @@ def update_command_template_endpoint(
         actor_user_id=current_user.id,
         description="Command template updated.",
         details=payload.model_dump(exclude_unset=True),
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.post(
+    "/{meter_id}/commands/profile-capture",
+    response_model=MeterCommandResponse,
+)
+def submit_capture_load_profile_command_endpoint(
+    meter_id: uuid.UUID,
+    payload: CaptureLoadProfileCommandCreate,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> MeterCommandResponse:
+    command = submit_capture_load_profile_command(
+        session,
+        meter_id=meter_id,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    response = serialize_meter_command(command)
+    record_audit_event(
+        session,
+        action="commands.requests.create_profile_capture",
+        resource_type="commands",
+        resource_id=command.id,
+        actor_user_id=current_user.id,
+        description="Capture-load-profile command requested.",
+        details={
+            "meter_id": str(meter_id),
+            "template_code": command.command_template.code,
+            "priority": command.priority.value,
+            "idempotency_key": command.idempotency_key,
+            "profile_read_operation": "capture_load_profile",
+        },
         request_context=request.state.request_audit_context,
     )
     return response
@@ -164,3 +208,20 @@ def list_command_attempts_endpoint(
     _: User = Depends(require_permission("commands.read")),
 ) -> CommandExecutionAttemptListResponse:
     return list_command_attempts(session, command_id=command_id)
+
+
+@internal_commands_router.post(
+    "/{command_id}/bootstrap-profile-capture-attempt",
+    response_model=ProfileCaptureAttemptBootstrapResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def bootstrap_profile_capture_attempt_endpoint(
+    command_id: uuid.UUID,
+    payload: ProfileCaptureAttemptBootstrapRequest,
+    session: Session = Depends(get_db_session),
+) -> ProfileCaptureAttemptBootstrapResponse:
+    return bootstrap_profile_capture_command_attempt(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )

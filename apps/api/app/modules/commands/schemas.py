@@ -66,6 +66,45 @@ class MeterCommandCreate(BaseModel):
     notes: str | None = None
 
 
+class CaptureLoadProfileCommandCreate(BaseModel):
+    command_template_id: UUID
+    endpoint_assignment_id: UUID
+    protocol_association_profile_id: UUID
+    channel_ids: list[UUID] = Field(min_length=1)
+    interval_start: datetime
+    interval_end: datetime
+    priority: CommandPriority = CommandPriority.NORMAL
+    scheduled_at: datetime | None = None
+    correlation_id: str | None = Field(default=None, max_length=128)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+    notes: str | None = None
+
+
+class ProfileCaptureAttemptBootstrapRequest(BaseModel):
+    bootstrap_identifier: str = Field(min_length=1, max_length=128)
+    bootstrap_reason: str | None = Field(default=None, max_length=255)
+
+
+class ProfileCaptureAttemptBootstrapResult(BaseModel):
+    bootstrap_status: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    reused_existing_attempt: bool
+    bootstrapped_at: datetime
+    bootstrap_identifier: str
+    correlation_id: str | None = None
+    endpoint_assignment_id: UUID
+    endpoint_id: UUID
+    protocol_association_profile_id: UUID
+    bootstrap_record: dict[str, object]
+
+
+class ProfileCaptureAttemptBootstrapResponse(BaseModel):
+    result: ProfileCaptureAttemptBootstrapResult
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
 class CommandExecutionAttemptResponse(BaseModel):
     id: UUID
     meter_command_id: UUID

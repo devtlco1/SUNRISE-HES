@@ -8,7 +8,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.commands.models import CommandExecutionAttempt, CommandTemplate, MeterCommand
+from app.modules.commands.enums import CommandCategory, CommandExecutionAttemptStatus, CommandStatus
 from app.modules.commands.schemas import (
+    CaptureLoadProfileCommandCreate,
     CommandExecutionAttemptListResponse,
     CommandExecutionAttemptResponse,
     CommandTemplateCreate,
@@ -19,9 +21,14 @@ from app.modules.commands.schemas import (
     MeterCommandDetailResponse,
     MeterCommandListResponse,
     MeterCommandResponse,
+    ProfileCaptureAttemptBootstrapRequest,
+    ProfileCaptureAttemptBootstrapResponse,
+    ProfileCaptureAttemptBootstrapResult,
 )
+from app.modules.connectivity.enums import EndpointAssignmentStatus, ProtocolFamily
 from app.modules.connectivity.models import MeterEndpointAssignment, ProtocolAssociationProfile
 from app.modules.meters.models import Meter
+from app.modules.readings.models import LoadProfileChannel
 
 
 def _command_options():
@@ -152,6 +159,411 @@ def create_meter_command(
         return get_meter_command(session, command.id)
     session.flush()
     return command
+
+
+def submit_capture_load_profile_command(
+    session: Session,
+    *,
+    meter_id: uuid.UUID,
+    payload: CaptureLoadProfileCommandCreate,
+    requested_by_user_id: uuid.UUID | None,
+) -> MeterCommand:
+    meter = session.get(Meter, meter_id)
+    if meter is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meter not found.")
+
+    template = get_command_template(session, payload.command_template_id)
+    if template.category != CommandCategory.PROFILE_CAPTURE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Selected template is not compatible with the capture-load-profile command submission slice.",
+        )
+    if not template.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot request a command from an inactive template.",
+        )
+
+    if payload.interval_end <= payload.interval_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Capture-load-profile interval_end must be after interval_start.",
+        )
+
+    if payload.idempotency_key:
+        existing = session.scalar(
+            select(MeterCommand).where(MeterCommand.idempotency_key == payload.idempotency_key)
+        )
+        if existing is not None:
+            if existing.meter_id != meter_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A command with that idempotency key already exists for another meter.",
+                )
+            existing = get_meter_command(session, existing.id)
+            if existing.command_template.category != template.category.PROFILE_CAPTURE:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A command with that idempotency key already exists for another command policy.",
+                )
+            return existing
+
+    assignment = session.get(MeterEndpointAssignment, payload.endpoint_assignment_id)
+    if assignment is None or assignment.meter_id != meter_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Endpoint assignment is invalid for the selected meter.",
+        )
+    if assignment.assignment_status != EndpointAssignmentStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Endpoint assignment is not active for the selected meter.",
+        )
+
+    profile = session.get(ProtocolAssociationProfile, payload.protocol_association_profile_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Protocol association profile not found.",
+        )
+    if not profile.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Protocol association profile is not active.",
+        )
+    if profile.protocol_family != ProtocolFamily.DLMS_COSEM:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Protocol association profile is not compatible with the capture-load-profile command submission slice.",
+        )
+
+    unique_channel_ids = list(dict.fromkeys(payload.channel_ids))
+    channels = session.scalars(
+        select(LoadProfileChannel).where(LoadProfileChannel.id.in_(unique_channel_ids))
+    ).all()
+    if len(channels) != len(unique_channel_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more load profile channels were not found.",
+        )
+    if any(channel.meter_id != meter_id for channel in channels):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Load profile channel is invalid for the selected meter.",
+        )
+    if any(not channel.is_active for channel in channels):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Load profile channel is not active for the selected meter.",
+        )
+
+    normalized_payload = _normalize_capture_load_profile_submission(
+        payload,
+        channels=channels,
+    )
+    command = create_meter_command(
+        session,
+        meter_id=meter_id,
+        payload=MeterCommandCreate(
+            command_template_id=payload.command_template_id,
+            priority=payload.priority,
+            scheduled_at=payload.scheduled_at,
+            correlation_id=payload.correlation_id,
+            idempotency_key=payload.idempotency_key,
+            request_payload={
+                "profile_read_operation": "capture_load_profile",
+                "capture_load_profile": {
+                    "channel_ids": [str(channel_id) for channel_id in unique_channel_ids],
+                    "interval_start": payload.interval_start.isoformat(),
+                    "interval_end": payload.interval_end.isoformat(),
+                },
+            },
+            normalized_payload=normalized_payload,
+            endpoint_assignment_id=payload.endpoint_assignment_id,
+            protocol_association_profile_id=payload.protocol_association_profile_id,
+            notes=payload.notes,
+        ),
+        requested_by_user_id=requested_by_user_id,
+    )
+    return command
+
+
+def _normalize_capture_load_profile_submission(
+    payload: CaptureLoadProfileCommandCreate,
+    *,
+    channels: list[LoadProfileChannel],
+) -> dict[str, object]:
+    sorted_channels = sorted(channels, key=lambda item: item.channel_code)
+    return {
+        "profile_read_operation": "capture_load_profile",
+        "capture_load_profile": {
+            "interval_start": payload.interval_start.isoformat(),
+            "interval_end": payload.interval_end.isoformat(),
+            "channel_ids": [str(channel.id) for channel in sorted_channels],
+            "channel_count": len(sorted_channels),
+            "channels": [
+                {
+                    "channel_id": str(channel.id),
+                    "channel_code": channel.channel_code,
+                    "obis_code": channel.obis_code,
+                    "interval_seconds": channel.interval_seconds,
+                    "unit": channel.unit,
+                }
+                for channel in sorted_channels
+            ],
+        },
+    }
+
+
+def bootstrap_profile_capture_command_attempt(
+    session: Session,
+    *,
+    command_id: uuid.UUID,
+    payload: ProfileCaptureAttemptBootstrapRequest,
+) -> ProfileCaptureAttemptBootstrapResponse:
+    command = get_meter_command(session, command_id)
+    template = command.command_template
+    if template.category != CommandCategory.PROFILE_CAPTURE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Selected command is not compatible with the profile-capture bootstrap slice.",
+        )
+    if command.current_status in {
+        CommandStatus.SUCCEEDED,
+        CommandStatus.FAILED,
+        CommandStatus.CANCELLED,
+        CommandStatus.TIMED_OUT,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command is not bootstrap-eligible from its current state.",
+        )
+
+    normalized_payload = _validate_capture_load_profile_normalized_payload(command)
+    assignment = _validate_profile_capture_endpoint_assignment(
+        session,
+        meter_id=command.meter_id,
+        endpoint_assignment_id=command.endpoint_assignment_id,
+    )
+    profile = _validate_profile_capture_protocol_profile(
+        session,
+        protocol_association_profile_id=command.protocol_association_profile_id,
+    )
+
+    active_attempt = session.scalar(
+        select(CommandExecutionAttempt)
+        .where(
+            CommandExecutionAttempt.meter_command_id == command.id,
+            CommandExecutionAttempt.ended_at.is_(None),
+            CommandExecutionAttempt.status.in_(
+                [CommandExecutionAttemptStatus.STARTED, CommandExecutionAttemptStatus.RUNNING]
+            ),
+        )
+        .order_by(CommandExecutionAttempt.attempt_number.desc())
+    )
+    if active_attempt is not None:
+        existing_bootstrap = _load_profile_capture_attempt_bootstrap(
+            active_attempt.execution_metadata
+        )
+        if existing_bootstrap is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Profile-capture command already has an incompatible active execution attempt.",
+            )
+        if existing_bootstrap.get("bootstrap_identifier") != payload.bootstrap_identifier:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Profile-capture command already has an active execution attempt owned by another bootstrap identifier.",
+            )
+        result = ProfileCaptureAttemptBootstrapResult(
+            bootstrap_status="bootstrapped",
+            command_id=command.id,
+            command_execution_attempt_id=active_attempt.id,
+            reused_existing_attempt=True,
+            bootstrapped_at=datetime.fromisoformat(str(existing_bootstrap["bootstrapped_at"])),
+            bootstrap_identifier=str(existing_bootstrap["bootstrap_identifier"]),
+            correlation_id=command.correlation_id,
+            endpoint_assignment_id=assignment.id,
+            endpoint_id=assignment.endpoint_id,
+            protocol_association_profile_id=profile.id,
+            bootstrap_record=existing_bootstrap,
+        )
+        return ProfileCaptureAttemptBootstrapResponse(
+            result=result,
+            related_command=serialize_meter_command(command),
+            created_or_existing_attempt=serialize_command_attempt(active_attempt),
+        )
+
+    previous_bootstrapped_attempt = session.scalar(
+        select(CommandExecutionAttempt)
+        .where(CommandExecutionAttempt.meter_command_id == command.id)
+        .order_by(CommandExecutionAttempt.attempt_number.desc())
+    )
+    if previous_bootstrapped_attempt is not None:
+        previous_bootstrap = _load_profile_capture_attempt_bootstrap(
+            previous_bootstrapped_attempt.execution_metadata
+        )
+        if previous_bootstrap is not None and previous_bootstrapped_attempt.ended_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Profile-capture command already has a completed bootstrap attempt history.",
+            )
+
+    next_attempt_number = (
+        session.scalar(
+            select(func.max(CommandExecutionAttempt.attempt_number)).where(
+                CommandExecutionAttempt.meter_command_id == command.id
+            )
+        )
+        or 0
+    ) + 1
+    now = datetime.now(UTC)
+    bootstrap_record = {
+        "bootstrap_status": "bootstrapped",
+        "command_id": str(command.id),
+        "command_execution_attempt_id": None,
+        "reused_existing_attempt": False,
+        "bootstrapped_at": now.isoformat(),
+        "bootstrap_identifier": payload.bootstrap_identifier,
+        "bootstrap_reason": payload.bootstrap_reason,
+        "correlation_id": command.correlation_id,
+        "endpoint_assignment_id": str(assignment.id),
+        "endpoint_id": str(assignment.endpoint_id),
+        "protocol_association_profile_id": str(profile.id),
+        "profile_read_operation": "capture_load_profile",
+    }
+
+    apply_command_status_transition(command, new_status=CommandStatus.IN_PROGRESS, now=now)
+    attempt = CommandExecutionAttempt(
+        meter_command_id=command.id,
+        job_run_id=None,
+        attempt_number=next_attempt_number,
+        status=CommandExecutionAttemptStatus.STARTED,
+        started_at=now,
+        worker_identifier=payload.bootstrap_identifier,
+        endpoint_id=assignment.endpoint_id,
+        session_history_id=None,
+        request_snapshot=normalized_payload,
+        execution_metadata={"profile_capture_attempt_bootstrap": bootstrap_record},
+    )
+    session.add(command)
+    session.add(attempt)
+    session.flush()
+    bootstrap_record["command_execution_attempt_id"] = str(attempt.id)
+    attempt.execution_metadata = {"profile_capture_attempt_bootstrap": bootstrap_record}
+    command.result_summary = {
+        **(command.result_summary or {}),
+        "profile_capture_attempt_bootstrap": bootstrap_record,
+    }
+    session.add(command)
+    session.add(attempt)
+    session.commit()
+    session.refresh(attempt)
+    refreshed_command = get_meter_command(session, command.id)
+
+    result = ProfileCaptureAttemptBootstrapResult(
+        bootstrap_status="bootstrapped",
+        command_id=refreshed_command.id,
+        command_execution_attempt_id=attempt.id,
+        reused_existing_attempt=False,
+        bootstrapped_at=now,
+        bootstrap_identifier=payload.bootstrap_identifier,
+        correlation_id=refreshed_command.correlation_id,
+        endpoint_assignment_id=assignment.id,
+        endpoint_id=assignment.endpoint_id,
+        protocol_association_profile_id=profile.id,
+        bootstrap_record=bootstrap_record,
+    )
+    return ProfileCaptureAttemptBootstrapResponse(
+        result=result,
+        related_command=serialize_meter_command(refreshed_command),
+        created_or_existing_attempt=serialize_command_attempt(attempt),
+    )
+
+
+def _validate_capture_load_profile_normalized_payload(command: MeterCommand) -> dict[str, object]:
+    normalized_payload = command.normalized_payload
+    if not isinstance(normalized_payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command is missing normalized payload for bootstrap.",
+        )
+    if normalized_payload.get("profile_read_operation") != "capture_load_profile":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command has incompatible normalized payload for bootstrap.",
+        )
+    capture_load_profile = normalized_payload.get("capture_load_profile")
+    if not isinstance(capture_load_profile, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command has incompatible normalized payload for bootstrap.",
+        )
+    channel_ids = capture_load_profile.get("channel_ids")
+    if not isinstance(channel_ids, list) or not channel_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command has incompatible normalized payload for bootstrap.",
+        )
+    return normalized_payload
+
+
+def _validate_profile_capture_endpoint_assignment(
+    session: Session,
+    *,
+    meter_id: uuid.UUID,
+    endpoint_assignment_id: uuid.UUID | None,
+) -> MeterEndpointAssignment:
+    if endpoint_assignment_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command is missing endpoint continuity for bootstrap.",
+        )
+    assignment = session.get(MeterEndpointAssignment, endpoint_assignment_id)
+    if assignment is None or assignment.meter_id != meter_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command has invalid endpoint continuity for bootstrap.",
+        )
+    if assignment.assignment_status != EndpointAssignmentStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command has inactive endpoint continuity for bootstrap.",
+        )
+    return assignment
+
+
+def _validate_profile_capture_protocol_profile(
+    session: Session,
+    *,
+    protocol_association_profile_id: uuid.UUID | None,
+) -> ProtocolAssociationProfile:
+    if protocol_association_profile_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command is missing protocol continuity for bootstrap.",
+        )
+    profile = session.get(ProtocolAssociationProfile, protocol_association_profile_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command has invalid protocol continuity for bootstrap.",
+        )
+    if not profile.is_active or profile.protocol_family != ProtocolFamily.DLMS_COSEM:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile-capture command has incompatible protocol continuity for bootstrap.",
+        )
+    return profile
+
+
+def _load_profile_capture_attempt_bootstrap(
+    execution_metadata: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if not isinstance(execution_metadata, dict):
+        return None
+    payload = execution_metadata.get("profile_capture_attempt_bootstrap")
+    return payload if isinstance(payload, dict) else None
 
 
 def list_meter_commands(

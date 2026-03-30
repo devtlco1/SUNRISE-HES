@@ -5,6 +5,7 @@ from app.modules.auth.api import router as auth_router
 from app.modules.commands.api import (
     command_templates_router,
     commands_router,
+    internal_commands_router,
     meter_commands_router,
 )
 from app.modules.connectivity.api import (
@@ -50,6 +51,7 @@ api_router.include_router(auth_router)
 api_router.include_router(command_templates_router)
 api_router.include_router(meter_commands_router)
 api_router.include_router(commands_router)
+api_router.include_router(internal_commands_router)
 api_router.include_router(command_control_router)
 api_router.include_router(meter_events_router)
 api_router.include_router(internal_meter_events_router)

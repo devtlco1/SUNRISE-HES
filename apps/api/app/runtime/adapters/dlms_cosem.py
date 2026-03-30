@@ -708,11 +708,56 @@ def _validate_gurux_capture_load_profile_target(
     explicit_reading_batch = (
         mock_execution.get("reading_batch") if isinstance(mock_execution, dict) else None
     )
-    if not isinstance(explicit_reading_batch, dict):
+    capture_load_profile_payload = (
+        payload.get("capture_load_profile") if isinstance(payload, dict) else None
+    )
+    if isinstance(explicit_reading_batch, dict):
+        expected_profile_batch = RuntimeReadingBatchPayload.model_validate(explicit_reading_batch)
+    elif isinstance(capture_load_profile_payload, dict):
+        interval_start = capture_load_profile_payload.get("interval_start")
+        interval_end = capture_load_profile_payload.get("interval_end")
+        channel_ids = capture_load_profile_payload.get("channel_ids")
+        if (
+            not isinstance(interval_start, str)
+            or not isinstance(interval_end, str)
+            or not isinstance(channel_ids, list)
+            or not channel_ids
+        ):
+            raise ValueError(
+                "Missing adapter prerequisites for the profile-read capture-load-profile validator."
+            )
+        try:
+            normalized_interval_start = datetime.fromisoformat(interval_start)
+            normalized_interval_end = datetime.fromisoformat(interval_end)
+            normalized_channel_ids = [str(channel_id) for channel_id in channel_ids]
+        except ValueError as exc:
+            raise ValueError(
+                "Missing adapter prerequisites for the profile-read capture-load-profile validator."
+            ) from exc
+        expected_profile_batch = RuntimeReadingBatchPayload(
+            source_type=ReadingSourceType.COMMAND_RESULT,
+            captured_at=normalized_interval_start,
+            received_at=normalized_interval_end,
+            status=ReadingBatchStatus.RECEIVED,
+            correlation_id=request.execution_context.correlation_id,
+            reading_context={
+                "adapter_key": request.adapter_key,
+                "vertical_slice": "profile_read",
+                "operation": request.operation.value,
+            },
+            load_profile_intervals=[
+                RuntimeLoadProfileIntervalPayload(
+                    channel_id=channel_id,
+                    interval_start=normalized_interval_start,
+                    interval_end=normalized_interval_end,
+                )
+                for channel_id in normalized_channel_ids
+            ],
+        )
+    else:
         raise ValueError(
             "Missing adapter prerequisites for the profile-read capture-load-profile validator."
         )
-    expected_profile_batch = RuntimeReadingBatchPayload.model_validate(explicit_reading_batch)
     if not expected_profile_batch.load_profile_intervals:
         raise ValueError(
             "Missing adapter prerequisites for the profile-read capture-load-profile validator."
@@ -857,6 +902,21 @@ def _invoke_gurux_capture_load_profile_stub(
         if isinstance(mock_execution.get("reading_batch"), dict)
         else None
     )
+    if payload_snapshot is None and invocation_status == "accepted":
+        payload_snapshot = {
+            "source_type": "command_result",
+            "captured_at": datetime.now(UTC).isoformat(),
+            "received_at": datetime.now(UTC).isoformat(),
+            "status": "received",
+            "load_profile_intervals": [
+                {
+                    "channel_id": channel_id,
+                    "interval_start": datetime.now(UTC).isoformat(),
+                    "interval_end": datetime.now(UTC).isoformat(),
+                }
+                for channel_id in invocation_request.requested_channel_ids
+            ],
+        }
     return GuruxProfileReadInvocationResponse(
         acknowledged=acknowledged,
         adapter_available=adapter_available,
