@@ -26,7 +26,8 @@ test-runtime-foundations:
 		tests/test_runtime_execution_claim_to_work_foundation.py \
 		tests/test_runtime_execution_lease_foundation.py \
 		tests/test_runtime_execution_invocation_gate_foundation.py \
-		tests/test_runtime_execution_session_heartbeat_foundation.py
+		tests/test_runtime_execution_session_heartbeat_foundation.py \
+		tests/test_runtime_profile_read_vertical_slice.py
 
 lint-api:
 	$(COMPOSE) run --rm api ruff check app tests

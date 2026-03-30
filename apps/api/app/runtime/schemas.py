@@ -58,6 +58,7 @@ from app.runtime.contracts import (
     RuntimeExternalizationEnvelopeResult,
     RuntimeDeliveryContractResult,
     RuntimeDispatchEnvelopeResult,
+    RuntimeProfileReadExecutionResult,
     RuntimeRelayControlExecutionResult,
     RuntimePostProcessingBridgeResult,
     RuntimeExecutionSessionFinalizeResult,
@@ -482,6 +483,20 @@ class RuntimeRelayControlExecutionRequest(BaseModel):
 
 class RuntimeRelayControlExecutionResponse(BaseModel):
     result: RuntimeRelayControlExecutionResult
+    job_run: JobRunResponse
+    related_command: MeterCommandResponse
+    created_or_existing_attempt: CommandExecutionAttemptResponse
+
+
+class RuntimeProfileReadExecutionRequest(BaseModel):
+    executor_identifier: str = Field(min_length=1, max_length=128)
+    session_identifier: str = Field(min_length=1, max_length=255)
+    request_id: str | None = Field(default=None, min_length=1, max_length=128)
+    execution_reason: str | None = Field(default=None, max_length=255)
+
+
+class RuntimeProfileReadExecutionResponse(BaseModel):
+    result: RuntimeProfileReadExecutionResult
     job_run: JobRunResponse
     related_command: MeterCommandResponse
     created_or_existing_attempt: CommandExecutionAttemptResponse

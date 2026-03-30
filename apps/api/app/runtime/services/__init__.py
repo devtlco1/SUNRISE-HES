@@ -114,6 +114,9 @@ from app.runtime.services.runtime_dispatch_envelope import (
 from app.runtime.services.runtime_relay_control import (
     execute_runtime_relay_control_adapter,
 )
+from app.runtime.services.runtime_profile_read import (
+    execute_runtime_profile_read_adapter,
+)
 from app.runtime.services.runtime_attempt_disposition import (
     bridge_runtime_execution_outcome_to_attempt_disposition,
 )
@@ -138,6 +141,7 @@ __all__ = [
     "bridge_runtime_publication_contract_to_externalization_envelope",
     "bridge_runtime_externalization_envelope_to_delivery_contract",
     "bridge_runtime_delivery_contract_to_dispatch_envelope",
+    "execute_runtime_profile_read_adapter",
     "execute_runtime_relay_control_adapter",
     "list_derived_work_dispatch_requests",
     "list_dispatch_ready_derived_work",

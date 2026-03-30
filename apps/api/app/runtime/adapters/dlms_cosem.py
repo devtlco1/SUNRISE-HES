@@ -18,6 +18,13 @@ from app.runtime.contracts import (
     RuntimeRelayControlExecutionStatus,
     RuntimeRelayControlOperation,
     RuntimeRelayControlProtocolStageOutcome,
+    RuntimeProfileReadAdapterAcknowledgmentState,
+    RuntimeProfileReadAdapterRequest,
+    RuntimeProfileReadErrorCategory,
+    RuntimeProfileReadExecutionResult,
+    RuntimeProfileReadExecutionStatus,
+    RuntimeProfileReadOperation,
+    RuntimeProfileReadProtocolStageOutcome,
     RuntimeCommandOutcome,
     RuntimeCommandResult,
     RuntimeEventPayload,
@@ -44,6 +51,9 @@ class DlmsCosemRuntimeAdapter(BaseRuntimeAdapter):
             RuntimeRelayControlOperation.DISCONNECT,
             RuntimeRelayControlOperation.RECONNECT,
         }
+
+    def supports_profile_read(self, request: RuntimeProfileReadAdapterRequest) -> bool:
+        return request.operation == RuntimeProfileReadOperation.CAPTURE_LOAD_PROFILE
 
 
 class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
@@ -318,6 +328,223 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
             lineage=request.lineage,
         )
 
+    def execute_profile_read(
+        self,
+        request: RuntimeProfileReadAdapterRequest,
+    ) -> RuntimeProfileReadExecutionResult:
+        now = datetime.now(UTC)
+        payload = request.normalized_payload or request.request_payload or {}
+        mock_execution = payload.get("mock_execution", {}) if isinstance(payload, dict) else {}
+        gurux_operation = _map_profile_read_operation_to_gurux_definition(
+            request.operation
+        )
+        validated_target = _validate_gurux_capture_load_profile_target(
+            request,
+            gurux_operation,
+        )
+        normalized_request = _normalize_gurux_capture_load_profile_request(
+            request,
+            validated_target,
+        )
+        invocation_request = _build_gurux_capture_load_profile_invocation_request(
+            normalized_request
+        )
+        invocation_response = _invoke_gurux_capture_load_profile_stub(
+            invocation_request,
+            mock_execution=mock_execution,
+        )
+        requested_outcome = RuntimeCommandOutcome(
+            mock_execution.get("outcome", RuntimeCommandOutcome.SUCCEEDED.value)
+        )
+        error_detail = mock_execution.get("error_detail") or mock_execution.get("error_message")
+        interpreted_result = _interpret_gurux_capture_load_profile_response(
+            invocation_response,
+            requested_outcome=requested_outcome,
+            error_detail=error_detail,
+        )
+
+        trace_references = request.trace_references
+        interval_count = len(validated_target.expected_profile_batch.load_profile_intervals)
+        return RuntimeProfileReadExecutionResult(
+            status=RuntimeProfileReadExecutionStatus.COMPLETED,
+            profile_read_execution_record_id=(
+                "runtime-profile-read:"
+                f"{request.execution_context.command_attempt_id}:{request.execution_context.request_id or request.execution_context.command_id}"
+            ),
+            session_identifier=str(trace_references["session_identifier"]),
+            dispatch_envelope_record_id=request.dispatch_envelope_record_id,
+            delivery_contract_record_id=str(trace_references["delivery_contract_record_id"]),
+            envelope_record_id=str(trace_references["envelope_record_id"]),
+            publication_contract_record_id=str(
+                trace_references["publication_contract_record_id"]
+            ),
+            attestation_record_id=str(trace_references["attestation_record_id"]),
+            settlement_record_id=str(trace_references["settlement_record_id"]),
+            reconciliation_record_id=str(trace_references["reconciliation_record_id"]),
+            interpretation_record_id=str(trace_references["interpretation_record_id"]),
+            observation_record_id=str(trace_references["observation_record_id"]),
+            invocation_result_record_id=str(
+                trace_references["invocation_result_record_id"]
+            ),
+            dispatch_request_record_id=str(trace_references["dispatch_request_record_id"]),
+            selection_record_id=str(trace_references["selection_record_id"]),
+            intent_record_id=str(trace_references["intent_record_id"]),
+            closure_record_id=str(trace_references["closure_record_id"]),
+            materialization_record_id=str(trace_references["materialization_record_id"]),
+            post_processing_record_id=str(trace_references["post_processing_record_id"]),
+            disposition_record_id=str(trace_references["disposition_record_id"]),
+            outcome_record_id=str(trace_references["outcome_record_id"]),
+            executor_identifier=str(request.execution_context.worker_identifier),
+            job_run_id=str(request.execution_context.job_run_id),
+            related_command_id=str(request.execution_context.command_id),
+            command_attempt_id=str(request.execution_context.command_attempt_id),
+            adapter_key=self.adapter_key,
+            protocol_family=request.protocol_family,
+            profile_read_operation=request.operation,
+            command_category=request.command_category,
+            adapter_acknowledgment_state=interpreted_result.adapter_acknowledgment_state,
+            protocol_stage_outcome=interpreted_result.protocol_stage_outcome,
+            execution_outcome=interpreted_result.execution_outcome,
+            correlation_id=request.execution_context.correlation_id,
+            request_id=request.execution_context.request_id,
+            execution_started_at=now.isoformat(),
+            execution_finished_at=now.isoformat(),
+            profile_read_batch=interpreted_result.profile_read_batch,
+            adapter_result_summary={
+                "adapter_key": self.adapter_key,
+                "operation": request.operation.value,
+                "protocol_family": request.protocol_family.value,
+                "adapter_acknowledged": invocation_response.acknowledged,
+                "vertical_slice": "profile_read",
+                "load_profile_interval_count": interval_count,
+                "gurux_profile_read_operation": gurux_operation.model_dump(mode="json"),
+                "gurux_profile_read_validated_target": validated_target.model_dump(
+                    mode="json"
+                ),
+                "gurux_profile_read_normalized_request": normalized_request.model_dump(
+                    mode="json"
+                ),
+                "gurux_profile_read_invocation_result": invocation_response.model_dump(
+                    mode="json"
+                ),
+                "gurux_profile_read_interpreter": interpreted_result.model_dump(
+                    mode="json"
+                ),
+            },
+            adapter_response_snapshot={
+                "adapter": self.adapter_key,
+                "operation": request.operation.value,
+                "target_meter_id": str(request.target.meter_id),
+                "endpoint_id": str(request.target.endpoint_id),
+                "protocol_profile_id": str(request.target.protocol_association_profile_id),
+                "load_profile_interval_count": interval_count,
+                "gurux_profile_read_operation": gurux_operation.model_dump(mode="json"),
+                "gurux_profile_read_validated_target": validated_target.model_dump(
+                    mode="json"
+                ),
+                "gurux_profile_read_normalized_request": normalized_request.model_dump(
+                    mode="json"
+                ),
+                "gurux_profile_read_invocation_request": invocation_request.model_dump(
+                    mode="json"
+                ),
+                "gurux_profile_read_invocation_result": invocation_response.model_dump(
+                    mode="json"
+                ),
+                "gurux_profile_read_interpreter": interpreted_result.model_dump(
+                    mode="json"
+                ),
+            },
+            error_category=interpreted_result.error_category,
+            error_detail=interpreted_result.error_detail,
+            profile_read_recorded_by_executor_identifier=str(
+                request.execution_context.worker_identifier
+            ),
+            already_recorded=False,
+            summary=interpreted_result.interpreter_summary,
+            lineage=request.lineage,
+        )
+
+
+class GuruxProfileReadOperationDefinition(BaseModel):
+    operation: RuntimeProfileReadOperation
+    interface_class: str
+    class_id: int
+    obis_code: str
+    selector_name: str
+    selector_id: int
+    capture_object_type: str
+
+
+class GuruxProfileReadValidatedTarget(BaseModel):
+    gurux_operation: GuruxProfileReadOperationDefinition
+    target_object: dict[str, object]
+    endpoint_identity: dict[str, object]
+    protocol_profile: dict[str, object]
+    transport_prerequisites_present: bool
+    security_prerequisites_present: bool
+    requested_channel_ids: list[str]
+    requested_interval_count: int
+    expected_profile_batch: RuntimeReadingBatchPayload
+    trace_references: dict[str, object]
+
+
+class GuruxProfileReadNormalizedRequest(BaseModel):
+    adapter_key: str
+    command_attempt_id: str
+    dispatch_envelope_record_id: str
+    gurux_operation: GuruxProfileReadOperationDefinition
+    target_object: dict[str, object]
+    endpoint_identity: dict[str, object]
+    protocol_profile: dict[str, object]
+    transport_context: dict[str, object]
+    security_context: dict[str, object]
+    invocation_context: dict[str, object]
+    requested_channel_ids: list[str]
+    expected_profile_batch: RuntimeReadingBatchPayload
+    trace_references: dict[str, object]
+
+
+class GuruxProfileReadInvocationRequest(BaseModel):
+    adapter_key: str
+    command_attempt_id: str
+    dispatch_envelope_record_id: str
+    correlation_id: str | None = None
+    request_id: str | None = None
+    target_meter_id: str
+    endpoint_id: str
+    protocol_profile_id: str
+    transport_type: str
+    transport_locator: str
+    port: int | None = None
+    authentication_mode: str
+    password_secret_ref: str | None = None
+    profile_obis_code: str
+    selector_name: str
+    selector_id: int
+    requested_channel_ids: list[str]
+    requested_interval_count: int
+
+
+class GuruxProfileReadInvocationResponse(BaseModel):
+    acknowledged: bool
+    adapter_available: bool
+    invocation_status: str
+    profile_obis_code: str
+    payload_snapshot: dict[str, object] | None = None
+    response_received_at: str
+    error_detail: str | None = None
+
+
+class GuruxProfileReadInterpretedResult(BaseModel):
+    adapter_acknowledgment_state: RuntimeProfileReadAdapterAcknowledgmentState
+    protocol_stage_outcome: RuntimeProfileReadProtocolStageOutcome
+    execution_outcome: RuntimeCommandOutcome
+    profile_read_batch: RuntimeReadingBatchPayload | None = None
+    error_category: RuntimeProfileReadErrorCategory | None = None
+    error_detail: str | None = None
+    interpreter_summary: str
+
 
 class GuruxRelayControlOperationDefinition(BaseModel):
     operation: RuntimeRelayControlOperation
@@ -446,6 +673,267 @@ class GuruxRelayControlTerminalAdapterStatus(BaseModel):
     correlation_id: str | None = None
     request_id: str | None = None
     session_identifier: str | None = None
+
+
+def _map_profile_read_operation_to_gurux_definition(
+    operation: RuntimeProfileReadOperation | str,
+) -> GuruxProfileReadOperationDefinition:
+    normalized = operation.value if isinstance(operation, RuntimeProfileReadOperation) else str(operation)
+    if normalized == RuntimeProfileReadOperation.CAPTURE_LOAD_PROFILE.value:
+        return GuruxProfileReadOperationDefinition(
+            operation=RuntimeProfileReadOperation.CAPTURE_LOAD_PROFILE,
+            interface_class="profile_generic",
+            class_id=7,
+            obis_code="1.0.99.1.0.255",
+            selector_name="capture_period_range",
+            selector_id=1,
+            capture_object_type="load_profile",
+        )
+    raise ValueError(
+        f"Unsupported profile-read operation '{normalized}' for the Gurux profile-read mapper."
+    )
+
+
+def _validate_gurux_capture_load_profile_target(
+    request: RuntimeProfileReadAdapterRequest,
+    gurux_operation: GuruxProfileReadOperationDefinition,
+) -> GuruxProfileReadValidatedTarget:
+    if request.operation != RuntimeProfileReadOperation.CAPTURE_LOAD_PROFILE:
+        raise ValueError(
+            "Runtime profile read validator only supports the capture-load-profile operation."
+        )
+
+    payload = request.normalized_payload or request.request_payload or {}
+    mock_execution = payload.get("mock_execution", {}) if isinstance(payload, dict) else {}
+    explicit_reading_batch = (
+        mock_execution.get("reading_batch") if isinstance(mock_execution, dict) else None
+    )
+    if not isinstance(explicit_reading_batch, dict):
+        raise ValueError(
+            "Missing adapter prerequisites for the profile-read capture-load-profile validator."
+        )
+    expected_profile_batch = RuntimeReadingBatchPayload.model_validate(explicit_reading_batch)
+    if not expected_profile_batch.load_profile_intervals:
+        raise ValueError(
+            "Missing adapter prerequisites for the profile-read capture-load-profile validator."
+        )
+
+    transport_locator = request.transport.host or request.transport.ip_address
+    transport_prerequisites_present = (
+        request.transport.endpoint_transport_type is not None and transport_locator is not None
+    )
+    security_prerequisites_present = request.security.authentication_mode is not None
+    if not transport_prerequisites_present or not security_prerequisites_present:
+        raise ValueError(
+            "Missing adapter prerequisites for the profile-read capture-load-profile validator."
+        )
+
+    requested_channel_ids = sorted(
+        {str(interval.channel_id) for interval in expected_profile_batch.load_profile_intervals}
+    )
+    interval_start = min(
+        interval.interval_start for interval in expected_profile_batch.load_profile_intervals
+    )
+    interval_end = max(
+        interval.interval_end for interval in expected_profile_batch.load_profile_intervals
+    )
+    return GuruxProfileReadValidatedTarget(
+        gurux_operation=gurux_operation,
+        target_object={
+            "interface_class": gurux_operation.interface_class,
+            "class_id": gurux_operation.class_id,
+            "obis_code": gurux_operation.obis_code,
+            "selector_name": gurux_operation.selector_name,
+            "selector_id": gurux_operation.selector_id,
+            "requested_window_start": interval_start.isoformat(),
+            "requested_window_end": interval_end.isoformat(),
+            "capture_object_type": gurux_operation.capture_object_type,
+        },
+        endpoint_identity={
+            "meter_id": str(request.target.meter_id),
+            "meter_serial_number": request.target.serial_number,
+            "endpoint_id": str(request.target.endpoint_id),
+            "endpoint_code": request.target.endpoint_code,
+        },
+        protocol_profile={
+            "protocol_profile_id": str(request.target.protocol_association_profile_id),
+            "protocol_family": request.protocol_family.value,
+        },
+        transport_prerequisites_present=transport_prerequisites_present,
+        security_prerequisites_present=security_prerequisites_present,
+        requested_channel_ids=requested_channel_ids,
+        requested_interval_count=len(expected_profile_batch.load_profile_intervals),
+        expected_profile_batch=expected_profile_batch,
+        trace_references=request.trace_references,
+    )
+
+
+def _normalize_gurux_capture_load_profile_request(
+    request: RuntimeProfileReadAdapterRequest,
+    validated_target: GuruxProfileReadValidatedTarget,
+) -> GuruxProfileReadNormalizedRequest:
+    transport_locator = request.transport.host or request.transport.ip_address
+    if transport_locator is None:
+        raise ValueError(
+            "Missing adapter prerequisites for the profile-read capture-load-profile request shaper."
+        )
+
+    return GuruxProfileReadNormalizedRequest(
+        adapter_key=request.adapter_key,
+        command_attempt_id=str(request.execution_context.command_attempt_id),
+        dispatch_envelope_record_id=request.dispatch_envelope_record_id,
+        gurux_operation=validated_target.gurux_operation,
+        target_object=validated_target.target_object,
+        endpoint_identity=validated_target.endpoint_identity,
+        protocol_profile=validated_target.protocol_profile,
+        transport_context={
+            "transport_type": request.transport.endpoint_transport_type.value,
+            "transport_locator": transport_locator,
+            "port": request.transport.port,
+        },
+        security_context={
+            "authentication_mode": request.security.authentication_mode.value,
+            "password_secret_ref": request.security.password_secret_ref,
+            "security_suite": request.security.security_suite,
+        },
+        invocation_context={
+            "correlation_id": request.execution_context.correlation_id,
+            "request_id": request.execution_context.request_id,
+            "requested_interval_count": validated_target.requested_interval_count,
+            "requested_window_start": validated_target.target_object["requested_window_start"],
+            "requested_window_end": validated_target.target_object["requested_window_end"],
+        },
+        requested_channel_ids=validated_target.requested_channel_ids,
+        expected_profile_batch=validated_target.expected_profile_batch,
+        trace_references=request.trace_references,
+    )
+
+
+def _build_gurux_capture_load_profile_invocation_request(
+    normalized_request: GuruxProfileReadNormalizedRequest,
+) -> GuruxProfileReadInvocationRequest:
+    return GuruxProfileReadInvocationRequest(
+        adapter_key=normalized_request.adapter_key,
+        command_attempt_id=normalized_request.command_attempt_id,
+        dispatch_envelope_record_id=normalized_request.dispatch_envelope_record_id,
+        correlation_id=normalized_request.invocation_context.get("correlation_id"),
+        request_id=normalized_request.invocation_context.get("request_id"),
+        target_meter_id=str(normalized_request.endpoint_identity["meter_id"]),
+        endpoint_id=str(normalized_request.endpoint_identity["endpoint_id"]),
+        protocol_profile_id=str(
+            normalized_request.protocol_profile["protocol_profile_id"]
+        ),
+        transport_type=str(normalized_request.transport_context["transport_type"]),
+        transport_locator=str(normalized_request.transport_context["transport_locator"]),
+        port=normalized_request.transport_context.get("port"),
+        authentication_mode=str(normalized_request.security_context["authentication_mode"]),
+        password_secret_ref=normalized_request.security_context.get("password_secret_ref"),
+        profile_obis_code=str(normalized_request.target_object["obis_code"]),
+        selector_name=str(normalized_request.target_object["selector_name"]),
+        selector_id=int(normalized_request.target_object["selector_id"]),
+        requested_channel_ids=normalized_request.requested_channel_ids,
+        requested_interval_count=int(
+            normalized_request.invocation_context["requested_interval_count"]
+        ),
+    )
+
+
+def _invoke_gurux_capture_load_profile_stub(
+    invocation_request: GuruxProfileReadInvocationRequest,
+    *,
+    mock_execution: dict[str, object],
+) -> GuruxProfileReadInvocationResponse:
+    adapter_available = bool(mock_execution.get("adapter_available", True))
+    acknowledged = bool(mock_execution.get("adapter_acknowledged", True))
+    if not adapter_available:
+        invocation_status = "unavailable"
+    elif acknowledged:
+        invocation_status = "accepted"
+    else:
+        invocation_status = "rejected"
+
+    payload_snapshot = (
+        mock_execution.get("reading_batch")
+        if isinstance(mock_execution.get("reading_batch"), dict)
+        else None
+    )
+    return GuruxProfileReadInvocationResponse(
+        acknowledged=acknowledged,
+        adapter_available=adapter_available,
+        invocation_status=invocation_status,
+        profile_obis_code=invocation_request.profile_obis_code,
+        payload_snapshot=payload_snapshot,
+        response_received_at=datetime.now(UTC).isoformat(),
+        error_detail=mock_execution.get("error_detail") or mock_execution.get("error_message"),
+    )
+
+
+def _interpret_gurux_capture_load_profile_response(
+    invocation_response: GuruxProfileReadInvocationResponse,
+    *,
+    requested_outcome: RuntimeCommandOutcome,
+    error_detail: str | None,
+) -> GuruxProfileReadInterpretedResult:
+    terminal_error_detail = error_detail or invocation_response.error_detail
+    if not invocation_response.adapter_available:
+        return GuruxProfileReadInterpretedResult(
+            adapter_acknowledgment_state=RuntimeProfileReadAdapterAcknowledgmentState.REJECTED,
+            protocol_stage_outcome=RuntimeProfileReadProtocolStageOutcome.PROFILE_READ_FAILED,
+            execution_outcome=(
+                requested_outcome
+                if requested_outcome != RuntimeCommandOutcome.SUCCEEDED
+                else RuntimeCommandOutcome.FAILED
+            ),
+            error_category=RuntimeProfileReadErrorCategory.EXECUTION_FAILED,
+            error_detail=terminal_error_detail or "Profile-read adapter is unavailable.",
+            interpreter_summary=(
+                "Capture-load-profile interpretation refused the response because the "
+                "bounded Gurux adapter path was unavailable."
+            ),
+        )
+    if not invocation_response.acknowledged:
+        return GuruxProfileReadInterpretedResult(
+            adapter_acknowledgment_state=RuntimeProfileReadAdapterAcknowledgmentState.REJECTED,
+            protocol_stage_outcome=RuntimeProfileReadProtocolStageOutcome.PROFILE_READ_FAILED,
+            execution_outcome=(
+                requested_outcome
+                if requested_outcome != RuntimeCommandOutcome.SUCCEEDED
+                else RuntimeCommandOutcome.FAILED
+            ),
+            error_category=RuntimeProfileReadErrorCategory.ADAPTER_REJECTED,
+            error_detail=terminal_error_detail or "Profile-read adapter rejected the request.",
+            interpreter_summary=(
+                "Capture-load-profile interpretation mapped the Gurux invocation to a "
+                "bounded rejected profile-read outcome."
+            ),
+        )
+    if not isinstance(invocation_response.payload_snapshot, dict):
+        raise ValueError(
+            "Unusable adapter response shape for the profile-read capture-load-profile interpreter."
+        )
+
+    profile_read_batch = RuntimeReadingBatchPayload.model_validate(
+        invocation_response.payload_snapshot
+    )
+    error_category = None
+    if requested_outcome != RuntimeCommandOutcome.SUCCEEDED:
+        error_category = RuntimeProfileReadErrorCategory.EXECUTION_FAILED
+    return GuruxProfileReadInterpretedResult(
+        adapter_acknowledgment_state=RuntimeProfileReadAdapterAcknowledgmentState.ACCEPTED,
+        protocol_stage_outcome=(
+            RuntimeProfileReadProtocolStageOutcome.PROFILE_READ_COMPLETED
+            if requested_outcome == RuntimeCommandOutcome.SUCCEEDED
+            else RuntimeProfileReadProtocolStageOutcome.PROFILE_READ_FAILED
+        ),
+        execution_outcome=requested_outcome,
+        profile_read_batch=profile_read_batch,
+        error_category=error_category,
+        error_detail=terminal_error_detail,
+        interpreter_summary=(
+            "Capture-load-profile interpretation mapped the bounded Gurux response into "
+            "the runtime-facing profile-read result contract."
+        ),
+    )
 
 
 def _map_relay_control_operation_to_gurux_definition(

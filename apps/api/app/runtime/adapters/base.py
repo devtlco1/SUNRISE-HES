@@ -8,6 +8,8 @@ from app.runtime.contracts import (
     ProtocolExecutionPlan,
     RuntimeCommandRequest,
     RuntimeCommandResult,
+    RuntimeProfileReadAdapterRequest,
+    RuntimeProfileReadExecutionResult,
     RuntimeRelayControlAdapterRequest,
     RuntimeRelayControlExecutionResult,
 )
@@ -29,6 +31,13 @@ class RuntimeAdapter(Protocol):
         self,
         request: RuntimeRelayControlAdapterRequest,
     ) -> RuntimeRelayControlExecutionResult: ...
+
+    def supports_profile_read(self, request: RuntimeProfileReadAdapterRequest) -> bool: ...
+
+    def execute_profile_read(
+        self,
+        request: RuntimeProfileReadAdapterRequest,
+    ) -> RuntimeProfileReadExecutionResult: ...
 
 
 class BaseRuntimeAdapter(ABC):
@@ -54,4 +63,15 @@ class BaseRuntimeAdapter(ABC):
     ) -> RuntimeRelayControlExecutionResult:
         raise NotImplementedError(
             "Relay-control execution is not implemented for this adapter."
+        )
+
+    def supports_profile_read(self, request: RuntimeProfileReadAdapterRequest) -> bool:
+        return False
+
+    def execute_profile_read(
+        self,
+        request: RuntimeProfileReadAdapterRequest,
+    ) -> RuntimeProfileReadExecutionResult:
+        raise NotImplementedError(
+            "Profile-read execution is not implemented for this adapter."
         )
