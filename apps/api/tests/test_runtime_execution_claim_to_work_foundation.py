@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import socket
 import uuid
+from urllib.parse import urlsplit, urlunsplit
 
 from redis import Redis
 from sqlalchemy import func, select
@@ -18,8 +20,28 @@ def _build_real_redis_client() -> Redis:
     return Redis.from_url(settings.redis_url, decode_responses=True)
 
 
+def _resolve_local_test_redis_url(redis_url: str) -> str:
+    parsed = urlsplit(redis_url)
+    hostname = parsed.hostname
+    if hostname is None:
+        return redis_url
+    try:
+        socket.getaddrinfo(hostname, parsed.port or 6379)
+        return redis_url
+    except OSError:
+        if hostname != "redis":
+            return redis_url
+    netloc = parsed.netloc.replace(hostname, "localhost", 1)
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+
 def _configure_real_redis_settings(monkeypatch, *, stream_name: str, consumer_group: str) -> None:
     monkeypatch.setattr(settings, "queue_backend", "redis")
+    monkeypatch.setattr(
+        settings,
+        "redis_url",
+        _resolve_local_test_redis_url(settings.redis_url),
+    )
     monkeypatch.setattr(settings, "redis_queue_stream_name", stream_name)
     monkeypatch.setattr(settings, "redis_queue_consumer_group_name", consumer_group)
 

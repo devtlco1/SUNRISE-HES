@@ -199,6 +199,31 @@ class ProfileCaptureExecutionOrchestrationResponse(BaseModel):
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
+class ProfileCaptureExecuteNowRequest(CaptureLoadProfileCommandCreate):
+    execute_now_reason: str | None = Field(default=None, max_length=255)
+
+
+class ProfileCaptureExecuteNowResult(BaseModel):
+    execute_now_status: str
+    execute_now_identifier: str
+    command_id: UUID
+    command_status: CommandStatus
+    command_execution_attempt_id: UUID
+    runtime_profile_read_execution_record_id: str
+    terminal_status_category: str | None = None
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    reused_existing_execute_now: bool
+    executed_at: datetime
+    execute_now_record: dict[str, object]
+
+
+class ProfileCaptureExecuteNowResponse(BaseModel):
+    result: ProfileCaptureExecuteNowResult
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
 class CommandExecutionAttemptResponse(BaseModel):
     id: UUID
     meter_command_id: UUID

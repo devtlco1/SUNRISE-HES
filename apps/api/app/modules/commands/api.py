@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
+from app.modules.commands.profile_capture_execute_now import execute_profile_capture_now
 from app.modules.commands.profile_capture_execution_orchestration import (
     orchestrate_profile_capture_command_execution,
 )
@@ -28,6 +29,8 @@ from app.modules.commands.schemas import (
     MeterCommandResponse,
     ProfileCaptureAttemptBootstrapRequest,
     ProfileCaptureAttemptBootstrapResponse,
+    ProfileCaptureExecuteNowRequest,
+    ProfileCaptureExecuteNowResponse,
     ProfileCaptureExecutionOrchestrationRequest,
     ProfileCaptureExecutionOrchestrationResponse,
     ProfileCaptureRuntimeHandoffRequest,
@@ -153,6 +156,44 @@ def submit_capture_load_profile_command_endpoint(
             "priority": command.priority.value,
             "idempotency_key": command.idempotency_key,
             "profile_read_operation": "capture_load_profile",
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.post(
+    "/{meter_id}/commands/profile-capture/execute-now",
+    response_model=ProfileCaptureExecuteNowResponse,
+)
+def execute_profile_capture_now_endpoint(
+    meter_id: uuid.UUID,
+    payload: ProfileCaptureExecuteNowRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> ProfileCaptureExecuteNowResponse:
+    response = execute_profile_capture_now(
+        session,
+        meter_id=meter_id,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    record_audit_event(
+        session,
+        action="commands.requests.execute_profile_capture_now",
+        resource_type="commands",
+        resource_id=response.result.command_id,
+        actor_user_id=current_user.id,
+        description="Capture-load-profile command executed through application-facing execute-now path.",
+        details={
+            "meter_id": str(meter_id),
+            "command_id": str(response.result.command_id),
+            "command_execution_attempt_id": str(response.result.command_execution_attempt_id),
+            "execute_now_identifier": response.result.execute_now_identifier,
+            "runtime_profile_read_execution_record_id": response.result.runtime_profile_read_execution_record_id,
+            "terminal_status_category": response.result.terminal_status_category,
+            "reused_existing_execute_now": response.result.reused_existing_execute_now,
         },
         request_context=request.state.request_audit_context,
     )

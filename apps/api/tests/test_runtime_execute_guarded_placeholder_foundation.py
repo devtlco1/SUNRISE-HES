@@ -92,7 +92,9 @@ def test_execute_runtime_plan_refuses_when_no_invocation_gate_exists(
     )
     attempt = db_session.get(CommandExecutionAttempt, uuid.UUID(attempt_id))
     assert attempt is not None
-    attempt.execution_metadata.pop("runtime_execution_invocation_gate", None)
+    execution_metadata = dict(attempt.execution_metadata or {})
+    execution_metadata.pop("runtime_execution_invocation_gate", None)
+    attempt.execution_metadata = execution_metadata
     db_session.add(attempt)
     db_session.commit()
 
@@ -121,9 +123,14 @@ def test_execute_runtime_plan_refuses_when_lease_belongs_to_another_executor(
     )
     attempt = db_session.get(CommandExecutionAttempt, uuid.UUID(attempt_id))
     assert attempt is not None
-    attempt.execution_metadata["runtime_execution_lease"][
-        "executor_identifier"
-    ] = "another-executor"
+    lease_metadata = {
+        **attempt.execution_metadata["runtime_execution_lease"],
+        "executor_identifier": "another-executor",
+    }
+    attempt.execution_metadata = {
+        **attempt.execution_metadata,
+        "runtime_execution_lease": lease_metadata,
+    }
     db_session.add(attempt)
     db_session.commit()
 
@@ -152,9 +159,14 @@ def test_execute_runtime_plan_refuses_when_invocation_gate_belongs_to_another_ex
     )
     attempt = db_session.get(CommandExecutionAttempt, uuid.UUID(attempt_id))
     assert attempt is not None
-    attempt.execution_metadata["runtime_execution_invocation_gate"][
-        "executor_identifier"
-    ] = "another-executor"
+    invocation_metadata = {
+        **attempt.execution_metadata["runtime_execution_invocation_gate"],
+        "executor_identifier": "another-executor",
+    }
+    attempt.execution_metadata = {
+        **attempt.execution_metadata,
+        "runtime_execution_invocation_gate": invocation_metadata,
+    }
     db_session.add(attempt)
     db_session.commit()
 
@@ -183,9 +195,14 @@ def test_execute_runtime_plan_refuses_when_lease_is_expired(
     )
     attempt = db_session.get(CommandExecutionAttempt, uuid.UUID(attempt_id))
     assert attempt is not None
-    attempt.execution_metadata["runtime_execution_lease"]["lease_expires_at"] = (
-        datetime.now(UTC) - timedelta(seconds=5)
-    ).isoformat()
+    lease_metadata = {
+        **attempt.execution_metadata["runtime_execution_lease"],
+        "lease_expires_at": (datetime.now(UTC) - timedelta(seconds=5)).isoformat(),
+    }
+    attempt.execution_metadata = {
+        **attempt.execution_metadata,
+        "runtime_execution_lease": lease_metadata,
+    }
     db_session.add(attempt)
     db_session.commit()
 
@@ -214,9 +231,14 @@ def test_execute_runtime_plan_refuses_when_invocation_gate_is_expired(
     )
     attempt = db_session.get(CommandExecutionAttempt, uuid.UUID(attempt_id))
     assert attempt is not None
-    attempt.execution_metadata["runtime_execution_invocation_gate"]["gate_expires_at"] = (
-        datetime.now(UTC) - timedelta(seconds=5)
-    ).isoformat()
+    invocation_metadata = {
+        **attempt.execution_metadata["runtime_execution_invocation_gate"],
+        "gate_expires_at": (datetime.now(UTC) - timedelta(seconds=5)).isoformat(),
+    }
+    attempt.execution_metadata = {
+        **attempt.execution_metadata,
+        "runtime_execution_invocation_gate": invocation_metadata,
+    }
     db_session.add(attempt)
     db_session.commit()
 
