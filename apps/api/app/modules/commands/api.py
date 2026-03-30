@@ -6,6 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
+from app.modules.commands.profile_capture_runtime_handoff import (
+    handoff_profile_capture_command_to_runtime,
+)
+from app.modules.commands.profile_capture_runtime_terminalization import (
+    terminalize_profile_capture_runtime_execution,
+)
 from app.modules.commands.schemas import (
     CaptureLoadProfileCommandCreate,
     CommandExecutionAttemptListResponse,
@@ -19,6 +25,10 @@ from app.modules.commands.schemas import (
     MeterCommandResponse,
     ProfileCaptureAttemptBootstrapRequest,
     ProfileCaptureAttemptBootstrapResponse,
+    ProfileCaptureRuntimeHandoffRequest,
+    ProfileCaptureRuntimeHandoffResponse,
+    ProfileCaptureRuntimeTerminalizationRequest,
+    ProfileCaptureRuntimeTerminalizationResponse,
 )
 from app.modules.jobs.dependencies import require_internal_api_token
 from app.modules.commands.service import (
@@ -221,6 +231,40 @@ def bootstrap_profile_capture_attempt_endpoint(
     session: Session = Depends(get_db_session),
 ) -> ProfileCaptureAttemptBootstrapResponse:
     return bootstrap_profile_capture_command_attempt(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/handoff-profile-capture-to-runtime",
+    response_model=ProfileCaptureRuntimeHandoffResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def handoff_profile_capture_to_runtime_endpoint(
+    command_id: uuid.UUID,
+    payload: ProfileCaptureRuntimeHandoffRequest,
+    session: Session = Depends(get_db_session),
+) -> ProfileCaptureRuntimeHandoffResponse:
+    return handoff_profile_capture_command_to_runtime(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/terminalize-profile-capture-runtime",
+    response_model=ProfileCaptureRuntimeTerminalizationResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def terminalize_profile_capture_runtime_endpoint(
+    command_id: uuid.UUID,
+    payload: ProfileCaptureRuntimeTerminalizationRequest,
+    session: Session = Depends(get_db_session),
+) -> ProfileCaptureRuntimeTerminalizationResponse:
+    return terminalize_profile_capture_runtime_execution(
         session,
         command_id=command_id,
         payload=payload,
