@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
+from app.modules.commands.profile_capture_execution_orchestration import (
+    orchestrate_profile_capture_command_execution,
+)
 from app.modules.commands.profile_capture_runtime_handoff import (
     handoff_profile_capture_command_to_runtime,
 )
@@ -25,6 +28,8 @@ from app.modules.commands.schemas import (
     MeterCommandResponse,
     ProfileCaptureAttemptBootstrapRequest,
     ProfileCaptureAttemptBootstrapResponse,
+    ProfileCaptureExecutionOrchestrationRequest,
+    ProfileCaptureExecutionOrchestrationResponse,
     ProfileCaptureRuntimeHandoffRequest,
     ProfileCaptureRuntimeHandoffResponse,
     ProfileCaptureRuntimeTerminalizationRequest,
@@ -265,6 +270,23 @@ def terminalize_profile_capture_runtime_endpoint(
     session: Session = Depends(get_db_session),
 ) -> ProfileCaptureRuntimeTerminalizationResponse:
     return terminalize_profile_capture_runtime_execution(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/execute-profile-capture-in-process",
+    response_model=ProfileCaptureExecutionOrchestrationResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def execute_profile_capture_in_process_endpoint(
+    command_id: uuid.UUID,
+    payload: ProfileCaptureExecutionOrchestrationRequest,
+    session: Session = Depends(get_db_session),
+) -> ProfileCaptureExecutionOrchestrationResponse:
+    return orchestrate_profile_capture_command_execution(
         session,
         command_id=command_id,
         payload=payload,
