@@ -12,6 +12,9 @@ from app.modules.commands.operational_read_model import (
     list_recent_command_operational_items,
     list_recent_meter_command_operational_items,
 )
+from app.modules.commands.on_demand_read_execution_orchestration import (
+    orchestrate_on_demand_read_command_execution,
+)
 from app.modules.commands.relay_control_execute_now import execute_relay_control_now
 from app.modules.commands.relay_control_status_readback import (
     get_relay_control_execution_status,
@@ -61,6 +64,8 @@ from app.modules.commands.schemas import (
     OnDemandReadAttemptBootstrapRequest,
     OnDemandReadAttemptBootstrapResponse,
     OnDemandReadCommandCreate,
+    OnDemandReadExecutionOrchestrationRequest,
+    OnDemandReadExecutionOrchestrationResponse,
     OnDemandReadRuntimeHandoffRequest,
     OnDemandReadRuntimeHandoffResponse,
     OnDemandReadRuntimeTerminalizationRequest,
@@ -556,6 +561,23 @@ def terminalize_on_demand_read_runtime_endpoint(
     session: Session = Depends(get_db_session),
 ) -> OnDemandReadRuntimeTerminalizationResponse:
     return terminalize_on_demand_read_runtime_execution(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/execute-on-demand-read-in-process",
+    response_model=OnDemandReadExecutionOrchestrationResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def execute_on_demand_read_in_process_endpoint(
+    command_id: uuid.UUID,
+    payload: OnDemandReadExecutionOrchestrationRequest,
+    session: Session = Depends(get_db_session),
+) -> OnDemandReadExecutionOrchestrationResponse:
+    return orchestrate_on_demand_read_command_execution(
         session,
         command_id=command_id,
         payload=payload,

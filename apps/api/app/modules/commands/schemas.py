@@ -205,6 +205,38 @@ class OnDemandReadRuntimeTerminalizationResponse(BaseModel):
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
+class OnDemandReadExecutionOrchestrationRequest(BaseModel):
+    orchestration_identifier: str = Field(min_length=1, max_length=128)
+    executor_identifier: str = Field(min_length=1, max_length=128)
+    orchestration_reason: str | None = Field(default=None, max_length=255)
+    lease_seconds: int = Field(default=300, ge=5, le=3600)
+    session_timeout_seconds: int = Field(default=300, ge=5, le=3600)
+
+
+class OnDemandReadExecutionOrchestrationResult(BaseModel):
+    orchestration_status: str
+    orchestration_identifier: str
+    executor_identifier: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    job_run_id: UUID | None = None
+    runtime_on_demand_read_execution_record_id: str
+    on_demand_read_operation: OnDemandReadCommandOperation
+    snapshot_type: SnapshotType
+    terminalization_artifact_present: bool
+    reused_existing_orchestration: bool
+    orchestrated_at: datetime
+    orchestration_reason_category: str | None = None
+    orchestration_record: dict[str, object]
+
+
+class OnDemandReadExecutionOrchestrationResponse(BaseModel):
+    result: "OnDemandReadExecutionOrchestrationResult"
+    job_run: dict[str, object] | None = None
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
 class RelayControlAttemptBootstrapRequest(BaseModel):
     bootstrap_identifier: str = Field(min_length=1, max_length=128)
     bootstrap_reason: str | None = Field(default=None, max_length=255)
