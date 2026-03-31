@@ -182,7 +182,7 @@ describe("JobsEventsAlertsModule", () => {
     });
   });
 
-  it("links recent activity rows into existing bounded meter detail surfaces where meter context exists", async () => {
+  it("links recent activity rows into the bounded activity detail surface", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -195,15 +195,26 @@ describe("JobsEventsAlertsModule", () => {
 
     await waitFor(() => {
       expect(
-        within(activityPanel as HTMLElement).getByRole("link", {
-          name: /Tamper Open/i,
-        }),
-      ).toHaveAttribute("href", "/meters/meter-2");
+        within(activityPanel as HTMLElement).getAllByRole("link", {
+          name: "Open activity detail",
+        })[0],
+      ).toHaveAttribute(
+        "href",
+        "/jobs-events-alerts/activity/event/event-1",
+      );
       expect(
         within(activityPanel as HTMLElement).getAllByRole("link", {
-          name: /profile-capture-template/i,
+          name: "Open activity detail",
+        })[1],
+      ).toHaveAttribute(
+        "href",
+        "/jobs-events-alerts/activity/command/command-1",
+      );
+      expect(
+        within(activityPanel as HTMLElement).getAllByRole("link", {
+          name: "Open meter detail",
         })[0],
-      ).toHaveAttribute("href", "/meters/meter-1");
+      ).toHaveAttribute("href", "/meters/meter-2");
     });
   });
 

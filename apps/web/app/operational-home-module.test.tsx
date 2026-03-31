@@ -80,7 +80,7 @@ function createMockApi({
     }
 
     if (delayedResponses) {
-      await new Promise((resolve) => window.setTimeout(resolve, 20));
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
     }
 
     if (url.includes("/api/v1/meters?")) {

@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AuthorizedFetch } from "../operational-shell";
+import {
+  buildActivityDetailHref,
+  formatCommandSummary,
+  formatDateTime,
+  type ActivityType,
+} from "./activity-support";
 
 type JobRunItem = {
   id: string;
@@ -63,14 +69,16 @@ type RecentEventListResponse = {
 
 type ActivityItem = {
   id: string;
-  type: "job_run" | "command" | "event";
+  type: ActivityType;
   title: string;
   category: string;
   status: string;
   meterId: string | null;
   timestamp: string;
   summary: string;
-  targetHref: string | null;
+  detailHref: string;
+  relatedHref: string | null;
+  relatedLabel: string | null;
 };
 
 type AlertItem = {
@@ -81,36 +89,6 @@ type AlertItem = {
   timestamp: string;
   targetHref: string | null;
 };
-
-function formatDateTime(value: string | null): string {
-  if (!value) {
-    return "Not available";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString();
-}
-
-function formatCommandSummary(item: Record<string, string | null>): string {
-  if ("terminal_status_category" in item) {
-    return item.terminal_status_category ?? "No terminal status yet";
-  }
-  if ("relay_control_operation" in item) {
-    const operation = item.relay_control_operation ?? "relay";
-    const outcome = item.relay_control_execution_outcome ?? "pending";
-    return `${operation} (${outcome})`;
-  }
-  if ("on_demand_read_operation" in item) {
-    const operation = item.on_demand_read_operation ?? "read";
-    const snapshotType = item.snapshot_type ?? "snapshot";
-    const outcome = item.on_demand_read_execution_outcome ?? "pending";
-    return `${operation} ${snapshotType} (${outcome})`;
-  }
-  return "No operational summary yet";
-}
 
 function buildJobRunTimestamp(jobRun: JobRunItem): string {
   return (
@@ -184,10 +162,15 @@ export function JobsEventsAlertsModule({
     const items: ActivityItem[] = [];
 
     for (const jobRun of jobRuns ?? []) {
-      const targetHref = jobRun.target_meter_id
+      const relatedHref = jobRun.target_meter_id
         ? `/meters/${jobRun.target_meter_id}`
         : jobRun.related_command_id
           ? "/commands"
+          : null;
+      const relatedLabel = jobRun.target_meter_id
+        ? "Open meter detail"
+        : jobRun.related_command_id
+          ? "Open commands page"
           : null;
       items.push({
         id: jobRun.id,
@@ -204,7 +187,9 @@ export function JobsEventsAlertsModule({
           (jobRun.related_command
             ? `Related command ${jobRun.related_command.current_status}`
             : `Scheduled ${formatDateTime(jobRun.scheduled_for)}`),
-        targetHref,
+        detailHref: buildActivityDetailHref("job_run", jobRun.id),
+        relatedHref,
+        relatedLabel,
       });
     }
 
@@ -218,7 +203,9 @@ export function JobsEventsAlertsModule({
         meterId: command.meter_id,
         timestamp: command.latest_updated_at,
         summary: formatCommandSummary(command.family_specific_outcome_summary),
-        targetHref: `/meters/${command.meter_id}`,
+        detailHref: buildActivityDetailHref("command", command.command_id),
+        relatedHref: `/meters/${command.meter_id}`,
+        relatedLabel: "Open meter detail",
       });
     }
 
@@ -232,7 +219,9 @@ export function JobsEventsAlertsModule({
         meterId: event.meter_id,
         timestamp: event.occurred_at,
         summary: `Received ${formatDateTime(event.received_at)}`,
-        targetHref: event.meter_id ? `/meters/${event.meter_id}` : null,
+        detailHref: buildActivityDetailHref("event", event.id),
+        relatedHref: event.meter_id ? `/meters/${event.meter_id}` : null,
+        relatedLabel: event.meter_id ? "Open meter detail" : null,
       });
     }
 
@@ -432,43 +421,34 @@ export function JobsEventsAlertsModule({
                 <p className="muted">No recent operational activity available.</p>
               ) : null}
 
-              {activityItems.map((item) =>
-                item.targetHref ? (
-                  <Link key={item.id} className="command-list-item" href={item.targetHref}>
-                    <div className="command-list-item-header">
-                      <strong>{item.title}</strong>
-                      <span className="status-pill">{item.status}</span>
-                    </div>
-                    <div className="command-list-item-meta">
-                      <span>
-                        {item.type} / {item.category}
-                      </span>
-                      <span>{item.meterId ? `Meter ${item.meterId}` : "No meter target"}</span>
-                    </div>
-                    <div className="command-list-item-meta">
-                      <span>{item.summary}</span>
-                      <span>Updated {formatDateTime(item.timestamp)}</span>
-                    </div>
-                  </Link>
-                ) : (
-                  <div key={item.id} className="command-list-item">
-                    <div className="command-list-item-header">
-                      <strong>{item.title}</strong>
-                      <span className="status-pill">{item.status}</span>
-                    </div>
-                    <div className="command-list-item-meta">
-                      <span>
-                        {item.type} / {item.category}
-                      </span>
-                      <span>{item.meterId ? `Meter ${item.meterId}` : "No meter target"}</span>
-                    </div>
-                    <div className="command-list-item-meta">
-                      <span>{item.summary}</span>
-                      <span>Updated {formatDateTime(item.timestamp)}</span>
-                    </div>
+              {activityItems.map((item) => (
+                <div key={item.id} className="command-list-item">
+                  <div className="command-list-item-header">
+                    <strong>{item.title}</strong>
+                    <span className="status-pill">{item.status}</span>
                   </div>
-                ),
-              )}
+                  <div className="command-list-item-meta">
+                    <span>
+                      {item.type} / {item.category}
+                    </span>
+                    <span>{item.meterId ? `Meter ${item.meterId}` : "No meter target"}</span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>{item.summary}</span>
+                    <span>Updated {formatDateTime(item.timestamp)}</span>
+                  </div>
+                  <div className="artifact-row">
+                    <Link className="secondary-button" href={item.detailHref}>
+                      Open activity detail
+                    </Link>
+                    {item.relatedHref && item.relatedLabel ? (
+                      <Link className="secondary-button" href={item.relatedHref}>
+                        {item.relatedLabel}
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>

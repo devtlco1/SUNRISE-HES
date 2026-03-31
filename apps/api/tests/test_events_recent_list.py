@@ -100,3 +100,60 @@ def test_recent_events_respects_limit_for_compact_global_event_list(
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
+
+
+def test_event_detail_returns_bounded_operational_event_payload(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    now = datetime.now(UTC)
+
+    ingest_response = client.post(
+        f"/api/v1/internal/meters/{meter_id}/ingest-events",
+        headers={INTERNAL_TOKEN_HEADER: settings.internal_api_token},
+        json={
+            "correlation_id": "event-detail-1",
+            "events": [
+                {
+                    "event_code": "cover_open",
+                    "event_name": "Cover Open",
+                    "severity": "critical",
+                    "event_state": "open",
+                    "occurred_at": now.isoformat(),
+                    "normalized_payload": {"origin": "detail-test"},
+                }
+            ],
+        },
+    )
+    assert ingest_response.status_code == 200
+    event_id = ingest_response.json()["items"][0]["id"]
+
+    response = client.get(
+        f"/api/v1/events/{event_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == event_id
+    assert payload["meter_id"] == meter_id
+    assert payload["event_code"] == "cover_open"
+    assert payload["event_state"] == "open"
+    assert payload["severity"] == "critical"
+
+
+def test_event_detail_returns_not_found_for_unknown_event(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+
+    response = client.get(
+        "/api/v1/events/00000000-0000-0000-0000-000000000001",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Operational event not found."

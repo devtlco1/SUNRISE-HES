@@ -9,8 +9,10 @@ from app.modules.events.schemas import (
     IngestMeterEventsRequest,
     IngestMeterEventsResponse,
     MeterEventIngestionListResponse,
+    MeterEventIngestionResponse,
 )
 from app.modules.events.service import (
+    get_ingested_event,
     ingest_meter_events,
     list_meter_ingested_events,
     list_recent_ingested_events,
@@ -30,6 +32,15 @@ def list_recent_ingested_events_endpoint(
     _: User = Depends(require_permission("events.read")),
 ) -> MeterEventIngestionListResponse:
     return list_recent_ingested_events(session, limit=limit)
+
+
+@events_router.get("/{event_id}", response_model=MeterEventIngestionResponse)
+def get_ingested_event_endpoint(
+    event_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("events.read")),
+) -> MeterEventIngestionResponse:
+    return get_ingested_event(session, event_id=event_id)
 
 
 @meter_events_router.get("/{meter_id}/ingested-events", response_model=MeterEventIngestionListResponse)

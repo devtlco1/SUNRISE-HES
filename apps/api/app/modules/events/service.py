@@ -54,6 +54,17 @@ def list_recent_ingested_events(
     )
 
 
+def get_ingested_event(
+    session: Session,
+    *,
+    event_id: uuid.UUID,
+) -> MeterEventIngestion:
+    event = session.get(MeterEventIngestion, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Operational event not found.")
+    return event
+
+
 def ingest_meter_events(
     session: Session,
     *,
