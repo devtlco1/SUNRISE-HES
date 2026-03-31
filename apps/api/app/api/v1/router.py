@@ -15,7 +15,7 @@ from app.modules.connectivity.api import (
     protocol_association_profiles_router,
 )
 from app.modules.consumers.api import consumers_router
-from app.modules.events.api import internal_meter_events_router, meter_events_router
+from app.modules.events.api import events_router, internal_meter_events_router, meter_events_router
 from app.modules.jobs.api import (
     command_control_router,
     internal_command_attempts_router,
@@ -54,6 +54,7 @@ api_router.include_router(meter_commands_router)
 api_router.include_router(commands_router)
 api_router.include_router(internal_commands_router)
 api_router.include_router(command_control_router)
+api_router.include_router(events_router)
 api_router.include_router(meter_events_router)
 api_router.include_router(internal_meter_events_router)
 api_router.include_router(communication_endpoints_router)

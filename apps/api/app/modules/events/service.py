@@ -37,6 +37,23 @@ def list_meter_ingested_events(
     )
 
 
+def list_recent_ingested_events(
+    session: Session,
+    *,
+    limit: int = 100,
+) -> MeterEventIngestionListResponse:
+    total = session.scalar(select(func.count()).select_from(MeterEventIngestion)) or 0
+    items = session.scalars(
+        select(MeterEventIngestion)
+        .order_by(MeterEventIngestion.occurred_at.desc())
+        .limit(limit)
+    ).all()
+    return MeterEventIngestionListResponse(
+        total=total,
+        items=[serialize_ingested_event(item) for item in items],
+    )
+
+
 def ingest_meter_events(
     session: Session,
     *,
