@@ -156,6 +156,66 @@ export function OperationalHomeModule({
     return "Overview ready";
   }, [isLoadingOverview, meterOverview, pageError, recentCommands]);
 
+  const moduleCards = useMemo(
+    () => [
+      {
+        href: "/meters",
+        title: "Meters",
+        description:
+          "Browse the current bounded meter list and continue into meter details.",
+      },
+      {
+        href: "/commands",
+        title: "Commands",
+        description:
+          "Review recent stable operational commands and bounded command detail.",
+      },
+      {
+        href: "/connectivity",
+        title: "Connectivity",
+        description:
+          "Review compact connectivity context and navigate into existing meter details.",
+      },
+      {
+        href: "/subscribers",
+        title: "Subscribers",
+        description:
+          "Open consumer visibility flows and current operational subscriber detail.",
+      },
+      {
+        href: "/accounts",
+        title: "Accounts",
+        description:
+          "Continue into the bounded account visibility list and detail surfaces.",
+      },
+      {
+        href: "/service-points",
+        title: "Service Points",
+        description:
+          "Inspect premise-linked service point context with existing cross-domain links.",
+      },
+      {
+        href: "/jobs-events-alerts",
+        title: "Jobs / Events / Alerts",
+        description:
+          "Monitor current operational activity without expanding into deeper runtime work.",
+      },
+      {
+        href: "/gis-lite",
+        title: "GIS Lite",
+        description:
+          "Open the lightweight mapped entity view for existing operational visibility.",
+      },
+      {
+        href: "/transformers-substations",
+        title: "Transformers / Substations",
+        description:
+          "Review the new read-only infrastructure visibility slice and linked context.",
+      },
+    ],
+    [],
+  );
+
   return (
     <section className="panel">
       {pageError ? <p className="error-banner">{pageError}</p> : null}
@@ -194,33 +254,19 @@ export function OperationalHomeModule({
             <div>
               <h2>Operational modules</h2>
               <p className="muted">
-                Clear entry paths into the current bounded operational pages.
+                Dashboard entry paths into the current bounded operational and
+                infrastructure pages.
               </p>
             </div>
           </div>
 
-          <div className="meter-summary-grid">
-            <Link className="meter-list-item" href="/meters">
-              <strong>Meters</strong>
-              <p className="muted">
-                Browse the current bounded meter list and continue into meter
-                details.
-              </p>
-            </Link>
-            <Link className="meter-list-item" href="/commands">
-              <strong>Commands</strong>
-              <p className="muted">
-                Review recent stable operational commands and bounded command
-                detail.
-              </p>
-            </Link>
-            <Link className="meter-list-item" href="/connectivity">
-              <strong>Connectivity</strong>
-              <p className="muted">
-                Review compact connectivity context and navigate into existing
-                meter details.
-              </p>
-            </Link>
+          <div className="meter-summary-grid dashboard-module-grid">
+            {moduleCards.map((card) => (
+              <Link key={card.href} className="meter-list-item" href={card.href}>
+                <strong>{card.title}</strong>
+                <p className="muted">{card.description}</p>
+              </Link>
+            ))}
           </div>
         </section>
 

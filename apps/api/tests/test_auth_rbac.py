@@ -73,6 +73,40 @@ def test_login_failure_with_invalid_password(client, db_session: Session) -> Non
     assert audit_log.payload["details"]["username_or_email"] == "operator"
 
 
+def test_forgot_password_returns_neutral_response_and_audit_record(
+    client,
+    db_session: Session,
+) -> None:
+    bootstrap_access_control(db_session)
+    create_user(
+        db_session,
+        UserCreate(
+            username="reset.user",
+            email="reset.user@example.com",
+            full_name="Reset User",
+            password="SecurePassword123!",
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/auth/forgot-password",
+        headers={REQUEST_ID_HEADER: "req-forgot-password"},
+        json={"username_or_email": "reset.user@example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers[REQUEST_ID_HEADER] == "req-forgot-password"
+    assert "reset instructions" in response.json()["message"]
+
+    audit_log = db_session.scalar(
+        select(AuditLog).where(AuditLog.action == "auth.forgot_password.requested")
+    )
+    assert audit_log is not None
+    assert audit_log.request_id == "req-forgot-password"
+    assert audit_log.payload["details"]["username_or_email"] == "reset.user@example.com"
+    assert audit_log.payload["details"]["matched_user"] is True
+
+
 def test_protected_route_requires_permission(client, db_session: Session) -> None:
     bootstrap_access_control(db_session)
     role = create_role(

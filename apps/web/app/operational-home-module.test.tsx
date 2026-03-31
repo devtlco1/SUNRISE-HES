@@ -144,7 +144,9 @@ describe("OperationalHomeModule", () => {
 
     renderOperationalHomeInShell();
 
-    expect(await screen.findByRole("link", { name: "Home" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "Dashboard home" }),
+    ).toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "Operational overview" }),
     ).toBeInTheDocument();
@@ -174,6 +176,17 @@ describe("OperationalHomeModule", () => {
       "href",
       "/connectivity",
     );
+    expect(screen.getByRole("link", { name: "Subscribers" })).toHaveAttribute(
+      "href",
+      "/subscribers",
+    );
+    expect(screen.getByRole("link", { name: "Accounts" })).toHaveAttribute(
+      "href",
+      "/accounts",
+    );
+    expect(
+      screen.getByRole("link", { name: "Transformers / Substations" }),
+    ).toHaveAttribute("href", "/transformers-substations");
   });
 
   it("renders compact overview blocks and recent activity snippets when data is available", async () => {

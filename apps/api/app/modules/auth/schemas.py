@@ -10,6 +10,14 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=12, max_length=255)
 
 
+class ForgotPasswordRequest(BaseModel):
+    username_or_email: str = Field(min_length=3, max_length=255)
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+
+
 class TokenPayload(BaseModel):
     sub: UUID
     token_type: str = Field(alias="type")

@@ -1,9 +1,10 @@
 import "./globals.css";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-export const metadata = {
-  title: "sunrise-hes-platform",
-  description: "Sunrise HES platform scaffold",
+export const metadata: Metadata = {
+  title: "Sunrise HES Platform",
+  description: "Operational dashboard for the Sunrise HES platform",
 };
 
 type RootLayoutProps = {

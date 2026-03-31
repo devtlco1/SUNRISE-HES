@@ -4,8 +4,19 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
-from app.modules.auth.schemas import CurrentUserResponse, LoginRequest, LoginResponse
-from app.modules.auth.service import authenticate_user, build_current_user_response, issue_access_token_for_user
+from app.modules.auth.schemas import (
+    CurrentUserResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    LoginRequest,
+    LoginResponse,
+)
+from app.modules.auth.service import (
+    authenticate_user,
+    build_current_user_response,
+    build_forgot_password_response,
+    issue_access_token_for_user,
+)
 from app.modules.users.models import User
 from app.modules.users.service import get_user_by_identifier
 
@@ -53,6 +64,29 @@ def login(
         request_context=request.state.request_audit_context,
     )
     return response
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> ForgotPasswordResponse:
+    existing_user = get_user_by_identifier(session, payload.username_or_email)
+    record_audit_event(
+        session,
+        action="auth.forgot_password.requested",
+        resource_type="auth",
+        actor_user_id=existing_user.id if existing_user is not None else None,
+        outcome="success",
+        description="Forgot-password initiation requested.",
+        details={
+            "username_or_email": payload.username_or_email,
+            "matched_user": existing_user is not None,
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return build_forgot_password_response()
 
 
 @router.get("/me", response_model=CurrentUserResponse)

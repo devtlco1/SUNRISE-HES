@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.modules.auth.schemas import (
     CurrentRoleSummary,
     CurrentUserResponse,
+    ForgotPasswordResponse,
     LoginResponse,
     PermissionSummary,
 )
@@ -73,4 +74,13 @@ def build_current_user_response(user: User) -> CurrentUserResponse:
             for assignment in roles
         ],
         permissions=[PermissionSummary(code=code) for code in permissions],
+    )
+
+
+def build_forgot_password_response() -> ForgotPasswordResponse:
+    return ForgotPasswordResponse(
+        message=(
+            "If an account matches that username or email, reset instructions will be"
+            " sent through the configured recovery channel."
+        )
     )
