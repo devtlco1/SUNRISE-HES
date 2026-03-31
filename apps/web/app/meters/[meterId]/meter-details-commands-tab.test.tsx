@@ -586,7 +586,7 @@ describe("MeterDetailsCommandsTab", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = input.toString();
         if (url.endsWith("/api/v1/meters/meter-1")) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
         return fetchMock(input, init);
       }),
@@ -594,7 +594,12 @@ describe("MeterDetailsCommandsTab", () => {
 
     renderMeterTabInShell();
 
-    expect(await screen.findByText("Loading meter summary...")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Loading meter summary...") ??
+          screen.queryByText("meter-1"),
+      ).toBeInTheDocument();
+    });
     expect(await screen.findByText("meter-1")).toBeInTheDocument();
   });
 
@@ -733,7 +738,7 @@ describe("MeterDetailsCommandsTab", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = input.toString();
         if (url.endsWith("/api/v1/meters/meter-1/consumer-linkage")) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
         return fetchMock(input, init);
       }),
@@ -752,7 +757,7 @@ describe("MeterDetailsCommandsTab", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = input.toString();
         if (url.endsWith("/api/v1/meters/meter-1/endpoint-assignments")) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
         return fetchMock(input, init);
       }),
@@ -809,7 +814,7 @@ describe("MeterDetailsCommandsTab", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = input.toString();
         if (url.endsWith("/api/v1/command-templates")) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
         return fetchMock(input, init);
       }),

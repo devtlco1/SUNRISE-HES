@@ -38,6 +38,7 @@ from app.modules.readings.api import (
     load_profile_channels_router,
     meter_readings_router,
 )
+from app.modules.service_points.api import service_points_router
 from app.modules.users.api import permissions_router, roles_router, users_router
 from app.runtime.api import (
     internal_runtime_attempts_router,
@@ -78,6 +79,7 @@ api_router.include_router(meters_router)
 api_router.include_router(meter_readings_router)
 api_router.include_router(load_profile_channels_router)
 api_router.include_router(internal_meter_ingestion_router)
+api_router.include_router(service_points_router)
 api_router.include_router(internal_runtime_router)
 api_router.include_router(internal_runtime_attempts_router)
 api_router.include_router(internal_runtime_job_runs_router)

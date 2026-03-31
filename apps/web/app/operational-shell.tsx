@@ -261,6 +261,9 @@ export function OperationalShell({
             <Link className="nav-link" href="/gis-lite">
               GIS Lite
             </Link>
+            <Link className="nav-link" href="/service-points">
+              Service Points
+            </Link>
             {currentMeterId ? (
               <Link className="nav-link" href={`/meters/${currentMeterId}`}>
                 Current meter

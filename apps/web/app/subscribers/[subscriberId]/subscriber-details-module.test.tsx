@@ -153,7 +153,7 @@ describe("SubscriberDetailsModule", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = input.toString();
         if (url.endsWith("/api/v1/consumers/consumer-1")) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
         return fetchMock(input);
       }),
