@@ -267,6 +267,9 @@ export function OperationalShell({
             <Link className="nav-link" href="/accounts">
               Accounts
             </Link>
+            <Link className="nav-link" href="/transformers-substations">
+              Transformers / Substations
+            </Link>
             {currentMeterId ? (
               <Link className="nav-link" href={`/meters/${currentMeterId}`}>
                 Current meter

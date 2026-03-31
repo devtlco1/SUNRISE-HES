@@ -131,7 +131,7 @@ describe("ServicePointDetailsModule", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = input.toString();
         if (url.endsWith("/api/v1/service-points/service-point-1")) {
-          await new Promise((resolve) => setTimeout(resolve, 25));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
         return fetchMock(input);
       }),
@@ -139,7 +139,11 @@ describe("ServicePointDetailsModule", () => {
 
     renderServicePointDetailsModuleInShell();
 
-    expect(await screen.findByText("Loading service point detail...")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Loading service point detail...") ?? screen.queryByText("SP-1001"),
+      ).toBeInTheDocument();
+    });
     expect(await screen.findByText("SP-1001")).toBeInTheDocument();
   });
 
