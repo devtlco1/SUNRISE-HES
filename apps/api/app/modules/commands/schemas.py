@@ -296,6 +296,58 @@ class OnDemandReadExecuteNowRequest(OnDemandReadCommandCreate):
     execute_now_reason: str | None = Field(default=None, max_length=255)
 
 
+class OnDemandReadQueuedExecuteNowRequest(OnDemandReadCommandCreate):
+    queued_execute_now_reason: str | None = Field(default=None, max_length=255)
+
+
+class OnDemandReadQueuedExecuteNowResult(BaseModel):
+    queued_execute_now_status: str
+    queued_execute_now_identifier: str
+    command_id: UUID
+    command_status: CommandStatus
+    command_execution_attempt_id: UUID | None = None
+    queue_enqueue_status: str
+    queue_message_id: str
+    on_demand_read_operation: OnDemandReadCommandOperation
+    snapshot_type: SnapshotType
+    reused_existing_queued_execute_now: bool
+    reused_existing_enqueue: bool
+    queued_at: datetime
+    queued_execute_now_record: dict[str, object]
+
+
+class OnDemandReadQueuedExecuteNowResponse(BaseModel):
+    result: "OnDemandReadQueuedExecuteNowResult"
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: CommandExecutionAttemptResponse | None = None
+
+
+class OnDemandReadQueuedStatusResult(BaseModel):
+    command_id: UUID
+    command_status: CommandStatus
+    command_execution_attempt_id: UUID | None = None
+    queue_enqueue_status: str | None = None
+    queue_message_id: str | None = None
+    queue_consumption_status: str | None = None
+    runtime_on_demand_read_execution_record_id: str | None = None
+    on_demand_read_operation: OnDemandReadCommandOperation | None = None
+    snapshot_type: SnapshotType | None = None
+    worker_consumed: bool
+    queued_execute_now_artifact_present: bool
+    queue_enqueue_artifact_present: bool
+    queue_consumption_artifact_present: bool
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    final_execution_outcome: str | None = None
+    reused_existing_queued_execute_now: bool | None = None
+    reused_existing_enqueue: bool | None = None
+    queued_status_record: dict[str, object]
+
+
+class OnDemandReadQueuedStatusResponse(BaseModel):
+    result: "OnDemandReadQueuedStatusResult"
+
+
 class OnDemandReadExecuteNowResult(BaseModel):
     execute_now_status: str
     execute_now_identifier: str

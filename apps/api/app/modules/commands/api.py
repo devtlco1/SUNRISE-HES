@@ -8,6 +8,9 @@ from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
 from app.modules.commands.profile_capture_execute_now import execute_profile_capture_now
 from app.modules.commands.on_demand_read_execute_now import execute_on_demand_read_now
+from app.modules.commands.on_demand_read_queued_execute_now import (
+    execute_on_demand_read_now_queued,
+)
 from app.modules.commands.on_demand_read_queued_execution import (
     consume_next_queued_on_demand_read_execution,
     enqueue_on_demand_read_command_execution,
@@ -22,6 +25,9 @@ from app.modules.commands.on_demand_read_execution_orchestration import (
 )
 from app.modules.commands.on_demand_read_status_readback import (
     get_on_demand_read_execution_status,
+)
+from app.modules.commands.on_demand_read_queued_status_readback import (
+    get_on_demand_read_queued_execution_status,
 )
 from app.modules.commands.relay_control_execute_now import execute_relay_control_now
 from app.modules.commands.relay_control_status_readback import (
@@ -76,6 +82,9 @@ from app.modules.commands.schemas import (
     OnDemandReadCommandCreate,
     OnDemandReadExecuteNowRequest,
     OnDemandReadExecuteNowResponse,
+    OnDemandReadQueuedExecuteNowRequest,
+    OnDemandReadQueuedExecuteNowResponse,
+    OnDemandReadQueuedStatusResponse,
     OnDemandReadExecutionOrchestrationRequest,
     OnDemandReadExecutionOrchestrationResponse,
     OnDemandReadExecutionStatusResponse,
@@ -357,6 +366,51 @@ def execute_on_demand_read_now_endpoint(
 
 
 @meter_commands_router.post(
+    "/{meter_id}/commands/on-demand-read/execute-now-queued",
+    response_model=OnDemandReadQueuedExecuteNowResponse,
+)
+def execute_on_demand_read_now_queued_endpoint(
+    meter_id: uuid.UUID,
+    payload: OnDemandReadQueuedExecuteNowRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> OnDemandReadQueuedExecuteNowResponse:
+    response = execute_on_demand_read_now_queued(
+        session,
+        meter_id=meter_id,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    record_audit_event(
+        session,
+        action="commands.requests.execute_on_demand_read_now_queued",
+        resource_type="commands",
+        resource_id=response.result.command_id,
+        actor_user_id=current_user.id,
+        description="On-demand-read command enqueued through application-facing queued execute-now path.",
+        details={
+            "meter_id": str(meter_id),
+            "command_id": str(response.result.command_id),
+            "command_execution_attempt_id": (
+                str(response.result.command_execution_attempt_id)
+                if response.result.command_execution_attempt_id is not None
+                else None
+            ),
+            "queued_execute_now_identifier": response.result.queued_execute_now_identifier,
+            "queue_enqueue_status": response.result.queue_enqueue_status,
+            "queue_message_id": response.result.queue_message_id,
+            "on_demand_read_operation": response.result.on_demand_read_operation.value,
+            "snapshot_type": response.result.snapshot_type.value,
+            "reused_existing_queued_execute_now": response.result.reused_existing_queued_execute_now,
+            "reused_existing_enqueue": response.result.reused_existing_enqueue,
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.post(
     "/{meter_id}/commands/relay-control",
     response_model=MeterCommandResponse,
 )
@@ -538,6 +592,18 @@ def get_command_operational_detail_endpoint(
     _: User = Depends(require_permission("commands.read")),
 ) -> CommandOperationalDetailResponse:
     return get_command_operational_detail(session, command_id=command_id)
+
+
+@commands_router.get(
+    "/{command_id}/on-demand-read-queued-status",
+    response_model=OnDemandReadQueuedStatusResponse,
+)
+def get_on_demand_read_queued_status_endpoint(
+    command_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> OnDemandReadQueuedStatusResponse:
+    return get_on_demand_read_queued_execution_status(session, command_id=command_id)
 
 
 @commands_router.get(

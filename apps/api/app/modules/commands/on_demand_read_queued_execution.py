@@ -488,7 +488,7 @@ def _validate_claimed_on_demand_read_queue_message(claimed_message) -> OnDemandR
 
 
 def _build_queue_orchestration_identifier(enqueue_identifier: str) -> str:
-    return f"on-demand-read-queue-orchestrator:{enqueue_identifier}"
+    return f"odr-queue:{uuid.uuid5(uuid.NAMESPACE_URL, enqueue_identifier)}"
 
 
 def _build_queue_executor_identifier(worker_identifier: str) -> str:
