@@ -37,6 +37,7 @@ type SubscriberDetail = {
   account_status_summary: string | null;
   active_account_count: number;
   linked_meter_count: number;
+  current_operational_meter: SubscriberLinkedMeter | null;
   accounts: SubscriberAccount[];
   linked_meters: SubscriberLinkedMeter[];
 };
@@ -107,6 +108,68 @@ export function SubscriberDetailsModule({
               <span>{detail.national_id ?? "No national ID"}</span>
               <span>{detail.phone_number ?? detail.email ?? "No contact summary"}</span>
             </div>
+          </section>
+
+          <section className="subpanel">
+            <div className="section-heading">
+              <div>
+                <h3>Current operational meter</h3>
+                <p className="muted">
+                  Compact reverse linkage into the bounded meter detail surface.
+                </p>
+              </div>
+            </div>
+            {detail.current_operational_meter ? (
+              <div className="detail-stack">
+                <div className="meter-summary-grid">
+                  <div className="stat-card">
+                    <span className="stat-label">Meter</span>
+                    <strong>{detail.current_operational_meter.serial_number}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Meter ID</span>
+                    <strong>{detail.current_operational_meter.id}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Utility meter number</span>
+                    <strong>
+                      {detail.current_operational_meter.utility_meter_number ??
+                        "Not available"}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Meter status</span>
+                    <strong>{detail.current_operational_meter.current_status}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Account</span>
+                    <strong>
+                      {detail.current_operational_meter.account_number ??
+                        "No linked account summary"}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Service point</span>
+                    <strong>
+                      {detail.current_operational_meter.service_point_code ??
+                        "No linked service point"}
+                    </strong>
+                  </div>
+                </div>
+                <div className="artifact-row">
+                  <Link
+                    className="primary-button"
+                    href={`/meters/${detail.current_operational_meter.id}`}
+                  >
+                    Open meter detail
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <p className="muted">
+                No current operational meter available for this subscriber.
+              </p>
+            )}
           </section>
 
           <section className="subpanel">

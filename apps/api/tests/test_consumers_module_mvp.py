@@ -149,6 +149,10 @@ def test_consumer_detail_returns_bounded_accounts_and_linked_meters(
     assert payload["account_status_summary"] == "mixed"
     assert payload["active_account_count"] == 1
     assert payload["linked_meter_count"] == 2
+    assert payload["current_operational_meter"] is not None
+    assert payload["current_operational_meter"]["id"] is not None
+    assert payload["current_operational_meter"]["serial_number"]
+    assert payload["current_operational_meter"]["account_number"].startswith("ACC-")
     assert len(payload["accounts"]) == 2
     assert payload["accounts"][0]["account_number"].startswith("ACC-1001-")
     assert payload["accounts"][0]["service_point_code"].startswith("SP-1001-")

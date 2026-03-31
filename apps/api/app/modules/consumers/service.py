@@ -82,6 +82,7 @@ def get_consumer_detail(session: Session, consumer_id: uuid.UUID) -> ConsumerDet
         account_status_summary=_build_account_status_summary(accounts),
         active_account_count=sum(1 for account in accounts if account.status == "active"),
         linked_meter_count=len({meter.id for meter in linked_meters}),
+        current_operational_meter=linked_meters[0] if linked_meters else None,
         accounts=[
             _serialize_consumer_account_summary(
                 account=account,

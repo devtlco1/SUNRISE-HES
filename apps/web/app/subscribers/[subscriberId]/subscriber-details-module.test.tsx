@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "../../operational-shell";
@@ -25,6 +25,16 @@ function createMockApi({
     account_status_summary: "active",
     active_account_count: 1,
     linked_meter_count: 1,
+    current_operational_meter: {
+      id: "meter-1",
+      serial_number: "SN-1001",
+      utility_meter_number: "UMN-1001",
+      current_status: "registered",
+      account_id: "account-1",
+      account_number: "ACC-1001",
+      service_point_id: "sp-1",
+      service_point_code: "SP-1001",
+    },
     accounts: [
       {
         id: "account-1",
@@ -116,11 +126,43 @@ describe("SubscriberDetailsModule", () => {
     renderSubscriberDetailsModuleInShell();
 
     expect(await screen.findByText("Amina Al Balushi")).toBeInTheDocument();
-    expect(screen.getByText("ACC-1001")).toBeInTheDocument();
+    const currentMeterPanel = screen
+      .getByRole("heading", { name: "Current operational meter" })
+      .closest("section");
+    expect(currentMeterPanel).not.toBeNull();
+    expect(within(currentMeterPanel as HTMLElement).getByText("meter-1")).toBeInTheDocument();
+    expect(within(currentMeterPanel as HTMLElement).getByText("ACC-1001")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /SN-1001/i })).toHaveAttribute(
       "href",
       "/meters/meter-1",
     );
+    expect(
+      within(currentMeterPanel as HTMLElement).getByRole("link", {
+        name: "Open meter detail",
+      }),
+    ).toHaveAttribute(
+      "href",
+      "/meters/meter-1",
+    );
+  });
+
+  it("renders a bounded loading state while subscriber detail is bootstrapping", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = input.toString();
+        if (url.endsWith("/api/v1/consumers/consumer-1")) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        return fetchMock(input);
+      }),
+    );
+
+    renderSubscriberDetailsModuleInShell();
+
+    expect(await screen.findByText("Loading subscriber detail...")).toBeInTheDocument();
+    expect(await screen.findByText("Amina Al Balushi")).toBeInTheDocument();
   });
 
   it("renders bounded empty sections when the subscriber has no linked accounts or meters", async () => {
@@ -136,6 +178,7 @@ describe("SubscriberDetailsModule", () => {
         account_status_summary: null,
         active_account_count: 0,
         linked_meter_count: 0,
+        current_operational_meter: null,
         accounts: [],
         linked_meters: [],
       },
@@ -149,6 +192,9 @@ describe("SubscriberDetailsModule", () => {
         screen.getByText("No accounts linked to this subscriber."),
       ).toBeInTheDocument();
     });
+    expect(
+      screen.getByText("No current operational meter available for this subscriber."),
+    ).toBeInTheDocument();
     expect(screen.getByText("No meters linked to this subscriber.")).toBeInTheDocument();
   });
 

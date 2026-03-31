@@ -55,6 +55,7 @@ class ConsumerDetailResponse(BaseModel):
     account_status_summary: str | None = None
     active_account_count: int = Field(ge=0)
     linked_meter_count: int = Field(ge=0)
+    current_operational_meter: ConsumerLinkedMeterSummaryResponse | None = None
     accounts: list[ConsumerAccountSummaryResponse]
     linked_meters: list[ConsumerLinkedMeterSummaryResponse]
 
