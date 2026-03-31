@@ -228,11 +228,33 @@ body {
   gap: 0.75rem;
 }
 
+.meter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
 .command-list-item {
   width: 100%;
   cursor: pointer;
   text-align: left;
   padding: 1rem;
+}
+
+.meter-list-item {
+  display: block;
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.86);
+  color: #f8fafc;
+  text-decoration: none;
+}
+
+.meter-list-item:hover {
+  border-color: rgba(56, 189, 248, 0.65);
 }
 
 .command-list-item.selected {
