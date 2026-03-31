@@ -27,6 +27,24 @@ export default function HomePage() {
       </section>
 
       <section className="panel">
+        <h2>Meter Details / Commands Tab MVP</h2>
+        <p>
+          Open <code>/meters/&lt;meter-id&gt;</code> to use the bounded meter
+          details commands tab for recent command visibility, command detail, and
+          execute-now actions.
+        </p>
+      </section>
+
+      <section className="panel">
+        <h2>Commands Module MVP</h2>
+        <p>
+          Open <code>/commands</code> to use the bounded global commands module for
+          recent command visibility and command detail across the stable operational
+          families.
+        </p>
+      </section>
+
+      <section className="panel">
         <h2>Planned modules</h2>
         <ul>
           {plannedModules.map((module) => (
