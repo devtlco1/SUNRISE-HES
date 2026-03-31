@@ -15,6 +15,10 @@ from app.modules.commands.on_demand_read_queued_execution import (
     consume_next_queued_on_demand_read_execution,
     enqueue_on_demand_read_command_execution,
 )
+from app.modules.commands.profile_capture_queued_execution import (
+    consume_next_queued_profile_capture_execution,
+    enqueue_profile_capture_command_execution,
+)
 from app.modules.commands.operational_read_model import (
     get_command_operational_detail,
     list_recent_command_operational_items,
@@ -70,6 +74,8 @@ from app.modules.commands.schemas import (
     CommandTemplateListResponse,
     CommandTemplateResponse,
     CommandTemplateUpdate,
+    ConsumeQueuedProfileCaptureExecutionRequest,
+    ConsumeQueuedProfileCaptureExecutionResponse,
     MeterCommandCreate,
     MeterCommandDetailResponse,
     MeterCommandListResponse,
@@ -101,6 +107,8 @@ from app.modules.commands.schemas import (
     ProfileCaptureExecutionStatusResponse,
     ProfileCaptureExecutionOrchestrationRequest,
     ProfileCaptureExecutionOrchestrationResponse,
+    ProfileCaptureQueuedExecutionEnqueueRequest,
+    ProfileCaptureQueuedExecutionEnqueueResponse,
     ProfileCaptureRuntimeHandoffRequest,
     ProfileCaptureRuntimeHandoffResponse,
     ProfileCaptureRuntimeTerminalizationRequest,
@@ -749,6 +757,23 @@ def consume_next_queued_on_demand_read_execution_endpoint(
 
 
 @internal_commands_router.post(
+    "/{command_id}/enqueue-profile-capture-execution",
+    response_model=ProfileCaptureQueuedExecutionEnqueueResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def enqueue_profile_capture_execution_endpoint(
+    command_id: uuid.UUID,
+    payload: ProfileCaptureQueuedExecutionEnqueueRequest,
+    session: Session = Depends(get_db_session),
+) -> ProfileCaptureQueuedExecutionEnqueueResponse:
+    return enqueue_profile_capture_command_execution(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
     "/{command_id}/bootstrap-profile-capture-attempt",
     response_model=ProfileCaptureAttemptBootstrapResponse,
     dependencies=[Depends(require_internal_api_token)],
@@ -763,6 +788,18 @@ def bootstrap_profile_capture_attempt_endpoint(
         command_id=command_id,
         payload=payload,
     )
+
+
+@internal_commands_router.post(
+    "/profile-capture/consume-next-queued-execution",
+    response_model=ConsumeQueuedProfileCaptureExecutionResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def consume_next_queued_profile_capture_execution_endpoint(
+    payload: ConsumeQueuedProfileCaptureExecutionRequest,
+    session: Session = Depends(get_db_session),
+) -> ConsumeQueuedProfileCaptureExecutionResponse:
+    return consume_next_queued_profile_capture_execution(session, payload=payload)
 
 
 @internal_commands_router.post(

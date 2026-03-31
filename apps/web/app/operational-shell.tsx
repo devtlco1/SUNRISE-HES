@@ -249,6 +249,9 @@ export function OperationalShell({
             <Link className="nav-link" href="/meters">
               Meters
             </Link>
+            <Link className="nav-link" href="/subscribers">
+              Subscribers
+            </Link>
             <Link className="nav-link" href="/commands">
               Commands
             </Link>

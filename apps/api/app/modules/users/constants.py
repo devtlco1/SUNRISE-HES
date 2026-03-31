@@ -197,6 +197,12 @@ DEFAULT_PERMISSION_DEFINITIONS = [
         "action": "read",
         "description": "View ingested meter events.",
     },
+    {
+        "code": "consumers.read",
+        "resource": "consumers",
+        "action": "read",
+        "description": "View subscriber and consumer account visibility surfaces.",
+    },
 ]
 
 DEFAULT_ROLE_DEFINITIONS = [
@@ -245,6 +251,7 @@ DEFAULT_ROLE_DEFINITIONS = [
             "profiles.read",
             "profiles.write",
             "events.read",
+            "consumers.read",
         ],
     },
     {
@@ -269,6 +276,7 @@ DEFAULT_ROLE_DEFINITIONS = [
             "readings.read",
             "profiles.read",
             "events.read",
+            "consumers.read",
         ],
     },
 ]
