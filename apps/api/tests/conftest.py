@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from urllib.parse import urlsplit, urlunsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,8 +24,25 @@ from app.modules.meters.models import (
 from app.modules.users.models import Permission, Role, RolePermission, User, UserRoleAssignment
 
 
+def _replace_service_hostname(url: str, *, service_host: str, replacement_host: str) -> str:
+    parts = urlsplit(url)
+    if parts.hostname != service_host:
+        return url
+
+    userinfo = ""
+    if parts.username:
+        userinfo = parts.username
+        if parts.password:
+            userinfo = f"{userinfo}:{parts.password}"
+        userinfo = f"{userinfo}@"
+
+    port = f":{parts.port}" if parts.port is not None else ""
+    netloc = f"{userinfo}{replacement_host}{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
 @pytest.fixture()
-def db_session() -> Generator[Session, None, None]:
+def db_session(local_test_service_settings: None) -> Generator[Session, None, None]:
     engine = create_engine(settings.database_url)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -55,7 +73,30 @@ def db_session() -> Generator[Session, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def auth_settings() -> Generator[None, None, None]:
+def local_test_service_settings() -> Generator[None, None, None]:
+    original_values = {
+        "database_url": settings.database_url,
+        "redis_url": settings.redis_url,
+    }
+    settings.database_url = _replace_service_hostname(
+        settings.database_url,
+        service_host="postgres",
+        replacement_host="127.0.0.1",
+    )
+    settings.redis_url = _replace_service_hostname(
+        settings.redis_url,
+        service_host="redis",
+        replacement_host="127.0.0.1",
+    )
+    try:
+        yield
+    finally:
+        for key, value in original_values.items():
+            setattr(settings, key, value)
+
+
+@pytest.fixture(autouse=True)
+def auth_settings(local_test_service_settings: None) -> Generator[None, None, None]:
     original_values = {
         "jwt_secret_key": settings.jwt_secret_key,
         "jwt_algorithm": settings.jwt_algorithm,
