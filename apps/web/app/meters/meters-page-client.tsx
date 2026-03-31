@@ -7,8 +7,8 @@ export function MetersPageClient() {
   return (
     <OperationalShell
       eyebrow="Operational Pages"
-      title="Meters Module MVP"
-      description="Compact operational meter browse flow into the existing meter details and commands experience."
+      title="Meters Registry"
+      description="Authoritative operational inventory surface for browsing meters and continuing into the blueprint-critical meter details experience."
     >
       {({ authorizedFetch }) => <MetersModule authorizedFetch={authorizedFetch} />}
     </OperationalShell>

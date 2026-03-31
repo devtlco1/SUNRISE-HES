@@ -106,6 +106,8 @@ describe("MetersModule", () => {
     renderMetersModuleInShell();
 
     expect(await screen.findByRole("link", { name: "Meters" })).toBeInTheDocument();
+    expect(screen.getByText("Meters in current result")).toBeInTheDocument();
+    expect(screen.getByText("Active inventory items")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /SN-1001/i })).toHaveAttribute(
       "href",
       "/meters/meter-1",

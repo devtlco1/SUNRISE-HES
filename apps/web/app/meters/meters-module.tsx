@@ -87,6 +87,30 @@ export function MetersModule({
     return `${totalMeters} recent meters`;
   }, [appliedSearch, totalMeters]);
 
+  const registryCards = useMemo(
+    () => [
+      {
+        label: "Meters in current result",
+        value: String(totalMeters),
+      },
+      {
+        label: "Active inventory items",
+        value: String(meters.filter((meter) => meter.is_active).length),
+      },
+      {
+        label: "Recent signal visible",
+        value: String(meters.filter((meter) => meter.last_seen_at !== null).length),
+      },
+      {
+        label: "Communication profile present",
+        value: String(
+          meters.filter((meter) => meter.communication_profile_code !== null).length,
+        ),
+      },
+    ],
+    [meters, totalMeters],
+  );
+
   return (
     <section className="panel">
       {pageError ? <p className="error-banner">{pageError}</p> : null}
@@ -102,64 +126,119 @@ export function MetersModule({
         <span className="artifact-pill">{statusSummary}</span>
       </div>
 
-      <form
-        className="inline-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setAppliedSearch(searchDraft);
-        }}
-      >
-        <label className="field">
-          <span>Search</span>
-          <input
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.target.value)}
-            placeholder="Serial, utility meter number, or badge"
-          />
-        </label>
-        <button className="primary-button" disabled={isLoadingMeters} type="submit">
-          {isLoadingMeters ? "Loading..." : "Load meters"}
-        </button>
-      </form>
+      <section className="subpanel">
+        <div className="section-heading">
+          <div>
+            <h3>Registry snapshot</h3>
+            <p className="muted">
+              Productized inventory summary for the current meter result set.
+            </p>
+          </div>
+        </div>
+        <div className="meter-summary-grid">
+          {registryCards.map((card) => (
+            <div key={card.label} className="stat-card">
+              <span className="stat-label">{card.label}</span>
+              <strong>{card.value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
 
-      {isLoadingMeters ? <p className="muted">Loading meters...</p> : null}
+      <section className="subpanel">
+        <div className="section-heading">
+          <div>
+            <h3>Meter inventory</h3>
+            <p className="muted">
+              Refined inventory rows aligned with the adopted operational shell.
+            </p>
+          </div>
+        </div>
 
-      <div className="meter-list">
-        {!isLoadingMeters && meters.length === 0 ? (
-          <p className="muted">No meters available for the current query.</p>
-        ) : null}
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setAppliedSearch(searchDraft);
+          }}
+        >
+          <label className="field">
+            <span>Search</span>
+            <input
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              placeholder="Serial, utility meter number, or badge"
+            />
+          </label>
+          <button className="primary-button" disabled={isLoadingMeters} type="submit">
+            {isLoadingMeters ? "Loading..." : "Load meters"}
+          </button>
+        </form>
 
-        {meters.map((meter) => (
-          <Link
-            key={meter.id}
-            className="meter-list-item"
-            href={`/meters/${meter.id}`}
-          >
-            <div className="command-list-item-header">
-              <strong>{meter.serial_number}</strong>
-              <span className="status-pill">{meter.current_status}</span>
-            </div>
-            <div className="command-list-item-meta">
-              <span>Meter ID {meter.id}</span>
-              <span>{meter.utility_meter_number ?? "No utility number"}</span>
-            </div>
-            <div className="command-list-item-meta">
-              <span>
-                {meter.manufacturer_code} / {meter.meter_model_code}
-              </span>
-              <span>
-                {meter.communication_profile_code ??
-                  meter.meter_profile_code ??
-                  "No active profile summary"}
-              </span>
-            </div>
-            <div className="command-list-item-meta">
-              <span>{meter.is_active ? "Active meter" : "Inactive meter"}</span>
-              <span>Last seen {formatDateTime(meter.last_seen_at)}</span>
-            </div>
-          </Link>
-        ))}
-      </div>
+        {isLoadingMeters ? <p className="muted">Loading meters...</p> : null}
+
+        <div className="meter-list">
+          {!isLoadingMeters && meters.length === 0 ? (
+            <p className="muted">No meters available for the current query.</p>
+          ) : null}
+
+          {meters.map((meter) => (
+            <Link
+              key={meter.id}
+              className="meter-list-item meter-registry-item"
+              href={`/meters/${meter.id}`}
+            >
+              <div className="meter-registry-row">
+                <div className="meter-registry-primary">
+                  <div className="command-list-item-header">
+                    <strong>{meter.serial_number}</strong>
+                    <span className="status-pill">{meter.current_status}</span>
+                  </div>
+                  <div className="meter-registry-badges">
+                    <span className="artifact-pill">
+                      {meter.is_active ? "Active inventory" : "Inactive inventory"}
+                    </span>
+                    <span className="artifact-pill">
+                      {meter.communication_profile_code
+                        ? "Connected profile"
+                        : "Profile pending"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="meter-registry-metrics">
+                  <div className="meter-registry-metric">
+                    <span className="stat-label">Meter ID</span>
+                    <strong>{meter.id}</strong>
+                  </div>
+                  <div className="meter-registry-metric">
+                    <span className="stat-label">Utility number</span>
+                    <strong>{meter.utility_meter_number ?? "No utility number"}</strong>
+                  </div>
+                  <div className="meter-registry-metric">
+                    <span className="stat-label">Catalog</span>
+                    <strong>
+                      {meter.manufacturer_code} / {meter.meter_model_code}
+                    </strong>
+                  </div>
+                  <div className="meter-registry-metric">
+                    <span className="stat-label">Operational profile</span>
+                    <strong>
+                      {meter.communication_profile_code ??
+                        meter.meter_profile_code ??
+                        "No active profile summary"}
+                    </strong>
+                  </div>
+                  <div className="meter-registry-metric">
+                    <span className="stat-label">Last seen</span>
+                    <strong>{formatDateTime(meter.last_seen_at)}</strong>
+                  </div>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
     </section>
   );
 }

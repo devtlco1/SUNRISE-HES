@@ -14,6 +14,8 @@ type MeterDetail = {
   meter_profile_code: string | null;
   communication_profile_code: string | null;
   current_status: string;
+  transformer_id: string | null;
+  service_point_id: string | null;
   last_seen_at: string | null;
 };
 
@@ -857,11 +859,145 @@ export function MeterDetailsCommandsTab({
     onDemandReadEndpointAssignmentId !== "" &&
     onDemandReadProtocolProfileId !== "";
 
+  const latestRecentCommand = recentCommands[0] ?? null;
+  const linkedServicePointId =
+    consumerLinkage?.service_point_id ?? meter?.service_point_id ?? null;
+  const linkedServicePointCode = consumerLinkage?.service_point_code ?? null;
+
   return (
     <section className="panel">
       {actionSuccess ? <p className="success-banner">{actionSuccess}</p> : null}
       {actionError ? <p className="error-banner">{actionError}</p> : null}
       {pageError ? <p className="error-banner">{pageError}</p> : null}
+
+      <section className="subpanel meter-hero-panel">
+        {isBootstrappingPage && !meter ? (
+          <p className="muted">Loading meter header...</p>
+        ) : null}
+
+        {!isBootstrappingPage && meter ? (
+          <div className="detail-stack">
+            <div className="meter-hero-shell">
+              <div className="meter-hero-primary">
+                <p className="eyebrow">Authoritative Meter Record</p>
+                <div className="meter-hero-title-row">
+                  <div>
+                    <h2>{meter.serial_number}</h2>
+                    <p className="muted">Meter ID {meter.id}</p>
+                  </div>
+                  <span className="status-pill">{meter.current_status}</span>
+                </div>
+                <p className="muted">
+                  {primaryEndpointAssignment?.endpoint_display_name ??
+                    primaryEndpointAssignment?.endpoint_code ??
+                    "No active endpoint"}{" "}
+                  operational path with{" "}
+                  {formatConnectivityFreshnessHint(meter.last_seen_at).toLowerCase()}.
+                </p>
+                <div className="meter-hero-badges">
+                  <span className="artifact-pill">
+                    {formatConnectivityFreshnessHint(meter.last_seen_at)}
+                  </span>
+                  <span className="artifact-pill">
+                    {meter.communication_profile_code ?? "No communication profile"}
+                  </span>
+                  <span className="artifact-pill">
+                    {latestRecentCommand
+                      ? `Latest command ${latestRecentCommand.command_status}`
+                      : "No recent command summary"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="meter-hero-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Utility meter number</span>
+                  <strong>{meter.utility_meter_number ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Catalog</span>
+                  <strong>
+                    {meter.manufacturer_code} / {meter.meter_model_code}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Last seen</span>
+                  <strong>{formatDateTime(meter.last_seen_at)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Linked subscriber</span>
+                  <strong>
+                    {consumerLinkage?.consumer_display_name ?? "Not available"}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Linked account</span>
+                  <strong>{consumerLinkage?.account_number ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Service point</span>
+                  <strong>
+                    {linkedServicePointCode ?? linkedServicePointId ?? "Not available"}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Transformer</span>
+                  <strong>{meter.transformer_id ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Latest command summary</span>
+                  <strong>
+                    {latestRecentCommand
+                      ? formatFamilySummary(
+                          latestRecentCommand.family_specific_outcome_summary,
+                        )
+                      : "Not available"}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="artifact-row">
+              {consumerLinkage?.consumer_id ? (
+                <Link
+                  className="secondary-button"
+                  href={`/subscribers/${consumerLinkage.consumer_id}`}
+                >
+                  Open subscriber detail
+                </Link>
+              ) : null}
+              {consumerLinkage?.account_id ? (
+                <Link
+                  className="secondary-button"
+                  href={`/accounts/${consumerLinkage.account_id}`}
+                >
+                  Open account detail
+                </Link>
+              ) : null}
+              {linkedServicePointId ? (
+                <Link
+                  className="secondary-button"
+                  href={`/service-points/${linkedServicePointId}`}
+                >
+                  Open service point detail
+                </Link>
+              ) : null}
+              {meter.transformer_id ? (
+                <Link
+                  className="secondary-button"
+                  href={`/transformers-substations/${meter.transformer_id}`}
+                >
+                  Open transformer detail
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {!isBootstrappingPage && !meter ? (
+          <p className="muted">Meter summary not available.</p>
+        ) : null}
+      </section>
 
       <section className="subpanel meter-summary-panel">
         <div className="section-heading">
@@ -896,6 +1032,14 @@ export function MeterDetailsCommandsTab({
               <span className="stat-label">Status</span>
               <strong>{meter.current_status}</strong>
             </div>
+              <div className="stat-card">
+                <span className="stat-label">Transformer ID</span>
+                <strong>{meter.transformer_id ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Service point ID</span>
+                <strong>{meter.service_point_id ?? "Not available"}</strong>
+              </div>
             <div className="stat-card">
               <span className="stat-label">Communication profile</span>
               <strong>{meter.communication_profile_code ?? "Not available"}</strong>

@@ -7,8 +7,8 @@ export function MeterDetailsPageClient({ meterId }: { meterId: string }) {
   return (
     <OperationalShell
       eyebrow="Operational Pages"
-      title={`Meter ${meterId}`}
-      description="Bounded meter details view with recent command visibility and execute-now actions for the stable operational command families."
+      title={`Meter Detail ${meterId}`}
+      description="Blueprint-aligned meter detail surface with refined operational header context, recent command visibility, and execute-now actions for the stable command families."
       currentMeterId={meterId}
     >
       {({ authorizedFetch }) => (

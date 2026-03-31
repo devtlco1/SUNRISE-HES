@@ -20,6 +20,8 @@ type MockMeterResponse = {
   meter_profile_code: string | null;
   communication_profile_code: string | null;
   current_status: string;
+  transformer_id: string | null;
+  service_point_id: string | null;
   last_seen_at: string | null;
 };
 
@@ -88,6 +90,8 @@ function createMockApi({
     meter_profile_code: "default",
     communication_profile_code: "dlms-default",
     current_status: "commissioned",
+    transformer_id: "transformer-1",
+    service_point_id: "sp-1",
     last_seen_at: "2026-03-30T11:00:00.000Z",
   },
   meterStatus = 200,
@@ -565,7 +569,7 @@ describe("MeterDetailsCommandsTab", () => {
 
     renderMeterTabInShell();
 
-    expect(await screen.findByText("SN-1001")).toBeInTheDocument();
+    expect(await screen.findAllByText("SN-1001")).not.toHaveLength(0);
 
     const summaryPanel = screen
       .getByRole("heading", { name: "Operational summary" })
@@ -577,6 +581,25 @@ describe("MeterDetailsCommandsTab", () => {
     expect(within(summaryPanel as HTMLElement).getByText("dlms-default")).toBeInTheDocument();
     expect(within(summaryPanel as HTMLElement).getByText("tcp-primary")).toBeInTheDocument();
     expect(within(summaryPanel as HTMLElement).getByText("dlms-profile")).toBeInTheDocument();
+  });
+
+  it("renders the refined meter header with linked operational context and navigation hints", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("Authoritative Meter Record")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open account detail" })).toHaveAttribute(
+      "href",
+      "/accounts/account-1",
+    );
+    expect(
+      screen.getByRole("link", { name: "Open service point detail" }),
+    ).toHaveAttribute("href", "/service-points/sp-1");
+    expect(
+      screen.getByRole("link", { name: "Open transformer detail" }),
+    ).toHaveAttribute("href", "/transformers-substations/transformer-1");
   });
 
   it("renders a bounded loading state while the meter summary is bootstrapping", async () => {
@@ -747,7 +770,7 @@ describe("MeterDetailsCommandsTab", () => {
     renderMeterTabInShell();
 
     expect(await screen.findByText("Loading consumer linkage...")).toBeInTheDocument();
-    expect(await screen.findByText("Amina Al Balushi")).toBeInTheDocument();
+    expect(await screen.findAllByText("Amina Al Balushi")).not.toHaveLength(0);
   });
 
   it("renders a bounded loading state while connectivity context is bootstrapping", async () => {
@@ -837,6 +860,8 @@ describe("MeterDetailsCommandsTab", () => {
         meter_profile_code: null,
         communication_profile_code: null,
         current_status: "commissioned",
+        transformer_id: null,
+        service_point_id: null,
         last_seen_at: null,
       },
       endpointAssignments: [],
@@ -862,6 +887,8 @@ describe("MeterDetailsCommandsTab", () => {
         meter_profile_code: "default",
         communication_profile_code: null,
         current_status: "commissioned",
+        transformer_id: null,
+        service_point_id: null,
         last_seen_at: null,
       },
       endpointAssignments: [],
@@ -923,7 +950,7 @@ describe("MeterDetailsCommandsTab", () => {
     renderMeterTabInShell();
 
     expect(await screen.findByText("Meter not found.")).toBeInTheDocument();
-    expect(screen.getByText("Meter summary not available.")).toBeInTheDocument();
+    expect(screen.getAllByText("Meter summary not available.")).not.toHaveLength(0);
   });
 
   it("renders a bounded action readiness unavailable state when meter context fails to load", async () => {
@@ -968,7 +995,7 @@ describe("MeterDetailsCommandsTab", () => {
     expect(
       within(connectivityPanel as HTMLElement).queryByText("Connectivity context not available."),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("SN-1001")).toBeInTheDocument();
+    expect(screen.getAllByText("SN-1001")).not.toHaveLength(0);
   });
 
   it("loads bounded command detail when a recent command is selected", async () => {
