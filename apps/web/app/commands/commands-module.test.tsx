@@ -68,6 +68,27 @@ function createMockApi() {
           created_at: "2026-03-30T09:00:00.000Z",
           latest_updated_at: "2026-03-30T09:03:00.000Z",
         },
+        {
+          command_id: "cmd-on-demand-1",
+          command_family: "on_demand_read",
+          command_category: "on_demand_read",
+          command_status: "succeeded",
+          meter_id: "meter-3",
+          command_template_code: "on-demand-read-template",
+          latest_command_execution_attempt_id: "attempt-on-demand-1",
+          latest_command_execution_attempt_status: "succeeded",
+          runtime_execution_record_id: "runtime-on-demand-1",
+          family_specific_outcome_summary: {
+            on_demand_read_operation: "read_billing_snapshot",
+            snapshot_type: "billing",
+            on_demand_read_execution_outcome: "succeeded",
+          },
+          orchestration_artifact_present: true,
+          terminalization_artifact_present: true,
+          execute_now_artifact_present: true,
+          created_at: "2026-03-30T08:00:00.000Z",
+          latest_updated_at: "2026-03-30T08:02:00.000Z",
+        },
       ];
 
       const items =
@@ -132,6 +153,33 @@ function createMockApi() {
       });
     }
 
+    if (url.endsWith("/api/v1/commands/cmd-on-demand-1/detail")) {
+      return jsonResponse({
+        result: {
+          command_id: "cmd-on-demand-1",
+          command_family: "on_demand_read",
+          command_category: "on_demand_read",
+          command_status: "succeeded",
+          meter_id: "meter-3",
+          command_template_code: "on-demand-read-template",
+          latest_command_execution_attempt_id: "attempt-on-demand-1",
+          latest_command_execution_attempt_status: "succeeded",
+          runtime_execution_record_id: "runtime-on-demand-1",
+          family_specific_outcome_summary: {
+            on_demand_read_operation: "read_billing_snapshot",
+            snapshot_type: "billing",
+            on_demand_read_execution_outcome: "succeeded",
+          },
+          orchestration_artifact_present: true,
+          terminalization_artifact_present: true,
+          execute_now_artifact_present: true,
+          created_at: "2026-03-30T08:00:00.000Z",
+          latest_updated_at: "2026-03-30T08:02:00.000Z",
+          projection_record: { runtime_execution_record_id: "runtime-on-demand-1" },
+        },
+      });
+    }
+
     throw new Error(`Unhandled request: ${url}`);
   });
 
@@ -170,6 +218,7 @@ describe("CommandsModule", () => {
     expect(await screen.findByRole("link", { name: "Commands" })).toBeInTheDocument();
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
     expect(screen.getAllByText("relay-disconnect-template")).not.toHaveLength(0);
+    expect(screen.getAllByText("on-demand-read-template")).not.toHaveLength(0);
   });
 
   it("loads bounded command detail when a recent command is selected", async () => {
@@ -203,6 +252,37 @@ describe("CommandsModule", () => {
     expect(screen.getByText("disconnect (succeeded)")).toBeInTheDocument();
   });
 
+  it("renders on-demand-read summaries and bounded detail correctly", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell();
+
+    expect(
+      await screen.findByText("read_billing_snapshot billing (succeeded)"),
+    ).toBeInTheDocument();
+
+    const onDemandRow = screen.getByRole("button", {
+      name: /on-demand-read-template/i,
+    });
+    await user.click(onDemandRow);
+
+    const detailPanel = screen.getAllByRole("heading", { name: "Command detail" })[0]
+      .closest("section");
+    expect(detailPanel).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        within(detailPanel as HTMLElement).getByText("runtime-on-demand-1"),
+      ).toBeInTheDocument();
+      expect(
+        within(detailPanel as HTMLElement).getByText(
+          "read_billing_snapshot billing (succeeded)",
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("does not surface unsupported family actions", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
@@ -212,6 +292,6 @@ describe("CommandsModule", () => {
     await screen.findByText("Recent commands");
     expect(screen.queryByText(/execute profile capture now/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/execute relay disconnect now/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/on-demand-read-hidden-template/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/execute on-demand read now/i)).not.toBeInTheDocument();
   });
 });

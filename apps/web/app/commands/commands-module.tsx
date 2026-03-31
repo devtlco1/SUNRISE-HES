@@ -4,7 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { AuthorizedFetch } from "../operational-shell";
 
-type CommandOperationalFamily = "profile_capture" | "relay_control";
+type CommandOperationalFamily =
+  | "profile_capture"
+  | "relay_control"
+  | "on_demand_read";
 type FamilyFilter = "all" | CommandOperationalFamily;
 
 type CommandRecentItem = {
@@ -75,6 +78,12 @@ function formatFamilySummary(item: Record<string, string | null>): string {
     const operation = item.relay_control_operation ?? "relay";
     const outcome = item.relay_control_execution_outcome ?? "pending";
     return `${operation} (${outcome})`;
+  }
+  if ("on_demand_read_operation" in item) {
+    const operation = item.on_demand_read_operation ?? "read";
+    const snapshotType = item.snapshot_type ?? "snapshot";
+    const outcome = item.on_demand_read_execution_outcome ?? "pending";
+    return `${operation} ${snapshotType} (${outcome})`;
   }
   return "No operational summary yet";
 }
@@ -194,6 +203,7 @@ export function CommandsModule({
                 <option value="all">All supported</option>
                 <option value="profile_capture">Profile capture</option>
                 <option value="relay_control">Relay control</option>
+                <option value="on_demand_read">On-demand read</option>
               </select>
             </label>
           </div>

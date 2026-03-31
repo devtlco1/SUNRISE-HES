@@ -124,7 +124,7 @@ function createMockApi({
     },
     {
       id: "template-on-demand-read-1",
-      code: "on-demand-read-hidden-template",
+      code: "on-demand-read-template",
       name: "On Demand Read",
       category: "on_demand_read",
       is_active: true,
@@ -198,6 +198,27 @@ function createMockApi({
       created_at: "2026-03-30T09:00:00.000Z",
       latest_updated_at: "2026-03-30T09:03:00.000Z",
     },
+    {
+      command_id: "cmd-on-demand-1",
+      command_family: "on_demand_read",
+      command_category: "on_demand_read",
+      command_status: "succeeded",
+      meter_id: "meter-1",
+      command_template_code: "on-demand-read-template",
+      latest_command_execution_attempt_id: "attempt-on-demand-1",
+      latest_command_execution_attempt_status: "succeeded",
+      runtime_execution_record_id: "runtime-on-demand-1",
+      family_specific_outcome_summary: {
+        on_demand_read_operation: "read_billing_snapshot",
+        snapshot_type: "billing",
+        on_demand_read_execution_outcome: "succeeded",
+      },
+      orchestration_artifact_present: true,
+      terminalization_artifact_present: true,
+      execute_now_artifact_present: true,
+      created_at: "2026-03-30T08:00:00.000Z",
+      latest_updated_at: "2026-03-30T08:02:00.000Z",
+    },
   ];
 
   const detailById: Record<string, Record<string, unknown>> = {
@@ -239,6 +260,28 @@ function createMockApi({
       created_at: "2026-03-30T09:00:00.000Z",
       latest_updated_at: "2026-03-30T09:03:00.000Z",
       projection_record: { runtime_execution_record_id: "runtime-relay-1" },
+    },
+    "cmd-on-demand-1": {
+      command_id: "cmd-on-demand-1",
+      command_family: "on_demand_read",
+      command_category: "on_demand_read",
+      command_status: "succeeded",
+      meter_id: "meter-1",
+      command_template_code: "on-demand-read-template",
+      latest_command_execution_attempt_id: "attempt-on-demand-1",
+      latest_command_execution_attempt_status: "succeeded",
+      runtime_execution_record_id: "runtime-on-demand-1",
+      family_specific_outcome_summary: {
+        on_demand_read_operation: "read_billing_snapshot",
+        snapshot_type: "billing",
+        on_demand_read_execution_outcome: "succeeded",
+      },
+      orchestration_artifact_present: true,
+      terminalization_artifact_present: true,
+      execute_now_artifact_present: true,
+      created_at: "2026-03-30T08:00:00.000Z",
+      latest_updated_at: "2026-03-30T08:02:00.000Z",
+      projection_record: { runtime_execution_record_id: "runtime-on-demand-1" },
     },
   };
 
@@ -381,6 +424,53 @@ function createMockApi({
       });
     }
 
+    if (method === "POST" && url.endsWith("/api/v1/meters/meter-1/commands/on-demand-read/execute-now")) {
+      recentCommands.unshift({
+        command_id: "cmd-on-demand-action",
+        command_family: "on_demand_read",
+        command_category: "on_demand_read",
+        command_status: "succeeded",
+        meter_id: "meter-1",
+        command_template_code: "on-demand-read-template",
+        latest_command_execution_attempt_id: "attempt-on-demand-action",
+        latest_command_execution_attempt_status: "succeeded",
+        runtime_execution_record_id: "runtime-on-demand-action",
+        family_specific_outcome_summary: {
+          on_demand_read_operation: "read_billing_snapshot",
+          snapshot_type: "billing",
+          on_demand_read_execution_outcome: "succeeded",
+        },
+        orchestration_artifact_present: true,
+        terminalization_artifact_present: true,
+        execute_now_artifact_present: true,
+        created_at: "2026-03-30T12:10:00.000Z",
+        latest_updated_at: "2026-03-30T12:11:00.000Z",
+      });
+      detailById["cmd-on-demand-action"] = {
+        command_id: "cmd-on-demand-action",
+        command_family: "on_demand_read",
+        command_category: "on_demand_read",
+        command_status: "succeeded",
+        meter_id: "meter-1",
+        command_template_code: "on-demand-read-template",
+        latest_command_execution_attempt_id: "attempt-on-demand-action",
+        latest_command_execution_attempt_status: "succeeded",
+        runtime_execution_record_id: "runtime-on-demand-action",
+        family_specific_outcome_summary: {
+          on_demand_read_operation: "read_billing_snapshot",
+          snapshot_type: "billing",
+          on_demand_read_execution_outcome: "succeeded",
+        },
+        orchestration_artifact_present: true,
+        terminalization_artifact_present: true,
+        execute_now_artifact_present: true,
+        created_at: "2026-03-30T12:10:00.000Z",
+        latest_updated_at: "2026-03-30T12:11:00.000Z",
+        projection_record: { runtime_execution_record_id: "runtime-on-demand-action" },
+      };
+      return jsonResponse({ result: { command_id: "cmd-on-demand-action" } });
+    }
+
     throw new Error(`Unhandled request: ${method} ${url}`);
   });
 
@@ -425,9 +515,7 @@ describe("MeterDetailsCommandsTab", () => {
     expect(await screen.findByRole("link", { name: "Current meter" })).toBeInTheDocument();
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
     expect(screen.getAllByText("relay-disconnect-template")).not.toHaveLength(0);
-    expect(
-      screen.queryByText("on-demand-read-hidden-template"),
-    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("on-demand-read-template")).not.toHaveLength(0);
   });
 
   it("renders the operational summary panel with current meter context", async () => {
@@ -554,16 +642,19 @@ describe("MeterDetailsCommandsTab", () => {
       expect(
         within(readinessPanel as HTMLElement).getByText("Relay reconnect execute-now"),
       ).toBeInTheDocument();
+      expect(
+        within(readinessPanel as HTMLElement).getByText("On-demand read execute-now"),
+      ).toBeInTheDocument();
     });
 
     expect(
       within(readinessPanel as HTMLElement).getAllByText("ready"),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     expect(
       within(readinessPanel as HTMLElement).getAllByText(
         "All minimum prerequisites available.",
       ),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
   });
 
   it("renders a bounded loading state while action readiness is bootstrapping", async () => {
@@ -657,7 +748,7 @@ describe("MeterDetailsCommandsTab", () => {
     await waitFor(() => {
       expect(
         within(readinessPanel as HTMLElement).getAllByText("partially ready"),
-      ).toHaveLength(3);
+      ).toHaveLength(4);
     });
 
     expect(
@@ -669,7 +760,7 @@ describe("MeterDetailsCommandsTab", () => {
       within(readinessPanel as HTMLElement).getAllByText(
         "Missing: active endpoint assignment, active protocol profile.",
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 
   it("renders a bounded summary unavailable state when meter context fails to load", async () => {
@@ -748,6 +839,34 @@ describe("MeterDetailsCommandsTab", () => {
     expect(detailPanel).not.toBeNull();
     await waitFor(() => {
       expect(within(detailPanel as HTMLElement).getByText("runtime-relay-1")).toBeInTheDocument();
+    });
+  });
+
+  it("loads bounded on-demand-read command detail when a recent command is selected", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+
+    const onDemandRow = await screen.findByRole("button", {
+      name: /on-demand-read-template/i,
+    });
+    await user.click(onDemandRow);
+
+    const detailPanel = screen
+      .getByRole("heading", { name: "Command detail" })
+      .closest("section");
+    expect(detailPanel).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        within(detailPanel as HTMLElement).getByText("runtime-on-demand-1"),
+      ).toBeInTheDocument();
+      expect(
+        within(detailPanel as HTMLElement).getByText(
+          "read_billing_snapshot billing (succeeded)",
+        ),
+      ).toBeInTheDocument();
     });
   });
 
@@ -874,5 +993,54 @@ describe("MeterDetailsCommandsTab", () => {
     expect(reconnectRequest?.body?.command_template_id).toBe(
       "template-relay-reconnect-1",
     );
+  });
+
+  it("triggers the existing on-demand-read execute-now path and refreshes the selected detail", async () => {
+    const { fetchMock, requests } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await screen.findByText("Recent commands");
+
+    const onDemandForm = screen
+      .getByRole("heading", { name: "On-demand read" })
+      .closest("form");
+    expect(onDemandForm).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(onDemandForm as HTMLElement).getByRole("button", {
+          name: /execute on-demand read now/i,
+        }),
+      ).toBeEnabled();
+    });
+
+    await user.click(
+      within(onDemandForm as HTMLElement).getByRole("button", {
+        name: /execute on-demand read now/i,
+      }),
+    );
+
+    expect(
+      await screen.findByText("On-demand read execute-now command requested."),
+    ).toBeInTheDocument();
+
+    const request = requests.find((entry) =>
+      entry.url.endsWith("/api/v1/meters/meter-1/commands/on-demand-read/execute-now"),
+    );
+    expect(request?.body?.command_template_id).toBe("template-on-demand-read-1");
+    expect(request?.body?.endpoint_assignment_id).toBe("assignment-1");
+    expect(request?.body?.protocol_association_profile_id).toBe("protocol-profile-1");
+    expect(request?.body?.on_demand_read_operation).toBe("read_billing_snapshot");
+
+    const detailPanel = screen
+      .getByRole("heading", { name: "Command detail" })
+      .closest("section");
+    await waitFor(() => {
+      expect(
+        within(detailPanel as HTMLElement).getByText("runtime-on-demand-action"),
+      ).toBeInTheDocument();
+    });
   });
 });

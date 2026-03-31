@@ -16,7 +16,10 @@ type MeterDetail = {
   last_seen_at: string | null;
 };
 
-type CommandOperationalFamily = "profile_capture" | "relay_control";
+type CommandOperationalFamily =
+  | "profile_capture"
+  | "relay_control"
+  | "on_demand_read";
 
 type CommandRecentItem = {
   command_id: string;
@@ -155,6 +158,12 @@ function formatFamilySummary(item: Record<string, string | null>): string {
     const outcome = item.relay_control_execution_outcome ?? "pending";
     return `${operation} (${outcome})`;
   }
+  if ("on_demand_read_operation" in item) {
+    const operation = item.on_demand_read_operation ?? "read";
+    const snapshotType = item.snapshot_type ?? "snapshot";
+    const outcome = item.on_demand_read_execution_outcome ?? "pending";
+    return `${operation} ${snapshotType} (${outcome})`;
+  }
   return "No operational summary yet";
 }
 
@@ -236,6 +245,7 @@ export function MeterDetailsCommandsTab({
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isExecutingProfileCapture, setIsExecutingProfileCapture] = useState(false);
   const [isExecutingRelayControl, setIsExecutingRelayControl] = useState(false);
+  const [isExecutingOnDemandRead, setIsExecutingOnDemandRead] = useState(false);
   const [profileCaptureTemplateId, setProfileCaptureTemplateId] = useState("");
   const [profileCaptureEndpointAssignmentId, setProfileCaptureEndpointAssignmentId] =
     useState("");
@@ -248,6 +258,9 @@ export function MeterDetailsCommandsTab({
   const [relayEndpointAssignmentId, setRelayEndpointAssignmentId] = useState("");
   const [relayProtocolProfileId, setRelayProtocolProfileId] = useState("");
   const [relayOperation, setRelayOperation] = useState<RelayOperation>("disconnect");
+  const [onDemandReadTemplateId, setOnDemandReadTemplateId] = useState("");
+  const [onDemandReadEndpointAssignmentId, setOnDemandReadEndpointAssignmentId] = useState("");
+  const [onDemandReadProtocolProfileId, setOnDemandReadProtocolProfileId] = useState("");
   const [profileCaptureIntervalStart, setProfileCaptureIntervalStart] = useState(() => {
     const end = new Date();
     end.setSeconds(0, 0);
@@ -314,6 +327,14 @@ export function MeterDetailsCommandsTab({
         ? relayDisconnectTemplates
         : relayReconnectTemplates,
     [relayDisconnectTemplates, relayOperation, relayReconnectTemplates],
+  );
+
+  const onDemandReadTemplates = useMemo(
+    () =>
+      templates.filter(
+        (template) => template.is_active && template.category === "on_demand_read",
+      ),
+    [templates],
   );
 
   const primaryEndpointAssignment = useMemo(
@@ -394,11 +415,26 @@ export function MeterDetailsCommandsTab({
           available: activeProtocolProfiles.length > 0,
         },
       ]),
+      buildActionReadinessItem("On-demand read execute-now", [
+        {
+          label: "on-demand read template",
+          available: onDemandReadTemplates.length > 0,
+        },
+        {
+          label: "active endpoint assignment",
+          available: activeEndpointAssignments.length > 0,
+        },
+        {
+          label: "active protocol profile",
+          available: activeProtocolProfiles.length > 0,
+        },
+      ]),
     ],
     [
       activeEndpointAssignments.length,
       activeLoadProfileChannels.length,
       activeProtocolProfiles.length,
+      onDemandReadTemplates.length,
       profileCaptureTemplates.length,
       relayDisconnectTemplates.length,
       relayReconnectTemplates.length,
@@ -412,14 +448,24 @@ export function MeterDetailsCommandsTab({
   }, [profileCaptureTemplateId, profileCaptureTemplates]);
 
   useEffect(() => {
+    if (!onDemandReadTemplateId && onDemandReadTemplates[0]) {
+      setOnDemandReadTemplateId(onDemandReadTemplates[0].id);
+    }
+  }, [onDemandReadTemplateId, onDemandReadTemplates]);
+
+  useEffect(() => {
     if (!profileCaptureEndpointAssignmentId && activeEndpointAssignments[0]) {
       setProfileCaptureEndpointAssignmentId(activeEndpointAssignments[0].id);
     }
     if (!relayEndpointAssignmentId && activeEndpointAssignments[0]) {
       setRelayEndpointAssignmentId(activeEndpointAssignments[0].id);
     }
+    if (!onDemandReadEndpointAssignmentId && activeEndpointAssignments[0]) {
+      setOnDemandReadEndpointAssignmentId(activeEndpointAssignments[0].id);
+    }
   }, [
     activeEndpointAssignments,
+    onDemandReadEndpointAssignmentId,
     profileCaptureEndpointAssignmentId,
     relayEndpointAssignmentId,
   ]);
@@ -431,8 +477,12 @@ export function MeterDetailsCommandsTab({
     if (!relayProtocolProfileId && activeProtocolProfiles[0]) {
       setRelayProtocolProfileId(activeProtocolProfiles[0].id);
     }
+    if (!onDemandReadProtocolProfileId && activeProtocolProfiles[0]) {
+      setOnDemandReadProtocolProfileId(activeProtocolProfiles[0].id);
+    }
   }, [
     activeProtocolProfiles,
+    onDemandReadProtocolProfileId,
     profileCaptureProtocolProfileId,
     relayProtocolProfileId,
   ]);
@@ -697,6 +747,52 @@ export function MeterDetailsCommandsTab({
     ],
   );
 
+  const handleOnDemandReadExecuteNow = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setIsExecutingOnDemandRead(true);
+      setActionError(null);
+      setActionSuccess(null);
+
+      try {
+        const response = await authorizedFetch<ExecuteNowResponse>(
+          `/api/v1/meters/${meterId}/commands/on-demand-read/execute-now`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              command_template_id: onDemandReadTemplateId,
+              on_demand_read_operation: "read_billing_snapshot",
+              endpoint_assignment_id: onDemandReadEndpointAssignmentId,
+              protocol_association_profile_id: onDemandReadProtocolProfileId,
+              priority: "high",
+              notes: "Meter details commands tab on-demand-read request",
+              execute_now_reason: "meter-details-commands-tab",
+            }),
+          },
+        );
+
+        await loadRecentCommands(response.result.command_id);
+        setActionSuccess("On-demand read execute-now command requested.");
+      } catch (error) {
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "Unable to execute on-demand read command.",
+        );
+      } finally {
+        setIsExecutingOnDemandRead(false);
+      }
+    },
+    [
+      authorizedFetch,
+      loadRecentCommands,
+      meterId,
+      onDemandReadEndpointAssignmentId,
+      onDemandReadProtocolProfileId,
+      onDemandReadTemplateId,
+    ],
+  );
+
   const canSubmitProfileCapture =
     profileCaptureTemplateId !== "" &&
     profileCaptureEndpointAssignmentId !== "" &&
@@ -707,6 +803,11 @@ export function MeterDetailsCommandsTab({
     relayTemplateId !== "" &&
     relayEndpointAssignmentId !== "" &&
     relayProtocolProfileId !== "";
+
+  const canSubmitOnDemandRead =
+    onDemandReadTemplateId !== "" &&
+    onDemandReadEndpointAssignmentId !== "" &&
+    onDemandReadProtocolProfileId !== "";
 
   return (
     <section className="panel">
@@ -948,8 +1049,8 @@ export function MeterDetailsCommandsTab({
                 <div>
                   <h2>Recent commands</h2>
                   <p className="muted">
-                    Meter-scoped operational read model for profile capture and relay
-                    control.
+                    Meter-scoped operational read model for profile capture, relay
+                    control, and on-demand read.
                   </p>
                 </div>
                 <label className="inline-select">
@@ -963,6 +1064,7 @@ export function MeterDetailsCommandsTab({
                     <option value="all">All supported</option>
                     <option value="profile_capture">Profile capture</option>
                     <option value="relay_control">Relay control</option>
+                    <option value="on_demand_read">On-demand read</option>
                   </select>
                 </label>
               </div>
@@ -1094,8 +1196,8 @@ export function MeterDetailsCommandsTab({
                 <div>
                   <h2>Execute now</h2>
                   <p className="muted">
-                    Thin action layer over the existing profile capture and relay
-                    control application APIs.
+                    Thin action layer over the existing profile capture, relay
+                    control, and on-demand read application APIs.
                   </p>
                 </div>
               </div>
@@ -1270,6 +1372,69 @@ export function MeterDetailsCommandsTab({
                       : relayOperation === "disconnect"
                         ? "Execute relay disconnect now"
                         : "Execute relay reconnect now"}
+                  </button>
+                </form>
+
+                <form className="action-form" onSubmit={handleOnDemandReadExecuteNow}>
+                  <h3>On-demand read</h3>
+                  <label className="field">
+                    <span>Command template</span>
+                    <select
+                      value={onDemandReadTemplateId}
+                      onChange={(event) => setOnDemandReadTemplateId(event.target.value)}
+                    >
+                      {onDemandReadTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.code}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Endpoint assignment</span>
+                    <select
+                      value={onDemandReadEndpointAssignmentId}
+                      onChange={(event) =>
+                        setOnDemandReadEndpointAssignmentId(event.target.value)
+                      }
+                    >
+                      {activeEndpointAssignments.map((assignment) => (
+                        <option key={assignment.id} value={assignment.id}>
+                          {assignment.endpoint_code}
+                          {assignment.is_primary ? " (primary)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Protocol profile</span>
+                    <select
+                      value={onDemandReadProtocolProfileId}
+                      onChange={(event) =>
+                        setOnDemandReadProtocolProfileId(event.target.value)
+                      }
+                    >
+                      {activeProtocolProfiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.code}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="field">
+                    <span>Operation</span>
+                    <strong>read_billing_snapshot</strong>
+                    <p className="muted">Fixed bounded billing snapshot execute-now flow.</p>
+                  </div>
+
+                  <button
+                    className="primary-button"
+                    disabled={!canSubmitOnDemandRead || isExecutingOnDemandRead}
+                    type="submit"
+                  >
+                    {isExecutingOnDemandRead
+                      ? "Executing on-demand read..."
+                      : "Execute on-demand read now"}
                   </button>
                 </form>
               </div>
