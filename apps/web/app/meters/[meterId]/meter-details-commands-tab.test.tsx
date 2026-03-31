@@ -11,6 +11,51 @@ type RequestLog = {
   body: Record<string, unknown> | null;
 };
 
+type MockMeterResponse = {
+  id: string;
+  serial_number: string;
+  utility_meter_number: string | null;
+  manufacturer_code: string;
+  meter_model_code: string;
+  meter_profile_code: string | null;
+  communication_profile_code: string | null;
+  current_status: string;
+  last_seen_at: string | null;
+};
+
+type MockEndpointAssignment = {
+  id: string;
+  endpoint_id: string;
+  endpoint_code: string;
+  endpoint_display_name: string;
+  assignment_status: string;
+  is_primary: boolean;
+};
+
+type MockProtocolProfile = {
+  id: string;
+  code: string;
+  name: string;
+  protocol_family: string;
+  is_active: boolean;
+};
+
+type MockCommandTemplate = {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  is_active: boolean;
+};
+
+type MockLoadProfileChannel = {
+  id: string;
+  channel_code: string;
+  obis_code: string;
+  interval_seconds: number;
+  is_active: boolean;
+};
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -18,7 +63,102 @@ function jsonResponse(payload: unknown, status = 200) {
   });
 }
 
-function createMockApi() {
+function createMockApi({
+  meterResponse = {
+    id: "meter-1",
+    serial_number: "SN-1001",
+    utility_meter_number: "UMN-1001",
+    manufacturer_code: "GENERIC",
+    meter_model_code: "GM-1",
+    meter_profile_code: "default",
+    communication_profile_code: "dlms-default",
+    current_status: "commissioned",
+    last_seen_at: "2026-03-30T11:00:00.000Z",
+  },
+  meterStatus = 200,
+  meterErrorDetail = "Meter not found.",
+  endpointAssignmentsStatus = 200,
+  endpointAssignmentsErrorDetail = "Endpoint assignments unavailable.",
+  protocolProfilesStatus = 200,
+  protocolProfilesErrorDetail = "Protocol profiles unavailable.",
+  endpointAssignments = [
+    {
+      id: "assignment-1",
+      endpoint_id: "endpoint-1",
+      endpoint_code: "tcp-primary",
+      endpoint_display_name: "TCP Primary",
+      assignment_status: "active",
+      is_primary: true,
+    },
+  ],
+  protocolProfiles = [
+    {
+      id: "protocol-profile-1",
+      code: "dlms-profile",
+      name: "DLMS Profile",
+      protocol_family: "dlms_cosem",
+      is_active: true,
+    },
+  ],
+  templateItems = [
+    {
+      id: "template-profile-1",
+      code: "profile-capture-template",
+      name: "Profile Capture",
+      category: "profile_capture",
+      is_active: true,
+    },
+    {
+      id: "template-relay-disconnect-1",
+      code: "relay-disconnect-template",
+      name: "Relay Disconnect",
+      category: "remote_disconnect",
+      is_active: true,
+    },
+    {
+      id: "template-relay-reconnect-1",
+      code: "relay-reconnect-template",
+      name: "Relay Reconnect",
+      category: "remote_reconnect",
+      is_active: true,
+    },
+    {
+      id: "template-on-demand-read-1",
+      code: "on-demand-read-hidden-template",
+      name: "On Demand Read",
+      category: "on_demand_read",
+      is_active: true,
+    },
+  ],
+  loadProfileChannels = [
+    {
+      id: "channel-1",
+      channel_code: "import-wh",
+      obis_code: "1.0.1.8.0.255",
+      interval_seconds: 900,
+      is_active: true,
+    },
+    {
+      id: "channel-2",
+      channel_code: "export-wh",
+      obis_code: "1.0.2.8.0.255",
+      interval_seconds: 900,
+      is_active: true,
+    },
+  ],
+}: {
+  meterResponse?: MockMeterResponse;
+  meterStatus?: number;
+  meterErrorDetail?: string;
+  endpointAssignmentsStatus?: number;
+  endpointAssignmentsErrorDetail?: string;
+  protocolProfilesStatus?: number;
+  protocolProfilesErrorDetail?: string;
+  endpointAssignments?: MockEndpointAssignment[];
+  protocolProfiles?: MockProtocolProfile[];
+  templateItems?: MockCommandTemplate[];
+  loadProfileChannels?: MockLoadProfileChannel[];
+} = {}) {
   const requests: RequestLog[] = [];
   const recentCommands = [
     {
@@ -123,105 +263,49 @@ function createMockApi() {
     }
 
     if (url.endsWith("/api/v1/meters/meter-1")) {
-      return jsonResponse({
-        id: "meter-1",
-        serial_number: "SN-1001",
-        utility_meter_number: "UMN-1001",
-        manufacturer_code: "GENERIC",
-        meter_model_code: "GM-1",
-        meter_profile_code: "default",
-        communication_profile_code: "dlms-default",
-        current_status: "commissioned",
-        last_seen_at: "2026-03-30T11:00:00.000Z",
-      });
+      if (meterStatus !== 200) {
+        return jsonResponse({ detail: meterErrorDetail }, meterStatus);
+      }
+      return jsonResponse(meterResponse);
     }
 
     if (url.endsWith("/api/v1/command-templates")) {
       return jsonResponse({
-        total: 4,
-        items: [
-          {
-            id: "template-profile-1",
-            code: "profile-capture-template",
-            name: "Profile Capture",
-            category: "profile_capture",
-            is_active: true,
-          },
-          {
-            id: "template-relay-disconnect-1",
-            code: "relay-disconnect-template",
-            name: "Relay Disconnect",
-            category: "remote_disconnect",
-            is_active: true,
-          },
-          {
-            id: "template-relay-reconnect-1",
-            code: "relay-reconnect-template",
-            name: "Relay Reconnect",
-            category: "remote_reconnect",
-            is_active: true,
-          },
-          {
-            id: "template-on-demand-read-1",
-            code: "on-demand-read-hidden-template",
-            name: "On Demand Read",
-            category: "on_demand_read",
-            is_active: true,
-          },
-        ],
+        total: templateItems.length,
+        items: templateItems,
       });
     }
 
     if (url.endsWith("/api/v1/meters/meter-1/endpoint-assignments")) {
+      if (endpointAssignmentsStatus !== 200) {
+        return jsonResponse(
+          { detail: endpointAssignmentsErrorDetail },
+          endpointAssignmentsStatus,
+        );
+      }
       return jsonResponse({
-        total: 1,
-        items: [
-          {
-            id: "assignment-1",
-            endpoint_id: "endpoint-1",
-            endpoint_code: "tcp-primary",
-            endpoint_display_name: "TCP Primary",
-            assignment_status: "active",
-            is_primary: true,
-          },
-        ],
+        total: endpointAssignments.length,
+        items: endpointAssignments,
       });
     }
 
     if (url.endsWith("/api/v1/protocol-association-profiles")) {
+      if (protocolProfilesStatus !== 200) {
+        return jsonResponse(
+          { detail: protocolProfilesErrorDetail },
+          protocolProfilesStatus,
+        );
+      }
       return jsonResponse({
-        total: 1,
-        items: [
-          {
-            id: "protocol-profile-1",
-            code: "dlms-profile",
-            name: "DLMS Profile",
-            protocol_family: "dlms_cosem",
-            is_active: true,
-          },
-        ],
+        total: protocolProfiles.length,
+        items: protocolProfiles,
       });
     }
 
     if (url.endsWith("/api/v1/meters/meter-1/load-profile-channels")) {
       return jsonResponse({
-        total: 2,
-        items: [
-          {
-            id: "channel-1",
-            channel_code: "import-wh",
-            obis_code: "1.0.1.8.0.255",
-            interval_seconds: 900,
-            is_active: true,
-          },
-          {
-            id: "channel-2",
-            channel_code: "export-wh",
-            obis_code: "1.0.2.8.0.255",
-            interval_seconds: 900,
-            is_active: true,
-          },
-        ],
+        total: loadProfileChannels.length,
+        items: loadProfileChannels,
       });
     }
 
@@ -344,6 +428,306 @@ describe("MeterDetailsCommandsTab", () => {
     expect(
       screen.queryByText("on-demand-read-hidden-template"),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders the operational summary panel with current meter context", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("SN-1001")).toBeInTheDocument();
+
+    const summaryPanel = screen
+      .getByRole("heading", { name: "Operational summary" })
+      .closest("section");
+    expect(summaryPanel).not.toBeNull();
+
+    expect(within(summaryPanel as HTMLElement).getByText("meter-1")).toBeInTheDocument();
+    expect(within(summaryPanel as HTMLElement).getByText("commissioned")).toBeInTheDocument();
+    expect(within(summaryPanel as HTMLElement).getByText("dlms-default")).toBeInTheDocument();
+    expect(within(summaryPanel as HTMLElement).getByText("tcp-primary")).toBeInTheDocument();
+    expect(within(summaryPanel as HTMLElement).getByText("dlms-profile")).toBeInTheDocument();
+  });
+
+  it("renders a bounded loading state while the meter summary is bootstrapping", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        if (url.endsWith("/api/v1/meters/meter-1")) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        return fetchMock(input, init);
+      }),
+    );
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("Loading meter summary...")).toBeInTheDocument();
+    expect(await screen.findByText("meter-1")).toBeInTheDocument();
+  });
+
+  it("renders the connectivity context panel with current endpoint and protocol state", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("Connectivity context")).toBeInTheDocument();
+
+    const connectivityPanel = screen
+      .getByRole("heading", { name: "Connectivity context" })
+      .closest("section");
+    expect(connectivityPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(connectivityPanel as HTMLElement).getByText("TCP Primary"),
+      ).toBeInTheDocument();
+      expect(
+        within(connectivityPanel as HTMLElement).getByText("tcp-primary"),
+      ).toBeInTheDocument();
+      expect(
+        within(connectivityPanel as HTMLElement).getByText("active"),
+      ).toBeInTheDocument();
+      expect(
+        within(connectivityPanel as HTMLElement).getByText("Primary"),
+      ).toBeInTheDocument();
+      expect(
+        within(connectivityPanel as HTMLElement).getByText("dlms-default"),
+      ).toBeInTheDocument();
+      expect(
+        within(connectivityPanel as HTMLElement).getByText("dlms-profile"),
+      ).toBeInTheDocument();
+      expect(
+        within(connectivityPanel as HTMLElement).getByText("dlms_cosem"),
+      ).toBeInTheDocument();
+      expect(
+        within(connectivityPanel as HTMLElement).getByText(
+          "Recent connectivity signal recorded",
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("renders a bounded loading state while connectivity context is bootstrapping", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        if (url.endsWith("/api/v1/meters/meter-1/endpoint-assignments")) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        return fetchMock(input, init);
+      }),
+    );
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("Loading connectivity context...")).toBeInTheDocument();
+    expect(await screen.findByText("TCP Primary")).toBeInTheDocument();
+  });
+
+  it("renders the action readiness panel for the existing execute-now flows", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    const readinessHeading = await screen.findByRole("heading", {
+      name: "Action readiness",
+    });
+    const readinessPanel = readinessHeading
+      .closest("section");
+    expect(readinessPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(readinessPanel as HTMLElement).getByText("Profile capture execute-now"),
+      ).toBeInTheDocument();
+      expect(
+        within(readinessPanel as HTMLElement).getByText("Relay disconnect execute-now"),
+      ).toBeInTheDocument();
+      expect(
+        within(readinessPanel as HTMLElement).getByText("Relay reconnect execute-now"),
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      within(readinessPanel as HTMLElement).getAllByText("ready"),
+    ).toHaveLength(3);
+    expect(
+      within(readinessPanel as HTMLElement).getAllByText(
+        "All minimum prerequisites available.",
+      ),
+    ).toHaveLength(3);
+  });
+
+  it("renders a bounded loading state while action readiness is bootstrapping", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        if (url.endsWith("/api/v1/command-templates")) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        return fetchMock(input, init);
+      }),
+    );
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("Loading action readiness...")).toBeInTheDocument();
+    expect(await screen.findByText("Profile capture execute-now")).toBeInTheDocument();
+  });
+
+  it("renders bounded summary fallbacks when optional meter context is unavailable", async () => {
+    const { fetchMock } = createMockApi({
+      meterResponse: {
+        id: "meter-1",
+        serial_number: "SN-1001",
+        utility_meter_number: null,
+        manufacturer_code: "GENERIC",
+        meter_model_code: "GM-1",
+        meter_profile_code: null,
+        communication_profile_code: null,
+        current_status: "commissioned",
+        last_seen_at: null,
+      },
+      endpointAssignments: [],
+      protocolProfiles: [],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    expect(await screen.findAllByText("Not available")).not.toHaveLength(0);
+    expect(screen.getByText("No active endpoint")).toBeInTheDocument();
+    expect(screen.getByText("No active protocol profile")).toBeInTheDocument();
+  });
+
+  it("renders bounded connectivity fallbacks when endpoint and protocol context is unavailable", async () => {
+    const { fetchMock } = createMockApi({
+      meterResponse: {
+        id: "meter-1",
+        serial_number: "SN-1001",
+        utility_meter_number: "UMN-1001",
+        manufacturer_code: "GENERIC",
+        meter_model_code: "GM-1",
+        meter_profile_code: "default",
+        communication_profile_code: null,
+        current_status: "commissioned",
+        last_seen_at: null,
+      },
+      endpointAssignments: [],
+      protocolProfiles: [],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Connectivity context not available."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("renders bounded action readiness states when prerequisites are missing", async () => {
+    const { fetchMock } = createMockApi({
+      endpointAssignments: [],
+      protocolProfiles: [],
+      loadProfileChannels: [],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    const readinessHeading = await screen.findByRole("heading", {
+      name: "Action readiness",
+    });
+    const readinessPanel = readinessHeading
+      .closest("section");
+    expect(readinessPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(readinessPanel as HTMLElement).getAllByText("partially ready"),
+      ).toHaveLength(3);
+    });
+
+    expect(
+      within(readinessPanel as HTMLElement).getByText(
+        "Missing: active endpoint assignment, active protocol profile, active load-profile channel.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(readinessPanel as HTMLElement).getAllByText(
+        "Missing: active endpoint assignment, active protocol profile.",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("renders a bounded summary unavailable state when meter context fails to load", async () => {
+    const { fetchMock } = createMockApi({
+      meterStatus: 404,
+      meterErrorDetail: "Meter not found.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("Meter not found.")).toBeInTheDocument();
+    expect(screen.getByText("Meter summary not available.")).toBeInTheDocument();
+  });
+
+  it("renders a bounded action readiness unavailable state when meter context fails to load", async () => {
+    const { fetchMock } = createMockApi({
+      meterStatus: 404,
+      meterErrorDetail: "Meter not found.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("Meter not found.")).toBeInTheDocument();
+    expect(await screen.findByText("Action readiness not available.")).toBeInTheDocument();
+  });
+
+  it("renders a bounded connectivity error state while preserving partial context", async () => {
+    const { fetchMock } = createMockApi({
+      endpointAssignmentsStatus: 503,
+      endpointAssignmentsErrorDetail: "Endpoint assignments unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    expect(
+      await screen.findByText(
+        "Unable to load complete meter connectivity and command context.",
+      ),
+    ).toBeInTheDocument();
+
+    const connectivityPanel = screen
+      .getByRole("heading", { name: "Connectivity context" })
+      .closest("section");
+    expect(connectivityPanel).not.toBeNull();
+
+    expect(
+      within(connectivityPanel as HTMLElement).getByText("dlms-default"),
+    ).toBeInTheDocument();
+    expect(
+      within(connectivityPanel as HTMLElement).getByText("dlms-profile"),
+    ).toBeInTheDocument();
+    expect(
+      within(connectivityPanel as HTMLElement).queryByText("Connectivity context not available."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("SN-1001")).toBeInTheDocument();
   });
 
   it("loads bounded command detail when a recent command is selected", async () => {

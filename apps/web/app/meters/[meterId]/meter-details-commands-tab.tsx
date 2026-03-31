@@ -158,6 +158,51 @@ function formatFamilySummary(item: Record<string, string | null>): string {
   return "No operational summary yet";
 }
 
+function formatConnectivityFreshnessHint(lastSeenAt: string | null): string {
+  return lastSeenAt
+    ? "Recent connectivity signal recorded"
+    : "No recent connectivity signal";
+}
+
+type ActionReadinessLevel = "ready" | "partially ready" | "unavailable";
+
+type ActionReadinessItem = {
+  title: string;
+  status: ActionReadinessLevel;
+  summary: string;
+};
+
+function buildActionReadinessItem(
+  title: string,
+  requirements: Array<{ label: string; available: boolean }>,
+): ActionReadinessItem {
+  const missing = requirements
+    .filter((requirement) => !requirement.available)
+    .map((requirement) => requirement.label);
+
+  if (missing.length === 0) {
+    return {
+      title,
+      status: "ready",
+      summary: "All minimum prerequisites available.",
+    };
+  }
+
+  if (missing.length === requirements.length) {
+    return {
+      title,
+      status: "unavailable",
+      summary: `Missing: ${missing.join(", ")}.`,
+    };
+  }
+
+  return {
+    title,
+    status: "partially ready",
+    summary: `Missing: ${missing.join(", ")}.`,
+  };
+}
+
 export function MeterDetailsCommandsTab({
   meterId,
   authorizedFetch,
@@ -271,6 +316,95 @@ export function MeterDetailsCommandsTab({
     [relayDisconnectTemplates, relayOperation, relayReconnectTemplates],
   );
 
+  const primaryEndpointAssignment = useMemo(
+    () =>
+      activeEndpointAssignments.find((assignment) => assignment.is_primary) ??
+      activeEndpointAssignments[0] ??
+      null,
+    [activeEndpointAssignments],
+  );
+
+  const defaultProtocolProfile = useMemo(
+    () => activeProtocolProfiles[0] ?? null,
+    [activeProtocolProfiles],
+  );
+
+  const isConnectivityContextLoading =
+    isBootstrappingPage &&
+    endpointAssignments.length === 0 &&
+    protocolProfiles.length === 0;
+
+  const hasConnectivityContext =
+    primaryEndpointAssignment !== null ||
+    defaultProtocolProfile !== null ||
+    meter?.communication_profile_code != null;
+
+  const isActionReadinessLoading =
+    isBootstrappingPage &&
+    templates.length === 0 &&
+    endpointAssignments.length === 0 &&
+    protocolProfiles.length === 0 &&
+    loadProfileChannels.length === 0;
+
+  const actionReadinessItems = useMemo(
+    () => [
+      buildActionReadinessItem("Profile capture execute-now", [
+        {
+          label: "profile capture template",
+          available: profileCaptureTemplates.length > 0,
+        },
+        {
+          label: "active endpoint assignment",
+          available: activeEndpointAssignments.length > 0,
+        },
+        {
+          label: "active protocol profile",
+          available: activeProtocolProfiles.length > 0,
+        },
+        {
+          label: "active load-profile channel",
+          available: activeLoadProfileChannels.length > 0,
+        },
+      ]),
+      buildActionReadinessItem("Relay disconnect execute-now", [
+        {
+          label: "relay disconnect template",
+          available: relayDisconnectTemplates.length > 0,
+        },
+        {
+          label: "active endpoint assignment",
+          available: activeEndpointAssignments.length > 0,
+        },
+        {
+          label: "active protocol profile",
+          available: activeProtocolProfiles.length > 0,
+        },
+      ]),
+      buildActionReadinessItem("Relay reconnect execute-now", [
+        {
+          label: "relay reconnect template",
+          available: relayReconnectTemplates.length > 0,
+        },
+        {
+          label: "active endpoint assignment",
+          available: activeEndpointAssignments.length > 0,
+        },
+        {
+          label: "active protocol profile",
+          available: activeProtocolProfiles.length > 0,
+        },
+      ]),
+    ],
+    [
+      activeEndpointAssignments.length,
+      activeLoadProfileChannels.length,
+      activeProtocolProfiles.length,
+      profileCaptureTemplates.length,
+      relayDisconnectTemplates.length,
+      relayReconnectTemplates.length,
+    ],
+  );
+
   useEffect(() => {
     if (!profileCaptureTemplateId && profileCaptureTemplates[0]) {
       setProfileCaptureTemplateId(profileCaptureTemplates[0].id);
@@ -327,32 +461,50 @@ export function MeterDetailsCommandsTab({
     setPageError(null);
 
     try {
-      const [
-        meterResponse,
-        templatesResponse,
-        assignmentsResponse,
-        profilesResponse,
-        channelsResponse,
-      ] = await Promise.all([
-        authorizedFetch<MeterDetail>(`/api/v1/meters/${meterId}`),
-        authorizedFetch<CommandTemplateListResponse>("/api/v1/command-templates"),
-        authorizedFetch<MeterEndpointAssignmentListResponse>(
-          `/api/v1/meters/${meterId}/endpoint-assignments`,
-        ),
-        authorizedFetch<ProtocolAssociationProfileListResponse>(
-          "/api/v1/protocol-association-profiles",
-        ),
-        authorizedFetch<LoadProfileChannelListResponse>(
-          `/api/v1/meters/${meterId}/load-profile-channels`,
-        ),
-      ]);
-
+      const meterResponse = await authorizedFetch<MeterDetail>(`/api/v1/meters/${meterId}`);
       setMeter(meterResponse);
-      setTemplates(templatesResponse.items);
-      setEndpointAssignments(assignmentsResponse.items);
-      setProtocolProfiles(profilesResponse.items);
-      setLoadProfileChannels(channelsResponse.items);
+
+      const [templatesResult, assignmentsResult, profilesResult, channelsResult] =
+        await Promise.allSettled([
+          authorizedFetch<CommandTemplateListResponse>("/api/v1/command-templates"),
+          authorizedFetch<MeterEndpointAssignmentListResponse>(
+            `/api/v1/meters/${meterId}/endpoint-assignments`,
+          ),
+          authorizedFetch<ProtocolAssociationProfileListResponse>(
+            "/api/v1/protocol-association-profiles",
+          ),
+          authorizedFetch<LoadProfileChannelListResponse>(
+            `/api/v1/meters/${meterId}/load-profile-channels`,
+          ),
+        ]);
+
+      setTemplates(
+        templatesResult.status === "fulfilled" ? templatesResult.value.items : [],
+      );
+      setEndpointAssignments(
+        assignmentsResult.status === "fulfilled" ? assignmentsResult.value.items : [],
+      );
+      setProtocolProfiles(
+        profilesResult.status === "fulfilled" ? profilesResult.value.items : [],
+      );
+      setLoadProfileChannels(
+        channelsResult.status === "fulfilled" ? channelsResult.value.items : [],
+      );
+
+      if (
+        templatesResult.status === "rejected" ||
+        assignmentsResult.status === "rejected" ||
+        profilesResult.status === "rejected" ||
+        channelsResult.status === "rejected"
+      ) {
+        setPageError("Unable to load complete meter connectivity and command context.");
+      }
     } catch (error) {
+      setMeter(null);
+      setTemplates([]);
+      setEndpointAssignments([]);
+      setProtocolProfiles([]);
+      setLoadProfileChannels([]);
       setPageError(
         error instanceof Error
           ? error.message
@@ -561,6 +713,184 @@ export function MeterDetailsCommandsTab({
       {actionSuccess ? <p className="success-banner">{actionSuccess}</p> : null}
       {actionError ? <p className="error-banner">{actionError}</p> : null}
       {pageError ? <p className="error-banner">{pageError}</p> : null}
+
+      <section className="subpanel meter-summary-panel">
+        <div className="section-heading">
+          <div>
+            <h2>Operational summary</h2>
+            <p className="muted">
+              Current meter context for the existing operational commands
+              experience.
+            </p>
+          </div>
+        </div>
+
+        {isBootstrappingPage && !meter ? (
+          <p className="muted">Loading meter summary...</p>
+        ) : null}
+
+        {!isBootstrappingPage && meter ? (
+          <div className="meter-summary-grid">
+            <div className="stat-card">
+              <span className="stat-label">Meter ID</span>
+              <strong>{meter.id}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Serial number</span>
+              <strong>{meter.serial_number}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Utility meter number</span>
+              <strong>{meter.utility_meter_number ?? "Not available"}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Status</span>
+              <strong>{meter.current_status}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Communication profile</span>
+              <strong>{meter.communication_profile_code ?? "Not available"}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Meter profile</span>
+              <strong>{meter.meter_profile_code ?? "Not available"}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Manufacturer / model</span>
+              <strong>
+                {meter.manufacturer_code} / {meter.meter_model_code}
+              </strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Last seen</span>
+              <strong>{formatDateTime(meter.last_seen_at)}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Primary endpoint</span>
+              <strong>
+                {primaryEndpointAssignment?.endpoint_code ?? "No active endpoint"}
+              </strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Protocol profile</span>
+              <strong>
+                {defaultProtocolProfile?.code ?? "No active protocol profile"}
+              </strong>
+            </div>
+          </div>
+        ) : null}
+
+        {!isBootstrappingPage && !meter ? (
+          <p className="muted">Meter summary not available.</p>
+        ) : null}
+      </section>
+
+      <section className="subpanel meter-summary-panel">
+        <div className="section-heading">
+          <div>
+            <h2>Connectivity context</h2>
+            <p className="muted">
+              Current endpoint and protocol context for this meter&apos;s
+              operational path.
+            </p>
+          </div>
+        </div>
+
+        {isConnectivityContextLoading ? (
+          <p className="muted">Loading connectivity context...</p>
+        ) : null}
+
+        {!isConnectivityContextLoading && hasConnectivityContext ? (
+          <div className="meter-summary-grid">
+            <div className="stat-card">
+              <span className="stat-label">Primary endpoint</span>
+              <strong>
+                {primaryEndpointAssignment?.endpoint_display_name ??
+                  primaryEndpointAssignment?.endpoint_code ??
+                  "No active endpoint"}
+              </strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Endpoint code</span>
+              <strong>
+                {primaryEndpointAssignment?.endpoint_code ?? "No active endpoint"}
+              </strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Endpoint assignment status</span>
+              <strong>
+                {primaryEndpointAssignment?.assignment_status ?? "Not assigned"}
+              </strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Primary assignment</span>
+              <strong>
+                {primaryEndpointAssignment
+                  ? primaryEndpointAssignment.is_primary
+                    ? "Primary"
+                    : "Secondary"
+                  : "Not available"}
+              </strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Communication profile</span>
+              <strong>{meter?.communication_profile_code ?? "Not available"}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Protocol profile</span>
+              <strong>{defaultProtocolProfile?.code ?? "Not available"}</strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Protocol family</span>
+              <strong>
+                {defaultProtocolProfile?.protocol_family ?? "Not available"}
+              </strong>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Connectivity freshness</span>
+              <strong>
+                {formatConnectivityFreshnessHint(meter?.last_seen_at ?? null)}
+              </strong>
+            </div>
+          </div>
+        ) : null}
+
+        {!isConnectivityContextLoading && !hasConnectivityContext ? (
+          <p className="muted">Connectivity context not available.</p>
+        ) : null}
+      </section>
+
+      <section className="subpanel meter-summary-panel">
+        <div className="section-heading">
+          <div>
+            <h2>Action readiness</h2>
+            <p className="muted">
+              Advisory summary for the existing execute-now paths. Final command
+              validation remains on the backend.
+            </p>
+          </div>
+        </div>
+
+        {isActionReadinessLoading ? (
+          <p className="muted">Loading action readiness...</p>
+        ) : null}
+
+        {!isActionReadinessLoading && meter ? (
+          <div className="meter-summary-grid">
+            {actionReadinessItems.map((item) => (
+              <div key={item.title} className="stat-card">
+                <span className="stat-label">{item.title}</span>
+                <strong>{item.status}</strong>
+                <p className="muted">{item.summary}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {!isActionReadinessLoading && !meter ? (
+          <p className="muted">Action readiness not available.</p>
+        ) : null}
+      </section>
 
       <section>
         <div className="tab-row" role="tablist" aria-label="Meter details tabs">
