@@ -9,6 +9,10 @@ from tests.test_commands_on_demand_read_submission import _submit_on_demand_read
 from tests.test_commands_profile_capture_attempt_bootstrap import (
     _create_submitted_profile_capture_command,
 )
+from tests.test_commands_on_demand_read_attempt_bootstrap import (
+    _create_submitted_on_demand_read_command,
+)
+from tests.test_commands_on_demand_read_execute_now import _execute_on_demand_read_now
 from tests.test_commands_profile_capture_execute_now import _execute_profile_capture_now
 from tests.test_commands_profile_capture_submission import _create_command_template_for_category
 from tests.test_commands_relay_control_attempt_bootstrap import (
@@ -130,6 +134,64 @@ def test_command_operational_detail_returns_relay_control_projection(
     assert payload["execute_now_artifact_present"] is True
 
 
+def test_command_operational_detail_returns_on_demand_read_projection(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    endpoint_assignment_id, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+    template_id = _create_command_template_for_category(
+        client,
+        token,
+        code="commands-operational-detail-on-demand-read",
+        category="on_demand_read",
+    )
+
+    execute_now = _execute_on_demand_read_now(
+        client,
+        token,
+        meter_id,
+        command_template_id=template_id,
+        endpoint_assignment_id=endpoint_assignment_id,
+        protocol_association_profile_id=protocol_profile_id,
+        idempotency_key="commands-operational-detail-on-demand-read-1",
+    )
+    assert execute_now.status_code == 200
+
+    command_id = execute_now.json()["result"]["command_id"]
+    response = _get_command_operational_detail(client, token, command_id)
+
+    assert response.status_code == 200
+    payload = response.json()["result"]
+    assert payload["command_id"] == command_id
+    assert payload["command_family"] == "on_demand_read"
+    assert payload["command_category"] == "on_demand_read"
+    assert payload["command_status"] == "succeeded"
+    assert payload["meter_id"] == meter_id
+    assert (
+        payload["latest_command_execution_attempt_id"]
+        == execute_now.json()["result"]["command_execution_attempt_id"]
+    )
+    assert payload["latest_command_execution_attempt_status"] == "succeeded"
+    assert (
+        payload["runtime_execution_record_id"]
+        == execute_now.json()["result"]["runtime_on_demand_read_execution_record_id"]
+    )
+    assert (
+        payload["family_specific_outcome_summary"]["on_demand_read_operation"]
+        == "read_billing_snapshot"
+    )
+    assert payload["family_specific_outcome_summary"]["snapshot_type"] == "billing"
+    assert (
+        payload["family_specific_outcome_summary"]["on_demand_read_execution_outcome"]
+        == "succeeded"
+    )
+    assert payload["orchestration_artifact_present"] is True
+    assert payload["terminalization_artifact_present"] is True
+    assert payload["execute_now_artifact_present"] is True
+
+
 def test_command_operational_detail_returns_bounded_response_when_downstream_artifacts_absent(
     client,
     db_session: Session,
@@ -154,6 +216,40 @@ def test_command_operational_detail_returns_bounded_response_when_downstream_art
     assert payload["latest_command_execution_attempt_status"] is None
     assert payload["runtime_execution_record_id"] is None
     assert payload["family_specific_outcome_summary"]["terminal_status_category"] is None
+    assert payload["orchestration_artifact_present"] is False
+    assert payload["terminalization_artifact_present"] is False
+    assert payload["execute_now_artifact_present"] is False
+
+
+def test_command_operational_detail_returns_bounded_on_demand_read_response_when_downstream_artifacts_absent(
+    client,
+    db_session: Session,
+) -> None:
+    command_id, meter_id, _, _ = _create_submitted_on_demand_read_command(
+        client,
+        db_session,
+        command_template_code="commands-operational-detail-on-demand-read-submitted",
+        idempotency_key="commands-operational-detail-on-demand-read-submitted-1",
+    )
+    token = _login_as_super_admin(client, db_session)
+
+    response = _get_command_operational_detail(client, token, command_id)
+
+    assert response.status_code == 200
+    payload = response.json()["result"]
+    assert payload["command_id"] == command_id
+    assert payload["command_family"] == "on_demand_read"
+    assert payload["command_status"] == "pending"
+    assert payload["meter_id"] == meter_id
+    assert payload["latest_command_execution_attempt_id"] is None
+    assert payload["latest_command_execution_attempt_status"] is None
+    assert payload["runtime_execution_record_id"] is None
+    assert (
+        payload["family_specific_outcome_summary"]["on_demand_read_operation"]
+        == "read_billing_snapshot"
+    )
+    assert payload["family_specific_outcome_summary"]["snapshot_type"] == "billing"
+    assert payload["family_specific_outcome_summary"]["on_demand_read_execution_outcome"] is None
     assert payload["orchestration_artifact_present"] is False
     assert payload["terminalization_artifact_present"] is False
     assert payload["execute_now_artifact_present"] is False
@@ -186,8 +282,8 @@ def test_command_operational_detail_refuses_unsupported_command_family(
 
     response = _get_command_operational_detail(client, token, create_command.json()["id"])
 
-    assert response.status_code == 409
-    assert "not compatible" in response.json()["detail"].lower()
+    assert response.status_code == 200
+    assert response.json()["result"]["command_family"] == "on_demand_read"
 
 
 def test_command_operational_detail_returns_not_found_for_unknown_command(

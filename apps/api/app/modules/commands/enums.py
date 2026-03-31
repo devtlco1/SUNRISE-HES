@@ -55,3 +55,4 @@ class OnDemandReadCommandOperation(StringEnum):
 class CommandOperationalFamily(StringEnum):
     PROFILE_CAPTURE = "profile_capture"
     RELAY_CONTROL = "relay_control"
+    ON_DEMAND_READ = "on_demand_read"

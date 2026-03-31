@@ -11,6 +11,9 @@ from app.modules.commands.models import CommandExecutionAttempt, CommandTemplate
 from app.modules.commands.profile_capture_status_readback import (
     get_profile_capture_execution_status,
 )
+from app.modules.commands.on_demand_read_status_readback import (
+    get_on_demand_read_execution_status,
+)
 from app.modules.commands.relay_control_status_readback import (
     get_relay_control_execution_status,
 )
@@ -278,6 +281,46 @@ def _build_command_operational_projection(
             },
         }
 
+    if category == CommandCategory.ON_DEMAND_READ:
+        status_result = get_on_demand_read_execution_status(session, command_id=command.id).result
+        family_specific_outcome_summary = {
+            "on_demand_read_operation": (
+                status_result.on_demand_read_operation.value
+                if status_result.on_demand_read_operation is not None
+                else None
+            ),
+            "snapshot_type": (
+                status_result.snapshot_type.value
+                if status_result.snapshot_type is not None
+                else None
+            ),
+            "on_demand_read_execution_outcome": status_result.on_demand_read_execution_outcome,
+        }
+        return {
+            "command_family": CommandOperationalFamily.ON_DEMAND_READ,
+            "runtime_execution_record_id": status_result.runtime_on_demand_read_execution_record_id,
+            "family_specific_outcome_summary": family_specific_outcome_summary,
+            "orchestration_artifact_present": status_result.orchestration_artifact_present,
+            "terminalization_artifact_present": status_result.terminalization_artifact_present,
+            "execute_now_artifact_present": status_result.execute_now_artifact_present,
+            "projection_record": {
+                "command_family": CommandOperationalFamily.ON_DEMAND_READ.value,
+                "command_category": category.value,
+                "command_status": command.current_status.value,
+                "latest_command_execution_attempt_id": str(latest_attempt.id)
+                if latest_attempt is not None
+                else None,
+                "latest_command_execution_attempt_status": latest_attempt.status.value
+                if latest_attempt is not None
+                else None,
+                "runtime_execution_record_id": status_result.runtime_on_demand_read_execution_record_id,
+                "family_specific_outcome_summary": family_specific_outcome_summary,
+                "orchestration_artifact_present": status_result.orchestration_artifact_present,
+                "terminalization_artifact_present": status_result.terminalization_artifact_present,
+                "execute_now_artifact_present": status_result.execute_now_artifact_present,
+            },
+        }
+
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail=unsupported_detail,
@@ -294,8 +337,11 @@ def _resolve_supported_categories(
             CommandCategory.REMOTE_DISCONNECT,
             CommandCategory.REMOTE_RECONNECT,
         )
+    if family_filter == CommandOperationalFamily.ON_DEMAND_READ:
+        return (CommandCategory.ON_DEMAND_READ,)
     return (
         CommandCategory.PROFILE_CAPTURE,
         CommandCategory.REMOTE_DISCONNECT,
         CommandCategory.REMOTE_RECONNECT,
+        CommandCategory.ON_DEMAND_READ,
     )
