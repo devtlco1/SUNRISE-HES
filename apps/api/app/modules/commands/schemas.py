@@ -138,6 +138,61 @@ class OnDemandReadAttemptBootstrapResponse(BaseModel):
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
+class OnDemandReadQueuedExecutionEnqueueRequest(BaseModel):
+    enqueue_identifier: str = Field(min_length=1, max_length=128)
+    enqueue_reason: str | None = Field(default=None, max_length=255)
+
+
+class OnDemandReadQueuedExecutionMessageSource(BaseModel):
+    command_id: UUID
+    meter_id: UUID
+    endpoint_assignment_id: UUID
+    protocol_association_profile_id: UUID
+    correlation_id: str | None = None
+
+
+class OnDemandReadQueuedExecutionMessage(BaseModel):
+    contract_family: str
+    contract_version: str
+    enqueue_identifier: str
+    command_category: CommandCategory
+    on_demand_read_operation: OnDemandReadCommandOperation
+    snapshot_type: SnapshotType
+    intended_worker_path: str
+    source: OnDemandReadQueuedExecutionMessageSource
+
+
+class OnDemandReadQueuedExecutionLease(BaseModel):
+    stream_name: str
+    consumer_group: str
+    consumer_name: str
+    message_id: str
+    claim_token: str
+    claim_timeout_seconds: int
+    delivery_count: int
+
+
+class OnDemandReadQueuedExecutionEnqueueResult(BaseModel):
+    queue_status: str
+    command_id: UUID
+    enqueue_identifier: str
+    dispatch_request_identity: str
+    stream_name: str
+    message_id: str
+    intended_worker_path: str
+    on_demand_read_operation: OnDemandReadCommandOperation
+    snapshot_type: SnapshotType
+    reused_existing_enqueue: bool
+    enqueued_at: datetime
+    queue_artifact: dict[str, object]
+    queue_message: OnDemandReadQueuedExecutionMessage
+
+
+class OnDemandReadQueuedExecutionEnqueueResponse(BaseModel):
+    result: "OnDemandReadQueuedExecutionEnqueueResult"
+    related_command: "MeterCommandResponse"
+
+
 class OnDemandReadRuntimeHandoffRequest(BaseModel):
     handoff_identifier: str = Field(min_length=1, max_length=128)
     executor_identifier: str = Field(min_length=1, max_length=128)
@@ -283,6 +338,41 @@ class OnDemandReadExecutionStatusResult(BaseModel):
 
 class OnDemandReadExecutionStatusResponse(BaseModel):
     result: "OnDemandReadExecutionStatusResult"
+
+
+class ConsumeQueuedOnDemandReadExecutionRequest(BaseModel):
+    worker_identifier: str = Field(min_length=1, max_length=128)
+    block_ms: int = Field(default=0, ge=0, le=60000)
+    ensure_consumer_group: bool = False
+    lease_seconds: int = Field(default=300, ge=5, le=3600)
+    session_timeout_seconds: int = Field(default=300, ge=5, le=3600)
+    consume_reason: str | None = Field(default=None, max_length=255)
+
+
+class ConsumeQueuedOnDemandReadExecutionResult(BaseModel):
+    consume_status: str
+    worker_identifier: str
+    queue_message_present: bool
+    acked: bool
+    consumed_at: datetime
+    command_id: UUID | None = None
+    command_execution_attempt_id: UUID | None = None
+    job_run_id: UUID | None = None
+    enqueue_identifier: str | None = None
+    on_demand_read_operation: OnDemandReadCommandOperation | None = None
+    snapshot_type: SnapshotType | None = None
+    on_demand_read_execution_outcome: str | None = None
+    runtime_on_demand_read_execution_record_id: str | None = None
+    queue_lease: OnDemandReadQueuedExecutionLease | None = None
+    queue_message: OnDemandReadQueuedExecutionMessage | None = None
+    queue_consumption_record: dict[str, object] | None = None
+
+
+class ConsumeQueuedOnDemandReadExecutionResponse(BaseModel):
+    result: "ConsumeQueuedOnDemandReadExecutionResult"
+    related_command: MeterCommandResponse | None = None
+    created_or_existing_attempt: CommandExecutionAttemptResponse | None = None
+    job_run: dict[str, object] | None = None
 
 
 class RelayControlAttemptBootstrapRequest(BaseModel):

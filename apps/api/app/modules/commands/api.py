@@ -8,6 +8,10 @@ from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
 from app.modules.commands.profile_capture_execute_now import execute_profile_capture_now
 from app.modules.commands.on_demand_read_execute_now import execute_on_demand_read_now
+from app.modules.commands.on_demand_read_queued_execution import (
+    consume_next_queued_on_demand_read_execution,
+    enqueue_on_demand_read_command_execution,
+)
 from app.modules.commands.operational_read_model import (
     get_command_operational_detail,
     list_recent_command_operational_items,
@@ -65,6 +69,8 @@ from app.modules.commands.schemas import (
     MeterCommandListResponse,
     MeterCommandResponse,
     MeterScopedCommandOperationalRecentListResponse,
+    ConsumeQueuedOnDemandReadExecutionRequest,
+    ConsumeQueuedOnDemandReadExecutionResponse,
     OnDemandReadAttemptBootstrapRequest,
     OnDemandReadAttemptBootstrapResponse,
     OnDemandReadCommandCreate,
@@ -73,6 +79,8 @@ from app.modules.commands.schemas import (
     OnDemandReadExecutionOrchestrationRequest,
     OnDemandReadExecutionOrchestrationResponse,
     OnDemandReadExecutionStatusResponse,
+    OnDemandReadQueuedExecutionEnqueueRequest,
+    OnDemandReadQueuedExecutionEnqueueResponse,
     OnDemandReadRuntimeHandoffRequest,
     OnDemandReadRuntimeHandoffResponse,
     OnDemandReadRuntimeTerminalizationRequest,
@@ -578,6 +586,23 @@ def list_command_attempts_endpoint(
 
 
 @internal_commands_router.post(
+    "/{command_id}/enqueue-on-demand-read-execution",
+    response_model=OnDemandReadQueuedExecutionEnqueueResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def enqueue_on_demand_read_execution_endpoint(
+    command_id: uuid.UUID,
+    payload: OnDemandReadQueuedExecutionEnqueueRequest,
+    session: Session = Depends(get_db_session),
+) -> OnDemandReadQueuedExecutionEnqueueResponse:
+    return enqueue_on_demand_read_command_execution(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
     "/{command_id}/bootstrap-on-demand-read-attempt",
     response_model=OnDemandReadAttemptBootstrapResponse,
     dependencies=[Depends(require_internal_api_token)],
@@ -643,6 +668,18 @@ def execute_on_demand_read_in_process_endpoint(
         command_id=command_id,
         payload=payload,
     )
+
+
+@internal_commands_router.post(
+    "/on-demand-read/consume-next-queued-execution",
+    response_model=ConsumeQueuedOnDemandReadExecutionResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def consume_next_queued_on_demand_read_execution_endpoint(
+    payload: ConsumeQueuedOnDemandReadExecutionRequest,
+    session: Session = Depends(get_db_session),
+) -> ConsumeQueuedOnDemandReadExecutionResponse:
+    return consume_next_queued_on_demand_read_execution(session, payload=payload)
 
 
 @internal_commands_router.post(
