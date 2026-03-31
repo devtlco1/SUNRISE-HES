@@ -14,6 +14,7 @@ from app.modules.consumers.schemas import (
     ConsumerLinkedMeterSummaryResponse,
     ConsumerListItemResponse,
     ConsumerListResponse,
+    MeterConsumerLinkageResponse,
 )
 from app.modules.meters.models import Meter
 
@@ -90,6 +91,82 @@ def get_consumer_detail(session: Session, consumer_id: uuid.UUID) -> ConsumerDet
             for account in accounts
         ],
         linked_meters=linked_meters,
+    )
+
+
+def get_current_consumer_linkage_for_meter(
+    session: Session,
+    *,
+    meter_id: uuid.UUID,
+) -> MeterConsumerLinkageResponse:
+    meter = session.get(Meter, meter_id)
+    if meter is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meter not found.")
+
+    assignment = session.scalar(
+        select(MeterAccountAssignment)
+        .where(
+            MeterAccountAssignment.meter_id == meter.id,
+            MeterAccountAssignment.is_current.is_(True),
+        )
+        .order_by(MeterAccountAssignment.active_from.desc(), MeterAccountAssignment.id.desc())
+    )
+    if assignment is not None:
+        account = session.get(Account, assignment.account_id)
+        consumer = session.get(Consumer, account.consumer_id) if account is not None else None
+        service_point = None
+        if assignment.service_point_id is not None:
+            service_point = session.get(ServicePoint, assignment.service_point_id)
+        if service_point is None and account is not None and account.service_point_id is not None:
+            service_point = session.get(ServicePoint, account.service_point_id)
+        if account is not None and consumer is not None:
+            return MeterConsumerLinkageResponse(
+                meter_id=meter.id,
+                linkage_status="linked",
+                linkage_source="meter_account_assignment",
+                consumer_id=consumer.id,
+                consumer_display_name=consumer.full_name,
+                consumer_type=consumer.consumer_type,
+                consumer_external_ref=consumer.external_ref,
+                account_id=account.id,
+                account_number=account.account_number,
+                account_status=account.status,
+                service_point_id=service_point.id if service_point is not None else None,
+                service_point_code=service_point.service_point_code if service_point is not None else None,
+            )
+
+    if meter.service_point_id is not None:
+        fallback_account = session.scalar(
+            select(Account)
+            .where(Account.service_point_id == meter.service_point_id)
+            .order_by(Account.created_at.asc(), Account.id.asc())
+        )
+        fallback_service_point = session.get(ServicePoint, meter.service_point_id)
+        if fallback_account is not None:
+            consumer = session.get(Consumer, fallback_account.consumer_id)
+            if consumer is not None:
+                return MeterConsumerLinkageResponse(
+                    meter_id=meter.id,
+                    linkage_status="linked",
+                    linkage_source="meter_service_point",
+                    consumer_id=consumer.id,
+                    consumer_display_name=consumer.full_name,
+                    consumer_type=consumer.consumer_type,
+                    consumer_external_ref=consumer.external_ref,
+                    account_id=fallback_account.id,
+                    account_number=fallback_account.account_number,
+                    account_status=fallback_account.status,
+                    service_point_id=fallback_service_point.id
+                    if fallback_service_point is not None
+                    else None,
+                    service_point_code=fallback_service_point.service_point_code
+                    if fallback_service_point is not None
+                    else None,
+                )
+
+    return MeterConsumerLinkageResponse(
+        meter_id=meter.id,
+        linkage_status="unlinked",
     )
 
 

@@ -57,3 +57,18 @@ class ConsumerDetailResponse(BaseModel):
     linked_meter_count: int = Field(ge=0)
     accounts: list[ConsumerAccountSummaryResponse]
     linked_meters: list[ConsumerLinkedMeterSummaryResponse]
+
+
+class MeterConsumerLinkageResponse(BaseModel):
+    meter_id: UUID
+    linkage_status: str
+    linkage_source: str | None = None
+    consumer_id: UUID | None = None
+    consumer_display_name: str | None = None
+    consumer_type: str | None = None
+    consumer_external_ref: str | None = None
+    account_id: UUID | None = None
+    account_number: str | None = None
+    account_status: str | None = None
+    service_point_id: UUID | None = None
+    service_point_code: str | None = None

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { AuthorizedFetch } from "../../operational-shell";
@@ -14,6 +15,21 @@ type MeterDetail = {
   communication_profile_code: string | null;
   current_status: string;
   last_seen_at: string | null;
+};
+
+type MeterConsumerLinkage = {
+  meter_id: string;
+  linkage_status: string;
+  linkage_source: string | null;
+  consumer_id: string | null;
+  consumer_display_name: string | null;
+  consumer_type: string | null;
+  consumer_external_ref: string | null;
+  account_id: string | null;
+  account_number: string | null;
+  account_status: string | null;
+  service_point_id: string | null;
+  service_point_code: string | null;
 };
 
 type CommandOperationalFamily =
@@ -221,6 +237,8 @@ export function MeterDetailsCommandsTab({
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("commands");
   const [meter, setMeter] = useState<MeterDetail | null>(null);
+  const [consumerLinkage, setConsumerLinkage] =
+    useState<MeterConsumerLinkage | null>(null);
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[]>([]);
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
   const [selectedCommandDetail, setSelectedCommandDetail] =
@@ -237,6 +255,9 @@ export function MeterDetailsCommandsTab({
   >([]);
   const [recentFamilyFilter, setRecentFamilyFilter] = useState<FamilyFilter>("all");
   const [pageError, setPageError] = useState<string | null>(null);
+  const [consumerLinkageError, setConsumerLinkageError] = useState<string | null>(
+    null,
+  );
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -359,6 +380,9 @@ export function MeterDetailsCommandsTab({
     primaryEndpointAssignment !== null ||
     defaultProtocolProfile !== null ||
     meter?.communication_profile_code != null;
+
+  const isConsumerLinkageLoading =
+    isBootstrappingPage && consumerLinkage === null && consumerLinkageError === null;
 
   const isActionReadinessLoading =
     isBootstrappingPage &&
@@ -509,12 +533,19 @@ export function MeterDetailsCommandsTab({
   const loadReferenceData = useCallback(async () => {
     setIsBootstrappingPage(true);
     setPageError(null);
+    setConsumerLinkageError(null);
 
     try {
       const meterResponse = await authorizedFetch<MeterDetail>(`/api/v1/meters/${meterId}`);
       setMeter(meterResponse);
 
-      const [templatesResult, assignmentsResult, profilesResult, channelsResult] =
+      const [
+        templatesResult,
+        assignmentsResult,
+        profilesResult,
+        channelsResult,
+        consumerLinkageResult,
+      ] =
         await Promise.allSettled([
           authorizedFetch<CommandTemplateListResponse>("/api/v1/command-templates"),
           authorizedFetch<MeterEndpointAssignmentListResponse>(
@@ -525,6 +556,9 @@ export function MeterDetailsCommandsTab({
           ),
           authorizedFetch<LoadProfileChannelListResponse>(
             `/api/v1/meters/${meterId}/load-profile-channels`,
+          ),
+          authorizedFetch<MeterConsumerLinkage>(
+            `/api/v1/meters/${meterId}/consumer-linkage`,
           ),
         ]);
 
@@ -540,6 +574,18 @@ export function MeterDetailsCommandsTab({
       setLoadProfileChannels(
         channelsResult.status === "fulfilled" ? channelsResult.value.items : [],
       );
+      setConsumerLinkage(
+        consumerLinkageResult.status === "fulfilled"
+          ? consumerLinkageResult.value
+          : null,
+      );
+      setConsumerLinkageError(
+        consumerLinkageResult.status === "rejected"
+          ? consumerLinkageResult.reason instanceof Error
+            ? consumerLinkageResult.reason.message
+            : "Unable to load consumer linkage."
+          : null,
+      );
 
       if (
         templatesResult.status === "rejected" ||
@@ -551,10 +597,12 @@ export function MeterDetailsCommandsTab({
       }
     } catch (error) {
       setMeter(null);
+      setConsumerLinkage(null);
       setTemplates([]);
       setEndpointAssignments([]);
       setProtocolProfiles([]);
       setLoadProfileChannels([]);
+      setConsumerLinkageError(null);
       setPageError(
         error instanceof Error
           ? error.message
@@ -958,6 +1006,88 @@ export function MeterDetailsCommandsTab({
 
         {!isConnectivityContextLoading && !hasConnectivityContext ? (
           <p className="muted">Connectivity context not available.</p>
+        ) : null}
+      </section>
+
+      <section className="subpanel meter-summary-panel">
+        <div className="section-heading">
+          <div>
+            <h2>Consumer linkage</h2>
+            <p className="muted">
+              Current linked subscriber context for operational navigation into the
+              bounded consumers slice.
+            </p>
+          </div>
+        </div>
+
+        {isConsumerLinkageLoading ? (
+          <p className="muted">Loading consumer linkage...</p>
+        ) : null}
+
+        {!isConsumerLinkageLoading && consumerLinkageError ? (
+          <p className="error-banner">{consumerLinkageError}</p>
+        ) : null}
+
+        {!isConsumerLinkageLoading &&
+        !consumerLinkageError &&
+        consumerLinkage?.linkage_status === "linked" ? (
+          <div className="detail-stack">
+            <div className="meter-summary-grid">
+              <div className="stat-card">
+                <span className="stat-label">Subscriber</span>
+                <strong>
+                  {consumerLinkage.consumer_display_name ?? "Linked consumer"}
+                </strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Consumer ID</span>
+                <strong>{consumerLinkage.consumer_id ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Account</span>
+                <strong>
+                  {consumerLinkage.account_number ?? "No current account"}
+                </strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Account status</span>
+                <strong>{consumerLinkage.account_status ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Service point</span>
+                <strong>
+                  {consumerLinkage.service_point_code ?? "Not available"}
+                </strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Operational identifier</span>
+                <strong>
+                  {consumerLinkage.consumer_external_ref ??
+                    consumerLinkage.consumer_type ??
+                    "Not available"}
+                </strong>
+              </div>
+            </div>
+
+            {consumerLinkage.consumer_id ? (
+              <div className="artifact-row">
+                <Link
+                  className="primary-button"
+                  href={`/subscribers/${consumerLinkage.consumer_id}`}
+                >
+                  Open subscriber detail
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {!isConsumerLinkageLoading &&
+        !consumerLinkageError &&
+        consumerLinkage?.linkage_status !== "linked" ? (
+          <p className="muted">
+            No current subscriber linkage available for this meter.
+          </p>
         ) : null}
       </section>
 

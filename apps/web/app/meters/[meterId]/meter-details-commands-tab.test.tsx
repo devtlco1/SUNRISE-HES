@@ -40,6 +40,21 @@ type MockProtocolProfile = {
   is_active: boolean;
 };
 
+type MockConsumerLinkage = {
+  meter_id: string;
+  linkage_status: string;
+  linkage_source: string | null;
+  consumer_id: string | null;
+  consumer_display_name: string | null;
+  consumer_type: string | null;
+  consumer_external_ref: string | null;
+  account_id: string | null;
+  account_number: string | null;
+  account_status: string | null;
+  service_point_id: string | null;
+  service_point_code: string | null;
+};
+
 type MockCommandTemplate = {
   id: string;
   code: string;
@@ -81,6 +96,8 @@ function createMockApi({
   endpointAssignmentsErrorDetail = "Endpoint assignments unavailable.",
   protocolProfilesStatus = 200,
   protocolProfilesErrorDetail = "Protocol profiles unavailable.",
+  consumerLinkageStatus = 200,
+  consumerLinkageErrorDetail = "Consumer linkage unavailable.",
   endpointAssignments = [
     {
       id: "assignment-1",
@@ -146,6 +163,20 @@ function createMockApi({
       is_active: true,
     },
   ],
+  consumerLinkageResponse = {
+    meter_id: "meter-1",
+    linkage_status: "linked",
+    linkage_source: "meter_account_assignment",
+    consumer_id: "consumer-1",
+    consumer_display_name: "Amina Al Balushi",
+    consumer_type: "residential",
+    consumer_external_ref: "CON-1001",
+    account_id: "account-1",
+    account_number: "ACC-1001",
+    account_status: "active",
+    service_point_id: "sp-1",
+    service_point_code: "SP-1001",
+  },
 }: {
   meterResponse?: MockMeterResponse;
   meterStatus?: number;
@@ -154,10 +185,13 @@ function createMockApi({
   endpointAssignmentsErrorDetail?: string;
   protocolProfilesStatus?: number;
   protocolProfilesErrorDetail?: string;
+  consumerLinkageStatus?: number;
+  consumerLinkageErrorDetail?: string;
   endpointAssignments?: MockEndpointAssignment[];
   protocolProfiles?: MockProtocolProfile[];
   templateItems?: MockCommandTemplate[];
   loadProfileChannels?: MockLoadProfileChannel[];
+  consumerLinkageResponse?: MockConsumerLinkage;
 } = {}) {
   const requests: RequestLog[] = [];
   const recentCommands = [
@@ -310,6 +344,13 @@ function createMockApi({
         return jsonResponse({ detail: meterErrorDetail }, meterStatus);
       }
       return jsonResponse(meterResponse);
+    }
+
+    if (url.endsWith("/api/v1/meters/meter-1/consumer-linkage")) {
+      if (consumerLinkageStatus !== 200) {
+        return jsonResponse({ detail: consumerLinkageErrorDetail }, consumerLinkageStatus);
+      }
+      return jsonResponse(consumerLinkageResponse);
     }
 
     if (url.endsWith("/api/v1/command-templates")) {
@@ -598,6 +639,110 @@ describe("MeterDetailsCommandsTab", () => {
         ),
       ).toBeInTheDocument();
     });
+  });
+
+  it("renders the consumer linkage card when a linked subscriber exists", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    const linkagePanel = (await screen.findByRole("heading", {
+      name: "Consumer linkage",
+    })).closest("section");
+    expect(linkagePanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(linkagePanel as HTMLElement).getByText("Amina Al Balushi"),
+      ).toBeInTheDocument();
+      expect(
+        within(linkagePanel as HTMLElement).getByText("consumer-1"),
+      ).toBeInTheDocument();
+      expect(
+        within(linkagePanel as HTMLElement).getByText("ACC-1001"),
+      ).toBeInTheDocument();
+      expect(
+        within(linkagePanel as HTMLElement).getByText("SP-1001"),
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      within(linkagePanel as HTMLElement).getByRole("link", {
+        name: "Open subscriber detail",
+      }),
+    ).toHaveAttribute("href", "/subscribers/consumer-1");
+  });
+
+  it("renders a bounded unlinked state when no subscriber is linked to the meter", async () => {
+    const { fetchMock } = createMockApi({
+      consumerLinkageResponse: {
+        meter_id: "meter-1",
+        linkage_status: "unlinked",
+        linkage_source: null,
+        consumer_id: null,
+        consumer_display_name: null,
+        consumer_type: null,
+        consumer_external_ref: null,
+        account_id: null,
+        account_number: null,
+        account_status: null,
+        service_point_id: null,
+        service_point_code: null,
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    const linkagePanel = (await screen.findByRole("heading", {
+      name: "Consumer linkage",
+    })).closest("section");
+    expect(linkagePanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(linkagePanel as HTMLElement).getByText(
+          /No current subscriber linkage available for this meter\./i,
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("renders a bounded consumer linkage error without disturbing the existing meter panels", async () => {
+    const { fetchMock } = createMockApi({
+      consumerLinkageStatus: 503,
+      consumerLinkageErrorDetail: "Consumer linkage temporarily unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell();
+
+    expect(
+      await screen.findByText("Consumer linkage temporarily unavailable."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Operational summary" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Connectivity context" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Action readiness" })).toBeInTheDocument();
+  });
+
+  it("renders a bounded loading state while consumer linkage is bootstrapping", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        if (url.endsWith("/api/v1/meters/meter-1/consumer-linkage")) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        return fetchMock(input, init);
+      }),
+    );
+
+    renderMeterTabInShell();
+
+    expect(await screen.findByText("Loading consumer linkage...")).toBeInTheDocument();
+    expect(await screen.findByText("Amina Al Balushi")).toBeInTheDocument();
   });
 
   it("renders a bounded loading state while connectivity context is bootstrapping", async () => {

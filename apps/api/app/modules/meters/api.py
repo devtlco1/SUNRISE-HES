@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
+from app.modules.consumers.schemas import MeterConsumerLinkageResponse
+from app.modules.consumers.service import get_current_consumer_linkage_for_meter
 from app.modules.meters.schemas import (
     CommunicationProfileCreate,
     CommunicationProfileListResponse,
@@ -258,6 +260,15 @@ def get_meter_endpoint(
 ) -> MeterDetailResponse:
     meter = get_meter_by_id(session, meter_id)
     return serialize_meter_detail(meter)
+
+
+@meters_router.get("/{meter_id}/consumer-linkage", response_model=MeterConsumerLinkageResponse)
+def get_meter_consumer_linkage_endpoint(
+    meter_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("consumers.read")),
+) -> MeterConsumerLinkageResponse:
+    return get_current_consumer_linkage_for_meter(session, meter_id=meter_id)
 
 
 @meters_router.patch("/{meter_id}", response_model=MeterResponse)
