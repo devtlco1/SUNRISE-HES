@@ -237,6 +237,33 @@ class OnDemandReadExecutionOrchestrationResponse(BaseModel):
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
+class OnDemandReadExecuteNowRequest(OnDemandReadCommandCreate):
+    execute_now_reason: str | None = Field(default=None, max_length=255)
+
+
+class OnDemandReadExecuteNowResult(BaseModel):
+    execute_now_status: str
+    execute_now_identifier: str
+    command_id: UUID
+    command_status: CommandStatus
+    command_execution_attempt_id: UUID
+    runtime_on_demand_read_execution_record_id: str
+    on_demand_read_operation: OnDemandReadCommandOperation
+    snapshot_type: SnapshotType
+    on_demand_read_execution_outcome: str | None = None
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    reused_existing_execute_now: bool
+    executed_at: datetime
+    execute_now_record: dict[str, object]
+
+
+class OnDemandReadExecuteNowResponse(BaseModel):
+    result: "OnDemandReadExecuteNowResult"
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
 class RelayControlAttemptBootstrapRequest(BaseModel):
     bootstrap_identifier: str = Field(min_length=1, max_length=128)
     bootstrap_reason: str | None = Field(default=None, max_length=255)

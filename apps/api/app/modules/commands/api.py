@@ -7,6 +7,7 @@ from app.core.db import get_db_session
 from app.modules.audit.service import record_audit_event
 from app.modules.auth.dependencies import require_permission
 from app.modules.commands.profile_capture_execute_now import execute_profile_capture_now
+from app.modules.commands.on_demand_read_execute_now import execute_on_demand_read_now
 from app.modules.commands.operational_read_model import (
     get_command_operational_detail,
     list_recent_command_operational_items,
@@ -64,6 +65,8 @@ from app.modules.commands.schemas import (
     OnDemandReadAttemptBootstrapRequest,
     OnDemandReadAttemptBootstrapResponse,
     OnDemandReadCommandCreate,
+    OnDemandReadExecuteNowRequest,
+    OnDemandReadExecuteNowResponse,
     OnDemandReadExecutionOrchestrationRequest,
     OnDemandReadExecutionOrchestrationResponse,
     OnDemandReadRuntimeHandoffRequest,
@@ -293,6 +296,48 @@ def submit_on_demand_read_command_endpoint(
             "on_demand_read_operation": command.normalized_payload.get("on_demand_read_operation")
             if isinstance(command.normalized_payload, dict)
             else None,
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@meter_commands_router.post(
+    "/{meter_id}/commands/on-demand-read/execute-now",
+    response_model=OnDemandReadExecuteNowResponse,
+)
+def execute_on_demand_read_now_endpoint(
+    meter_id: uuid.UUID,
+    payload: OnDemandReadExecuteNowRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> OnDemandReadExecuteNowResponse:
+    response = execute_on_demand_read_now(
+        session,
+        meter_id=meter_id,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    record_audit_event(
+        session,
+        action="commands.requests.execute_on_demand_read_now",
+        resource_type="commands",
+        resource_id=response.result.command_id,
+        actor_user_id=current_user.id,
+        description="On-demand-read command executed through application-facing execute-now path.",
+        details={
+            "meter_id": str(meter_id),
+            "command_id": str(response.result.command_id),
+            "command_execution_attempt_id": str(response.result.command_execution_attempt_id),
+            "execute_now_identifier": response.result.execute_now_identifier,
+            "runtime_on_demand_read_execution_record_id": (
+                response.result.runtime_on_demand_read_execution_record_id
+            ),
+            "on_demand_read_operation": response.result.on_demand_read_operation.value,
+            "snapshot_type": response.result.snapshot_type.value,
+            "on_demand_read_execution_outcome": response.result.on_demand_read_execution_outcome,
+            "reused_existing_execute_now": response.result.reused_existing_execute_now,
         },
         request_context=request.state.request_audit_context,
     )
