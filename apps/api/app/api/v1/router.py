@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes.health import router as health_router
+from app.modules.accounts.api import accounts_router
 from app.modules.auth.api import router as auth_router
 from app.modules.commands.api import (
     command_templates_router,
@@ -50,6 +51,7 @@ from app.runtime.api import (
 
 api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
+api_router.include_router(accounts_router)
 api_router.include_router(auth_router)
 api_router.include_router(command_templates_router)
 api_router.include_router(meter_commands_router)
