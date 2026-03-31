@@ -47,6 +47,40 @@ body {
   padding: 2rem 1.5rem 4rem;
 }
 
+.operational-shell-panel {
+  padding: 1rem 1.25rem;
+}
+
+.operational-nav,
+.operational-nav-links,
+.operational-nav-session {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.operational-nav {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0.65rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.86);
+  color: #f8fafc;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.nav-link:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
 .section-heading {
   display: flex;
   justify-content: space-between;
@@ -304,5 +338,17 @@ body {
 
   .commands-module-layout {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .operational-nav,
+  .operational-nav-session {
+    align-items: stretch;
+  }
+
+  .operational-nav-session {
+    width: 100%;
+    justify-content: space-between;
   }
 }

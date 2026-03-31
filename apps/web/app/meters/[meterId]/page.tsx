@@ -1,4 +1,4 @@
-import { MeterDetailsCommandsTab } from "./meter-details-commands-tab";
+import { MeterDetailsPageClient } from "./meter-details-page-client";
 
 export default async function MeterDetailsPage({
   params,
@@ -7,5 +7,5 @@ export default async function MeterDetailsPage({
 }) {
   const { meterId } = await params;
 
-  return <MeterDetailsCommandsTab meterId={meterId} />;
+  return <MeterDetailsPageClient meterId={meterId} />;
 }

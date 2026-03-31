@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MeterDetailsCommandsTab } from "./meter-details-commands-tab";
+import { OperationalShell } from "../../operational-shell";
 
 type RequestLog = {
   method: string;
@@ -108,6 +109,17 @@ function createMockApi() {
 
     if (method !== "GET") {
       requests.push({ method, url, body });
+    }
+
+    if (url.endsWith("/api/v1/auth/me")) {
+      return jsonResponse({
+        id: "user-1",
+        username: "ops.user",
+        email: "ops@example.com",
+        full_name: "Ops User",
+        status: "active",
+        is_superuser: true,
+      });
     }
 
     if (url.endsWith("/api/v1/meters/meter-1")) {
@@ -291,6 +303,24 @@ function createMockApi() {
   return { fetchMock, requests };
 }
 
+function renderMeterTabInShell() {
+  render(
+    <OperationalShell
+      eyebrow="Operational Pages"
+      title="Meter meter-1"
+      description="Bounded meter details"
+      currentMeterId="meter-1"
+    >
+      {({ authorizedFetch }) => (
+        <MeterDetailsCommandsTab
+          meterId="meter-1"
+          authorizedFetch={authorizedFetch}
+        />
+      )}
+    </OperationalShell>,
+  );
+}
+
 describe("MeterDetailsCommandsTab", () => {
   beforeEach(() => {
     window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:8000");
@@ -306,8 +336,9 @@ describe("MeterDetailsCommandsTab", () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<MeterDetailsCommandsTab meterId="meter-1" />);
+    renderMeterTabInShell();
 
+    expect(await screen.findByRole("link", { name: "Current meter" })).toBeInTheDocument();
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
     expect(screen.getAllByText("relay-disconnect-template")).not.toHaveLength(0);
     expect(
@@ -320,7 +351,7 @@ describe("MeterDetailsCommandsTab", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    render(<MeterDetailsCommandsTab meterId="meter-1" />);
+    renderMeterTabInShell();
 
     const relayRow = await screen.findByRole("button", {
       name: /relay-disconnect-template/i,
@@ -341,7 +372,8 @@ describe("MeterDetailsCommandsTab", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    render(<MeterDetailsCommandsTab meterId="meter-1" />);
+    renderMeterTabInShell();
+    await screen.findByText("Recent commands");
 
     const profileForm = screen
       .getByRole("heading", { name: "Profile capture" })
@@ -389,7 +421,8 @@ describe("MeterDetailsCommandsTab", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    render(<MeterDetailsCommandsTab meterId="meter-1" />);
+    renderMeterTabInShell();
+    await screen.findByText("Recent commands");
 
     const relayForm = screen
       .getByRole("heading", { name: "Relay control" })
@@ -422,7 +455,8 @@ describe("MeterDetailsCommandsTab", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    render(<MeterDetailsCommandsTab meterId="meter-1" />);
+    renderMeterTabInShell();
+    await screen.findByText("Recent commands");
 
     const relayForm = screen
       .getByRole("heading", { name: "Relay control" })

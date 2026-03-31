@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: sunrise-shared
+Version: 0.1.0
+Summary: Shared Python utilities and contracts for the Sunrise HES platform.
+Requires-Python: >=3.12

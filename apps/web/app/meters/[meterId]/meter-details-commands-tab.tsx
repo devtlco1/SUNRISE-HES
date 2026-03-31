@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
+import type { AuthorizedFetch } from "../../operational-shell";
+
 type MeterDetail = {
   id: string;
   serial_number: string;
@@ -118,16 +120,6 @@ type LoadProfileChannelListResponse = {
   items: LoadProfileChannel[];
 };
 
-type LoginResponse = {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  user: {
-    username: string;
-    full_name: string;
-  };
-};
-
 type ExecuteNowResponse = {
   result: {
     command_id: string;
@@ -137,11 +129,6 @@ type ExecuteNowResponse = {
 type TabKey = "overview" | "commands";
 type FamilyFilter = "all" | CommandOperationalFamily;
 type RelayOperation = "disconnect" | "reconnect";
-
-const ACCESS_TOKEN_STORAGE_KEY = "sunrise.web.accessToken";
-const API_BASE_URL_STORAGE_KEY = "sunrise.web.apiBaseUrl";
-const DEFAULT_API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 function toLocalDatetimeInputValue(value: Date): string {
   const adjusted = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
@@ -171,21 +158,14 @@ function formatFamilySummary(item: Record<string, string | null>): string {
   return "No operational summary yet";
 }
 
-function buildApiUrl(apiBaseUrl: string, path: string): string {
-  return `${apiBaseUrl.replace(/\/$/, "")}${path}`;
-}
-
 export function MeterDetailsCommandsTab({
   meterId,
+  authorizedFetch,
 }: {
   meterId: string;
+  authorizedFetch: AuthorizedFetch;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("commands");
-  const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_API_BASE_URL);
-  const [accessToken, setAccessToken] = useState("");
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [sessionLabel, setSessionLabel] = useState<string | null>(null);
   const [meter, setMeter] = useState<MeterDetail | null>(null);
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[]>([]);
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
@@ -206,7 +186,6 @@ export function MeterDetailsCommandsTab({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isBootstrappingPage, setIsBootstrappingPage] = useState(false);
   const [isLoadingRecentCommands, setIsLoadingRecentCommands] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
@@ -235,81 +214,6 @@ export function MeterDetailsCommandsTab({
     end.setSeconds(0, 0);
     return toLocalDatetimeInputValue(end);
   });
-
-  const authorizedFetch = useCallback(
-    async <T,>(path: string, init?: RequestInit): Promise<T> => {
-      const headers = new Headers(init?.headers);
-      if (init?.body && !headers.has("Content-Type")) {
-        headers.set("Content-Type", "application/json");
-      }
-      if (accessToken) {
-        headers.set("Authorization", `Bearer ${accessToken}`);
-      }
-
-      const response = await fetch(buildApiUrl(apiBaseUrl, path), {
-        ...init,
-        headers,
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        let errorMessage = `Request failed with status ${response.status}.`;
-        try {
-          const errorPayload = (await response.json()) as {
-            detail?: string;
-            message?: string;
-          };
-          errorMessage =
-            errorPayload.detail ??
-            errorPayload.message ??
-            `Request failed with status ${response.status}.`;
-        } catch {
-          const fallbackText = await response.text();
-          if (fallbackText) {
-            errorMessage = fallbackText;
-          }
-        }
-        throw new Error(errorMessage);
-      }
-
-      return (await response.json()) as T;
-    },
-    [accessToken, apiBaseUrl],
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const storedApiBaseUrl = window.localStorage.getItem(API_BASE_URL_STORAGE_KEY);
-    const storedAccessToken = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-
-    if (storedApiBaseUrl) {
-      setApiBaseUrl(storedApiBaseUrl);
-    }
-    if (storedAccessToken) {
-      setAccessToken(storedAccessToken);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, apiBaseUrl);
-  }, [apiBaseUrl]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (accessToken) {
-      window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
-      return;
-    }
-    window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
-  }, [accessToken]);
 
   const activeEndpointAssignments = useMemo(
     () =>
@@ -419,10 +323,6 @@ export function MeterDetailsCommandsTab({
   }, [relayTemplateId, relayTemplates]);
 
   const loadReferenceData = useCallback(async () => {
-    if (!accessToken) {
-      return;
-    }
-
     setIsBootstrappingPage(true);
     setPageError(null);
 
@@ -461,14 +361,10 @@ export function MeterDetailsCommandsTab({
     } finally {
       setIsBootstrappingPage(false);
     }
-  }, [accessToken, authorizedFetch, meterId]);
+  }, [authorizedFetch, meterId]);
 
   const loadRecentCommands = useCallback(
     async (preferredCommandId?: string) => {
-      if (!accessToken) {
-        return;
-      }
-
       setIsLoadingRecentCommands(true);
       setPageError(null);
 
@@ -504,15 +400,11 @@ export function MeterDetailsCommandsTab({
         setIsLoadingRecentCommands(false);
       }
     },
-    [accessToken, authorizedFetch, meterId, recentFamilyFilter],
+    [authorizedFetch, meterId, recentFamilyFilter],
   );
 
   const loadCommandDetail = useCallback(
     async (commandId: string) => {
-      if (!accessToken) {
-        return;
-      }
-
       setIsLoadingDetail(true);
       setDetailError(null);
 
@@ -532,7 +424,7 @@ export function MeterDetailsCommandsTab({
         setIsLoadingDetail(false);
       }
     },
-    [accessToken, authorizedFetch],
+    [authorizedFetch],
   );
 
   useEffect(() => {
@@ -550,49 +442,6 @@ export function MeterDetailsCommandsTab({
     }
     void loadCommandDetail(selectedCommandId);
   }, [loadCommandDetail, selectedCommandId]);
-
-  const handleLogin = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setIsAuthenticating(true);
-      setActionError(null);
-      setActionSuccess(null);
-
-      try {
-        const response = await fetch(buildApiUrl(apiBaseUrl, "/api/v1/auth/login"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username_or_email: loginUsername,
-            password: loginPassword,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorPayload = (await response.json()) as { detail?: string };
-          throw new Error(errorPayload.detail ?? "Unable to authenticate.");
-        }
-
-        const payload = (await response.json()) as LoginResponse;
-        setAccessToken(payload.access_token);
-        setSessionLabel(payload.user.full_name || payload.user.username);
-        setActionSuccess(`Signed in as ${payload.user.username}.`);
-      } catch (error) {
-        setActionError(
-          error instanceof Error ? error.message : "Unable to authenticate.",
-        );
-      } finally {
-        setIsAuthenticating(false);
-      }
-    },
-    [apiBaseUrl, loginPassword, loginUsername],
-  );
-
-  const handleManualRefresh = useCallback(async () => {
-    setActionSuccess(null);
-    setActionError(null);
-    await Promise.all([loadReferenceData(), loadRecentCommands()]);
-  }, [loadRecentCommands, loadReferenceData]);
 
   const handleProfileCaptureExecuteNow = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -708,89 +557,12 @@ export function MeterDetailsCommandsTab({
     relayProtocolProfileId !== "";
 
   return (
-    <main className="meter-page-shell">
-      <section className="hero">
-        <p className="eyebrow">Meter Details</p>
-        <h1>Meter {meterId}</h1>
-        <p className="lead">
-          Bounded meter details MVP with command visibility and execute-now actions
-          for profile capture and relay control.
-        </p>
-      </section>
+    <section className="panel">
+      {actionSuccess ? <p className="success-banner">{actionSuccess}</p> : null}
+      {actionError ? <p className="error-banner">{actionError}</p> : null}
+      {pageError ? <p className="error-banner">{pageError}</p> : null}
 
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <h2>Access</h2>
-            <p className="muted">
-              Use an existing bearer token or sign in to the API directly for this
-              page.
-            </p>
-          </div>
-          <button className="secondary-button" onClick={() => setAccessToken("")} type="button">
-            Clear token
-          </button>
-        </div>
-
-        <div className="settings-grid">
-          <label className="field">
-            <span>API base URL</span>
-            <input
-              value={apiBaseUrl}
-              onChange={(event) => setApiBaseUrl(event.target.value)}
-              placeholder="http://localhost:8000"
-            />
-          </label>
-
-          <label className="field">
-            <span>Bearer token</span>
-            <textarea
-              value={accessToken}
-              onChange={(event) => setAccessToken(event.target.value)}
-              placeholder="Paste an access token"
-              rows={3}
-            />
-          </label>
-        </div>
-
-        <form className="inline-form" onSubmit={handleLogin}>
-          <label className="field">
-            <span>Username or email</span>
-            <input
-              value={loginUsername}
-              onChange={(event) => setLoginUsername(event.target.value)}
-              placeholder="ops@example.com"
-            />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              type="password"
-              value={loginPassword}
-              onChange={(event) => setLoginPassword(event.target.value)}
-              placeholder="Enter password"
-            />
-          </label>
-          <button className="primary-button" disabled={isAuthenticating} type="submit">
-            {isAuthenticating ? "Signing in..." : "Sign in"}
-          </button>
-          <button
-            className="secondary-button"
-            disabled={!accessToken}
-            onClick={() => void handleManualRefresh()}
-            type="button"
-          >
-            Refresh commands
-          </button>
-        </form>
-
-        {sessionLabel ? <p className="success-banner">Authenticated as {sessionLabel}.</p> : null}
-        {actionSuccess ? <p className="success-banner">{actionSuccess}</p> : null}
-        {actionError ? <p className="error-banner">{actionError}</p> : null}
-        {pageError ? <p className="error-banner">{pageError}</p> : null}
-      </section>
-
-      <section className="panel">
+      <section>
         <div className="tab-row" role="tablist" aria-label="Meter details tabs">
           <button
             className={activeTab === "overview" ? "tab-button active" : "tab-button"}
@@ -1175,6 +947,6 @@ export function MeterDetailsCommandsTab({
           </div>
         ) : null}
       </section>
-    </main>
+    </section>
   );
 }

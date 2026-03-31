@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandsModule } from "./commands-module";
+import { OperationalShell } from "../operational-shell";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -14,6 +15,17 @@ function jsonResponse(payload: unknown, status = 200) {
 function createMockApi() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = input.toString();
+
+    if (url.endsWith("/api/v1/auth/me")) {
+      return jsonResponse({
+        id: "user-1",
+        username: "ops.user",
+        email: "ops@example.com",
+        full_name: "Ops User",
+        status: "active",
+        is_superuser: true,
+      });
+    }
 
     if (url.includes("/api/v1/commands/recent")) {
       const parsedUrl = new URL(url);
@@ -126,6 +138,18 @@ function createMockApi() {
   return { fetchMock };
 }
 
+function renderCommandsModuleInShell() {
+  render(
+    <OperationalShell
+      eyebrow="Operational Pages"
+      title="Global Commands MVP"
+      description="Bounded commands module"
+    >
+      {({ authorizedFetch }) => <CommandsModule authorizedFetch={authorizedFetch} />}
+    </OperationalShell>,
+  );
+}
+
 describe("CommandsModule", () => {
   beforeEach(() => {
     window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:8000");
@@ -141,8 +165,9 @@ describe("CommandsModule", () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<CommandsModule />);
+    renderCommandsModuleInShell();
 
+    expect(await screen.findByRole("link", { name: "Commands" })).toBeInTheDocument();
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
     expect(screen.getAllByText("relay-disconnect-template")).not.toHaveLength(0);
   });
@@ -152,7 +177,7 @@ describe("CommandsModule", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    render(<CommandsModule />);
+    renderCommandsModuleInShell();
 
     const relayRow = await screen.findByRole("button", {
       name: /relay-disconnect-template/i,
@@ -172,7 +197,7 @@ describe("CommandsModule", () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<CommandsModule />);
+    renderCommandsModuleInShell();
 
     expect(await screen.findByText("acknowledged")).toBeInTheDocument();
     expect(screen.getByText("disconnect (succeeded)")).toBeInTheDocument();
@@ -182,7 +207,7 @@ describe("CommandsModule", () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<CommandsModule />);
+    renderCommandsModuleInShell();
 
     await screen.findByText("Recent commands");
     expect(screen.queryByText(/execute profile capture now/i)).not.toBeInTheDocument();

@@ -1,5 +1,5 @@
-import { CommandsModule } from "./commands-module";
+import { CommandsPageClient } from "./commands-page-client";
 
 export default function CommandsPage() {
-  return <CommandsModule />;
+  return <CommandsPageClient />;
 }
