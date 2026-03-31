@@ -22,6 +22,12 @@ from app.modules.commands.profile_capture_execution_orchestration import (
 from app.modules.commands.relay_control_execution_orchestration import (
     orchestrate_relay_control_command_execution,
 )
+from app.modules.commands.on_demand_read_runtime_handoff import (
+    handoff_on_demand_read_command_to_runtime,
+)
+from app.modules.commands.on_demand_read_runtime_terminalization import (
+    terminalize_on_demand_read_runtime_execution,
+)
 from app.modules.commands.relay_control_runtime_handoff import (
     handoff_relay_control_command_to_runtime,
 )
@@ -55,6 +61,10 @@ from app.modules.commands.schemas import (
     OnDemandReadAttemptBootstrapRequest,
     OnDemandReadAttemptBootstrapResponse,
     OnDemandReadCommandCreate,
+    OnDemandReadRuntimeHandoffRequest,
+    OnDemandReadRuntimeHandoffResponse,
+    OnDemandReadRuntimeTerminalizationRequest,
+    OnDemandReadRuntimeTerminalizationResponse,
     ProfileCaptureAttemptBootstrapRequest,
     ProfileCaptureAttemptBootstrapResponse,
     ProfileCaptureExecuteNowRequest,
@@ -512,6 +522,40 @@ def bootstrap_on_demand_read_attempt_endpoint(
     session: Session = Depends(get_db_session),
 ) -> OnDemandReadAttemptBootstrapResponse:
     return bootstrap_on_demand_read_command_attempt(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/handoff-on-demand-read-to-runtime",
+    response_model=OnDemandReadRuntimeHandoffResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def handoff_on_demand_read_to_runtime_endpoint(
+    command_id: uuid.UUID,
+    payload: OnDemandReadRuntimeHandoffRequest,
+    session: Session = Depends(get_db_session),
+) -> OnDemandReadRuntimeHandoffResponse:
+    return handoff_on_demand_read_command_to_runtime(
+        session,
+        command_id=command_id,
+        payload=payload,
+    )
+
+
+@internal_commands_router.post(
+    "/{command_id}/terminalize-on-demand-read-runtime",
+    response_model=OnDemandReadRuntimeTerminalizationResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def terminalize_on_demand_read_runtime_endpoint(
+    command_id: uuid.UUID,
+    payload: OnDemandReadRuntimeTerminalizationRequest,
+    session: Session = Depends(get_db_session),
+) -> OnDemandReadRuntimeTerminalizationResponse:
+    return terminalize_on_demand_read_runtime_execution(
         session,
         command_id=command_id,
         payload=payload,

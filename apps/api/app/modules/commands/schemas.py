@@ -138,6 +138,73 @@ class OnDemandReadAttemptBootstrapResponse(BaseModel):
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
+class OnDemandReadRuntimeHandoffRequest(BaseModel):
+    handoff_identifier: str = Field(min_length=1, max_length=128)
+    executor_identifier: str = Field(min_length=1, max_length=128)
+    handoff_reason: str | None = Field(default=None, max_length=255)
+    lease_seconds: int = Field(default=300, ge=5, le=3600)
+    session_timeout_seconds: int = Field(default=300, ge=5, le=3600)
+
+
+class OnDemandReadRuntimeHandoffResult(BaseModel):
+    handoff_status: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    job_run_id: UUID
+    handoff_identifier: str
+    executor_identifier: str
+    bootstrap_identifier: str
+    on_demand_read_operation: OnDemandReadCommandOperation
+    snapshot_type: SnapshotType
+    handed_off_at: datetime
+    session_identifier: str
+    runtime_on_demand_read_execution_present: bool
+    runtime_on_demand_read_execution_record_id: str | None = None
+    reused_existing_handoff: bool
+    reused_existing_runtime_execution: bool
+    handoff_record: dict[str, object]
+
+
+class OnDemandReadRuntimeHandoffResponse(BaseModel):
+    result: "OnDemandReadRuntimeHandoffResult"
+    job_run: dict[str, object]
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
+class OnDemandReadRuntimeTerminalizationRequest(BaseModel):
+    terminalization_identifier: str = Field(min_length=1, max_length=128)
+    executor_identifier: str = Field(min_length=1, max_length=128)
+    terminalization_reason: str | None = Field(default=None, max_length=255)
+
+
+class OnDemandReadRuntimeTerminalizationResult(BaseModel):
+    terminalization_status: str
+    command_id: UUID
+    command_execution_attempt_id: UUID
+    job_run_id: UUID | None = None
+    terminalization_identifier: str
+    executor_identifier: str
+    runtime_on_demand_read_execution_record_id: str
+    on_demand_read_operation: OnDemandReadCommandOperation
+    snapshot_type: SnapshotType
+    on_demand_read_execution_outcome: str
+    attempt_final_status: CommandExecutionAttemptStatus
+    command_final_status: CommandStatus
+    job_run_final_status: JobRunStatus | None = None
+    terminalization_reason_category: str
+    terminalized_at: datetime
+    reused_existing_terminalization: bool
+    terminalization_record: dict[str, object]
+
+
+class OnDemandReadRuntimeTerminalizationResponse(BaseModel):
+    result: "OnDemandReadRuntimeTerminalizationResult"
+    job_run: dict[str, object] | None = None
+    related_command: "MeterCommandResponse"
+    created_or_existing_attempt: "CommandExecutionAttemptResponse"
+
+
 class RelayControlAttemptBootstrapRequest(BaseModel):
     bootstrap_identifier: str = Field(min_length=1, max_length=128)
     bootstrap_reason: str | None = Field(default=None, max_length=255)
