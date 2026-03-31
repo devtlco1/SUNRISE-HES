@@ -264,6 +264,27 @@ class OnDemandReadExecuteNowResponse(BaseModel):
     created_or_existing_attempt: "CommandExecutionAttemptResponse"
 
 
+class OnDemandReadExecutionStatusResult(BaseModel):
+    command_id: UUID
+    command_status: CommandStatus
+    on_demand_read_operation: OnDemandReadCommandOperation | None = None
+    snapshot_type: SnapshotType | None = None
+    command_execution_attempt_id: UUID | None = None
+    runtime_on_demand_read_execution_record_id: str | None = None
+    on_demand_read_execution_outcome: str | None = None
+    orchestration_artifact_present: bool
+    terminalization_artifact_present: bool
+    execute_now_artifact_present: bool
+    reused_existing_execute_now: bool | None = None
+    reused_existing_orchestration: bool | None = None
+    reused_existing_terminalization: bool | None = None
+    status_record: dict[str, object]
+
+
+class OnDemandReadExecutionStatusResponse(BaseModel):
+    result: "OnDemandReadExecutionStatusResult"
+
+
 class RelayControlAttemptBootstrapRequest(BaseModel):
     bootstrap_identifier: str = Field(min_length=1, max_length=128)
     bootstrap_reason: str | None = Field(default=None, max_length=255)

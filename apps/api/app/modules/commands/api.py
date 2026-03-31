@@ -16,6 +16,9 @@ from app.modules.commands.operational_read_model import (
 from app.modules.commands.on_demand_read_execution_orchestration import (
     orchestrate_on_demand_read_command_execution,
 )
+from app.modules.commands.on_demand_read_status_readback import (
+    get_on_demand_read_execution_status,
+)
 from app.modules.commands.relay_control_execute_now import execute_relay_control_now
 from app.modules.commands.relay_control_status_readback import (
     get_relay_control_execution_status,
@@ -69,6 +72,7 @@ from app.modules.commands.schemas import (
     OnDemandReadExecuteNowResponse,
     OnDemandReadExecutionOrchestrationRequest,
     OnDemandReadExecutionOrchestrationResponse,
+    OnDemandReadExecutionStatusResponse,
     OnDemandReadRuntimeHandoffRequest,
     OnDemandReadRuntimeHandoffResponse,
     OnDemandReadRuntimeTerminalizationRequest,
@@ -526,6 +530,18 @@ def get_command_operational_detail_endpoint(
     _: User = Depends(require_permission("commands.read")),
 ) -> CommandOperationalDetailResponse:
     return get_command_operational_detail(session, command_id=command_id)
+
+
+@commands_router.get(
+    "/{command_id}/on-demand-read-status",
+    response_model=OnDemandReadExecutionStatusResponse,
+)
+def get_on_demand_read_status_endpoint(
+    command_id: uuid.UUID,
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> OnDemandReadExecutionStatusResponse:
+    return get_on_demand_read_execution_status(session, command_id=command_id)
 
 
 @commands_router.get(
