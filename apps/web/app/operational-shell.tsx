@@ -243,6 +243,9 @@ export function OperationalShell({
             <Link className="nav-link" href="/">
               Home
             </Link>
+            <Link className="nav-link" href="/connectivity">
+              Connectivity
+            </Link>
             <Link className="nav-link" href="/meters">
               Meters
             </Link>
