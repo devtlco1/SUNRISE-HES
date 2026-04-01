@@ -1073,6 +1073,13 @@ export function CommandsModule({
                   </button>
                 </div>
 
+                <p className="muted">
+                  Select filtered replaces the current selected target set with the{" "}
+                  {filteredWizardMeters.length} meter
+                  {filteredWizardMeters.length === 1 ? "" : "s"} currently visible in the
+                  target filter.
+                </p>
+
                 <div className="command-list">
                   {filteredWizardMeters.length === 0 ? (
                     <p className="muted">

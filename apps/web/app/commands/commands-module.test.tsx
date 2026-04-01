@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OperationalShell } from "../operational-shell";
 import { CommandsModule } from "./commands-module";
 
+function includesText(text: string) {
+  return (_content: string, element: Element | null) => element?.textContent?.includes(text) ?? false;
+}
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -671,6 +675,103 @@ describe("CommandsModule", () => {
       ).toBeInTheDocument();
       expect(screen.getAllByText("Submitted For Approval")).not.toHaveLength(0);
       expect(screen.getByText("3 waiting")).toBeInTheDocument();
+    });
+  });
+
+  it("clarifies that select filtered replaces the current selection with the filtered result set", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell({
+      initialMeterIds: ["meter-2", "meter-3"],
+      initialMeterScopeSource: "visible_filtered_result_set",
+    });
+
+    const selectedTargetReviewHeading = await screen.findByRole("heading", {
+      name: "Selected target review",
+    });
+    const selectedTargetReview = selectedTargetReviewHeading.closest(".detail-stack");
+    expect(selectedTargetReview).not.toBeNull();
+    const getSelectedTargetReview = () =>
+      screen.getByRole("heading", { name: "Selected target review" }).closest(".detail-stack") as HTMLElement;
+
+    expect(await screen.findByText("2 handed-off targets loaded")).toBeInTheDocument();
+    await screen.findByText("SN-1001");
+    await user.click(screen.getByRole("button", { name: "Restore handed-off targets" }));
+    expect(
+      screen.getAllByText(
+        includesText(
+          "Select filtered replaces the current selected target set with the 3 meters currently visible in the target filter.",
+        ),
+      ).length,
+    ).toBeGreaterThan(0);
+
+    await waitFor(() => {
+      expect(
+        within(getSelectedTargetReview()).getAllByText(includesText("2 handed-off targets")).length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(getSelectedTargetReview()).getAllByText(includesText("0 manually added targets"))
+          .length,
+      ).toBeGreaterThan(0);
+    });
+
+    await user.type(screen.getByRole("searchbox", { name: "Bulk target filter" }), "SN-1001");
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(
+          includesText(
+            "Select filtered replaces the current selected target set with the 1 meter currently visible in the target filter.",
+          ),
+        ).length,
+      ).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getByRole("checkbox", { name: "Include in bulk request" }));
+
+    await waitFor(() => {
+      expect(
+        within(getSelectedTargetReview()).getAllByText(includesText("2 handed-off targets")).length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(getSelectedTargetReview()).getAllByText(includesText("1 manually added target"))
+          .length,
+      ).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Select filtered" }));
+
+    await waitFor(() => {
+      expect(
+        within(getSelectedTargetReview()).getAllByText(includesText("0 handed-off targets")).length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(getSelectedTargetReview()).getAllByText(includesText("1 manually added target"))
+          .length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(getSelectedTargetReview()).queryAllByText("Handed-off target"),
+      ).toHaveLength(0);
+      expect(
+        within(getSelectedTargetReview()).getByText("Manually added target"),
+      ).toBeInTheDocument();
+      expect(
+        within(getSelectedTargetReview()).queryByRole("button", {
+          name: "Remove SN-1002",
+        }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(getSelectedTargetReview()).queryByRole("button", {
+          name: "Remove SN-1003",
+        }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(getSelectedTargetReview()).getByRole("button", {
+          name: "Remove SN-1001",
+        }),
+      ).toBeInTheDocument();
     });
   });
 
