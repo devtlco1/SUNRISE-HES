@@ -1,5 +1,7 @@
 import { CommandsPageClient } from "./commands-page-client";
 
+type MeterScopeSource = "visible_filtered_result_set";
+
 function resolveMeterIds(value: string | string[] | undefined): string[] {
   if (!value) {
     return [];
@@ -12,10 +14,24 @@ function resolveMeterIds(value: string | string[] | undefined): string[] {
     .filter(Boolean);
 }
 
+function resolveMeterScopeSource(
+  value: string | string[] | undefined,
+): MeterScopeSource | null {
+  const resolvedValue = Array.isArray(value) ? value[0] ?? null : value ?? null;
+  if (resolvedValue === "visible_filtered_result_set") {
+    return resolvedValue;
+  }
+  return null;
+}
+
 export default async function CommandsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ meterId?: string | string[]; meterIds?: string | string[] }>;
+  searchParams: Promise<{
+    meterId?: string | string[];
+    meterIds?: string | string[];
+    meterScopeSource?: string | string[];
+  }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const initialMeterIds = Array.from(
@@ -24,6 +40,14 @@ export default async function CommandsPage({
       ...resolveMeterIds(resolvedSearchParams.meterIds),
     ]),
   );
+  const initialMeterScopeSource = resolveMeterScopeSource(
+    resolvedSearchParams.meterScopeSource,
+  );
 
-  return <CommandsPageClient initialMeterIds={initialMeterIds} />;
+  return (
+    <CommandsPageClient
+      initialMeterIds={initialMeterIds}
+      initialMeterScopeSource={initialMeterScopeSource}
+    />
+  );
 }

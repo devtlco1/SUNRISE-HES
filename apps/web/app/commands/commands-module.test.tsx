@@ -449,7 +449,13 @@ function createMockApi() {
   return { fetchMock };
 }
 
-function renderCommandsModuleInShell({ initialMeterIds = [] }: { initialMeterIds?: string[] } = {}) {
+function renderCommandsModuleInShell({
+  initialMeterIds = [],
+  initialMeterScopeSource = null,
+}: {
+  initialMeterIds?: string[];
+  initialMeterScopeSource?: "visible_filtered_result_set" | null;
+} = {}) {
   render(
     <OperationalShell
       eyebrow="Operational Pages"
@@ -457,7 +463,11 @@ function renderCommandsModuleInShell({ initialMeterIds = [] }: { initialMeterIds
       description="Bounded commands module"
     >
       {({ authorizedFetch }) => (
-        <CommandsModule authorizedFetch={authorizedFetch} initialMeterIds={initialMeterIds} />
+        <CommandsModule
+          authorizedFetch={authorizedFetch}
+          initialMeterIds={initialMeterIds}
+          initialMeterScopeSource={initialMeterScopeSource}
+        />
       )}
     </OperationalShell>,
   );
@@ -540,9 +550,17 @@ describe("CommandsModule", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    renderCommandsModuleInShell({ initialMeterIds: ["meter-2", "meter-3"] });
+    renderCommandsModuleInShell({
+      initialMeterIds: ["meter-2", "meter-3"],
+      initialMeterScopeSource: "visible_filtered_result_set",
+    });
 
     expect(await screen.findByText("2 handed-off targets loaded")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "2 handed-off targets arrived from the visible filtered meter result set. Review the scope below before continuing with the bulk wizard.",
+      ),
+    ).toBeInTheDocument();
 
     const selectedTargetReviewHeading = screen.getByRole("heading", {
       name: "Selected target review",

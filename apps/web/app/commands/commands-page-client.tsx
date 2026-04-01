@@ -5,8 +5,10 @@ import { OperationalShell } from "../operational-shell";
 
 export function CommandsPageClient({
   initialMeterIds = [],
+  initialMeterScopeSource = null,
 }: {
   initialMeterIds?: string[];
+  initialMeterScopeSource?: "visible_filtered_result_set" | null;
 }) {
   return (
     <OperationalShell
@@ -15,7 +17,11 @@ export function CommandsPageClient({
       description="Operational command visibility over the stable profile capture, relay control, and on-demand read command projections."
     >
       {({ authorizedFetch }) => (
-        <CommandsModule authorizedFetch={authorizedFetch} initialMeterIds={initialMeterIds} />
+        <CommandsModule
+          authorizedFetch={authorizedFetch}
+          initialMeterIds={initialMeterIds}
+          initialMeterScopeSource={initialMeterScopeSource}
+        />
       )}
     </OperationalShell>
   );

@@ -244,9 +244,11 @@ function matchesApprovalSearch(command: CommandRecentItem, query: string): boole
 export function CommandsModule({
   authorizedFetch,
   initialMeterIds = [],
+  initialMeterScopeSource = null,
 }: {
   authorizedFetch: AuthorizedFetch;
   initialMeterIds?: string[];
+  initialMeterScopeSource?: "visible_filtered_result_set" | null;
 }) {
   const [recentFamilyFilter, setRecentFamilyFilter] = useState<FamilyFilter>("all");
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[]>([]);
@@ -527,6 +529,18 @@ export function CommandsModule({
       ),
     [availableMeters, handedOffMeterIds],
   );
+
+  const handedOffScopeSummary = useMemo(() => {
+    if (handedOffMeterIds.length === 0) {
+      return null;
+    }
+
+    if (initialMeterScopeSource === "visible_filtered_result_set") {
+      return `${handedOffMeterIds.length} handed-off target${handedOffMeterIds.length === 1 ? "" : "s"} arrived from the visible filtered meter result set. Review the scope below before continuing with the bulk wizard.`;
+    }
+
+    return `${handedOffMeterIds.length} handed-off target${handedOffMeterIds.length === 1 ? "" : "s"} arrived in the bulk wizard. Review the scope below before continuing.`;
+  }, [handedOffMeterIds, initialMeterScopeSource]);
 
   useEffect(() => {
     if (!wizardTemplates.some((template) => template.id === wizardTemplateId)) {
@@ -889,7 +903,11 @@ export function CommandsModule({
                 </div>
 
                 {handedOffMeterIds.length > 0 ? (
-                  <div className="artifact-row">
+                  <div className="detail-stack">
+                    {handedOffScopeSummary ? (
+                      <p className="muted">{handedOffScopeSummary}</p>
+                    ) : null}
+                    <div className="artifact-row">
                     <span className="artifact-pill">
                       {handedOffWizardMeters.length} handed-off target
                       {handedOffWizardMeters.length === 1 ? "" : "s"} loaded
@@ -904,6 +922,7 @@ export function CommandsModule({
                     <span className="muted">
                       Meter-context handoff is preserved until you change the target scope.
                     </span>
+                    </div>
                   </div>
                 ) : null}
 

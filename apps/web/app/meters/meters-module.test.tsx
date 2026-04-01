@@ -172,7 +172,7 @@ describe("MetersModule", () => {
 
     expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
       "href",
-      "/commands?meterIds=meter-1%2Cmeter-2",
+      "/commands?meterIds=meter-1%2Cmeter-2&meterScopeSource=visible_filtered_result_set",
     );
   });
 
@@ -202,7 +202,7 @@ describe("MetersModule", () => {
 
     expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
       "href",
-      "/commands?meterIds=meter-1%2Cmeter-2",
+      "/commands?meterIds=meter-1%2Cmeter-2&meterScopeSource=visible_filtered_result_set",
     );
 
     await user.click(
@@ -216,7 +216,7 @@ describe("MetersModule", () => {
     });
     expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
       "href",
-      "/commands?meterIds=meter-2",
+      "/commands?meterIds=meter-2&meterScopeSource=visible_filtered_result_set",
     );
   });
 
@@ -248,7 +248,7 @@ describe("MetersModule", () => {
     });
     expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
       "href",
-      "/commands?meterIds=meter-1",
+      "/commands?meterIds=meter-1&meterScopeSource=visible_filtered_result_set",
     );
   });
 

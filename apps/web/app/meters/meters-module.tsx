@@ -114,6 +114,7 @@ export function MetersModule({
 
     const params = new URLSearchParams({
       meterIds: selectedMeterIds.join(","),
+      meterScopeSource: "visible_filtered_result_set",
     });
     return `/commands?${params.toString()}`;
   }, [selectedMeterIds]);
