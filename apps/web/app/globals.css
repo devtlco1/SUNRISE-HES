@@ -495,6 +495,12 @@ a {
   grid-template-columns: 1.1fr 1fr;
 }
 
+.readings-module-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1.05fr 1.2fr;
+}
+
 .subscribers-module-layout {
   display: grid;
   gap: 1rem;
@@ -540,6 +546,12 @@ a {
 .connectivity-overview-panel {
   background:
     linear-gradient(180deg, rgba(14, 165, 233, 0.08), rgba(15, 23, 42, 0.16)),
+    rgba(2, 6, 23, 0.24);
+}
+
+.readings-overview-panel {
+  background:
+    linear-gradient(180deg, rgba(168, 85, 247, 0.08), rgba(15, 23, 42, 0.16)),
     rgba(2, 6, 23, 0.24);
 }
 
@@ -591,6 +603,12 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+.readings-overview-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 .jobs-overview-grid {
   display: grid;
   gap: 0.9rem;
@@ -634,6 +652,12 @@ a {
 }
 
 .connectivity-overview-card p {
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.readings-overview-card p {
   margin: 0.55rem 0 0;
   font-size: 0.9rem;
   line-height: 1.5;
@@ -742,9 +766,20 @@ a {
   gap: 0.85rem;
 }
 
+.readings-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
 .connectivity-list-item.selected {
   border-color: rgba(14, 165, 233, 0.48);
   box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.12);
+}
+
+.readings-list-item.selected {
+  border-color: rgba(168, 85, 247, 0.42);
+  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.12);
 }
 
 .subscriber-list-item.selected {
@@ -926,6 +961,13 @@ a {
   border: 1px solid rgba(14, 165, 233, 0.18);
 }
 
+.readings-detail-hero {
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(168, 85, 247, 0.18);
+}
+
 .jobs-activity-hero {
   padding: 1rem 1.1rem;
   border-radius: 18px;
@@ -976,6 +1018,13 @@ a {
 }
 
 .connectivity-detail-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.readings-detail-title-row {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -1036,6 +1085,12 @@ a {
   letter-spacing: -0.03em;
 }
 
+.readings-detail-title-row h3 {
+  margin: 0;
+  font-size: 1.55rem;
+  letter-spacing: -0.03em;
+}
+
 .jobs-activity-hero-row h3 {
   margin: 0;
   font-size: 1.55rem;
@@ -1082,6 +1137,44 @@ a {
 
 .connectivity-detail-title-row .muted {
   margin: 0.55rem 0 0;
+}
+
+.readings-detail-title-row .muted {
+  margin: 0.55rem 0 0;
+}
+
+.readings-table-shell {
+  overflow-x: auto;
+}
+
+.readings-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+.readings-table th,
+.readings-table td {
+  padding: 0.85rem 0.9rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.readings-table th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.readings-table td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  color: #e2e8f0;
+}
+
+.readings-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .jobs-activity-hero-row .muted {
@@ -1224,6 +1317,7 @@ a {
   .commands-tab-layout,
   .commands-module-layout,
   .connectivity-module-layout,
+  .readings-module-layout,
   .accounts-module-layout,
   .service-points-module-layout,
   .gis-module-layout,
@@ -1247,6 +1341,7 @@ a {
   .commands-selection-summary,
   .commands-detail-title-row,
   .connectivity-detail-title-row,
+  .readings-detail-title-row,
   .account-detail-title-row,
   .service-point-detail-title-row,
   .gis-detail-title-row,

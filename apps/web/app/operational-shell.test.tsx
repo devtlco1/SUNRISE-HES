@@ -285,6 +285,10 @@ describe("OperationalShell", () => {
       "href",
       "/meters",
     );
+    expect(screen.getByRole("link", { name: "Readings" })).toHaveAttribute(
+      "href",
+      "/readings",
+    );
     expect(screen.getByRole("link", { name: "Commands" })).toHaveAttribute(
       "href",
       "/commands",

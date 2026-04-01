@@ -70,6 +70,7 @@ function OperationalShellInner({
       label: "Operations",
       items: [
         { href: "/meters", label: "Meters" },
+        { href: "/readings", label: "Readings" },
         { href: "/commands", label: "Commands" },
         { href: "/connectivity", label: "Connectivity" },
         { href: "/jobs-events-alerts", label: "Jobs / Events / Alerts" },

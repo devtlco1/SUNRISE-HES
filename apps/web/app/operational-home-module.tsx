@@ -165,6 +165,12 @@ export function OperationalHomeModule({
           "Browse the current bounded meter list and continue into meter details.",
       },
       {
+        href: "/readings",
+        title: "Readings",
+        description:
+          "Open the bounded Phase 2 readings slice for overview context and billing reads.",
+      },
+      {
         href: "/commands",
         title: "Commands",
         description:
