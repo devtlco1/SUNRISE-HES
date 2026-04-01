@@ -16,6 +16,7 @@ jobs:
       BOOTSTRAP_SUPER_ADMIN_USERNAME: admin
       BOOTSTRAP_SUPER_ADMIN_EMAIL: admin@example.com
       BOOTSTRAP_SUPER_ADMIN_PASSWORD: ChangeThisPassword123!
+      SUNRISE_SEED_LOGIN_RETRY_SECONDS: "30"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

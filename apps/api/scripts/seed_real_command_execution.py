@@ -15,7 +15,7 @@ API_BASE_URL = os.getenv(
 ).rstrip("/")
 USERNAME = os.getenv("SUNRISE_SEED_USERNAME", "admin")
 PASSWORD = os.getenv("SUNRISE_SEED_PASSWORD", "ChangeThisPassword123!")
-LOGIN_RETRY_SECONDS = 10
+LOGIN_RETRY_SECONDS = int(os.getenv("SUNRISE_SEED_LOGIN_RETRY_SECONDS", "10"))
 
 SEED_SPEC = {
     "manufacturer_code": "SEED-MFG-01",
