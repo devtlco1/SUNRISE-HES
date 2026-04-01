@@ -59,6 +59,7 @@ make test-api
 make test-runtime-foundations
 make seed-command-execution
 make verify-command-execution-seed
+make smoke-command-execution-seed
 make lint-api
 make format-api
 make typecheck-api
@@ -99,6 +100,14 @@ make verify-command-execution-seed
 ```
 
 This verifier checks that the seeded meter is visible, that meter-scoped relay-control and on-demand-read succeeded history exists, and that the global recent command projection still includes the seeded meter context. It fails clearly and boundedly when the seeded context is missing.
+
+For the one-step local smoke path, run:
+
+```bash
+make smoke-command-execution-seed
+```
+
+This convenience target runs the seed workflow first, then immediately runs the verifier so local command-execution readiness ends with a clear pass/fail signal.
 
 ## Focused Runtime Tests
 
