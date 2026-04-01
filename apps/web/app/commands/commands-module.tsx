@@ -1128,6 +1128,10 @@ export function CommandsModule({
                   <div className="detail-stack">
                     <p className="muted">{selectFilteredConfirmationSummary}</p>
                     <div className="artifact-row">
+                      <span className="artifact-pill">
+                        {filteredWizardMeterIds.length} filtered target
+                        {filteredWizardMeterIds.length === 1 ? "" : "s"} in pending replacement
+                      </span>
                       <button
                         className="secondary-button"
                         onClick={keepCurrentWizardSelection}

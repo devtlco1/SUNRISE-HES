@@ -709,6 +709,9 @@ describe("CommandsModule", () => {
     expect(
       screen.getByRole("button", { name: "Keep current selection" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText("1 filtered target in pending replacement"),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(
@@ -752,6 +755,9 @@ describe("CommandsModule", () => {
     expect(
       screen.getByRole("button", { name: "Keep current selection" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText("1 filtered target in pending replacement"),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Keep current selection" }));
 
@@ -763,6 +769,9 @@ describe("CommandsModule", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Keep current selection" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/filtered target.*pending replacement/i),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Select filtered" })).toBeInTheDocument();
 
@@ -858,6 +867,9 @@ describe("CommandsModule", () => {
         "Select filtered will replace the current 3 selected targets with the 1 meter currently visible in the target filter. Click Confirm replace with filtered to continue.",
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText("1 filtered target in pending replacement"),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Confirm replace with filtered" }));
 
     await waitFor(() => {
@@ -913,6 +925,9 @@ describe("CommandsModule", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Keep current selection" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/filtered target.*pending replacement/i),
     ).not.toBeInTheDocument();
 
     await waitFor(() => {
