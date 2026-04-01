@@ -1,7 +1,7 @@
 COMPOSE ?= docker compose
 PYTHON ?= python3
 
-.PHONY: up down logs api-shell web-shell test-api test-runtime-foundations lint-api format-api typecheck-api seed-command-execution verify-command-execution-seed smoke-command-execution-seed
+.PHONY: up down logs api-shell web-shell test-api test-runtime-foundations lint-api format-api typecheck-api seed-command-execution verify-command-execution-seed smoke-command-execution-seed local-operational-readiness
 
 up:
 	$(COMPOSE) up --build
@@ -49,3 +49,7 @@ verify-command-execution-seed:
 	$(PYTHON) apps/api/scripts/verify_seeded_command_context.py
 
 smoke-command-execution-seed: seed-command-execution verify-command-execution-seed
+
+local-operational-readiness:
+	./.venv/bin/python -m pytest apps/api/tests/test_health.py apps/api/tests/test_platform_readiness.py
+	$(MAKE) smoke-command-execution-seed

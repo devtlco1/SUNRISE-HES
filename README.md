@@ -60,6 +60,7 @@ make test-runtime-foundations
 make seed-command-execution
 make verify-command-execution-seed
 make smoke-command-execution-seed
+make local-operational-readiness
 make lint-api
 make format-api
 make typecheck-api
@@ -108,6 +109,14 @@ make smoke-command-execution-seed
 ```
 
 This convenience target runs the seed workflow first, then immediately runs the verifier so local command-execution readiness ends with a clear pass/fail signal.
+
+For the broader local operator/dev readiness path, run:
+
+```bash
+make local-operational-readiness
+```
+
+This target first runs the stable backend readiness/public smoke, then runs the existing seeded command-execution smoke so local startup readiness ends with one broader pass/fail signal.
 
 ## Focused Runtime Tests
 
