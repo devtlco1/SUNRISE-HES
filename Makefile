@@ -41,7 +41,7 @@ typecheck-api:
 
 seed-command-execution:
 	$(COMPOSE) up -d postgres redis api
-	$(COMPOSE) restart api
+	@if [ "$${SUNRISE_SKIP_API_RESTART:-0}" != "1" ]; then $(COMPOSE) restart api; fi
 	$(PYTHON) apps/api/scripts/seed_real_command_execution.py
 
 verify-command-execution-seed:
