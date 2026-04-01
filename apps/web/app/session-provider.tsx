@@ -70,6 +70,11 @@ const ACCESS_TOKEN_STORAGE_KEY = "sunrise.web.accessToken";
 const API_BASE_URL_STORAGE_KEY = "sunrise.web.apiBaseUrl";
 const DEFAULT_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const INITIAL_API_CONNECTIVITY: ApiConnectivity = {
+  status: "unknown",
+  message: null,
+  checkedBaseUrl: null,
+};
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
@@ -109,56 +114,41 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
-  const [apiConnectivity, setApiConnectivity] = useState<ApiConnectivity>({
-    status: "unknown",
-    message: null,
-    checkedBaseUrl: null,
-  });
-  const apiConnectivityRef = useRef<ApiConnectivity>({
-    status: "unknown",
-    message: null,
-    checkedBaseUrl: null,
-  });
-  const lastConnectivityProbeRef = useRef<string | null>(null);
+  const [apiConnectivity, setApiConnectivity] =
+    useState<ApiConnectivity>(INITIAL_API_CONNECTIVITY);
+  const apiConnectivityRef = useRef<ApiConnectivity>(INITIAL_API_CONNECTIVITY);
 
   const apiBaseUrl = normalizeApiBaseUrl(apiBaseUrlState);
 
-  const setApiBaseUrl = useCallback((value: string) => {
-    setApiBaseUrlState(normalizeApiBaseUrl(value));
-  }, []);
-
   const setApiConnectivityIfChanged = useCallback((next: ApiConnectivity) => {
-    setApiConnectivity((current) => {
-      if (
-        current.status === next.status &&
-        current.message === next.message &&
-        current.checkedBaseUrl === next.checkedBaseUrl
-      ) {
-        return current;
-      }
-      apiConnectivityRef.current = next;
-      return next;
-    });
+    const current = apiConnectivityRef.current;
     if (
-      apiConnectivityRef.current.status === next.status &&
-      apiConnectivityRef.current.message === next.message &&
-      apiConnectivityRef.current.checkedBaseUrl === next.checkedBaseUrl
+      current.status === next.status &&
+      current.message === next.message &&
+      current.checkedBaseUrl === next.checkedBaseUrl
     ) {
       return;
     }
     apiConnectivityRef.current = next;
+    setApiConnectivity(next);
   }, []);
+
+  const setApiBaseUrl = useCallback(
+    (value: string) => {
+      const normalizedValue = normalizeApiBaseUrl(value);
+      setApiBaseUrlState(normalizedValue);
+      if (normalizedValue !== apiBaseUrl) {
+        setApiConnectivityIfChanged(INITIAL_API_CONNECTIVITY);
+      }
+    },
+    [apiBaseUrl, setApiConnectivityIfChanged],
+  );
 
   const probeApiConnectivity = useCallback(
     async (apiBaseUrlOverride?: string) => {
       const resolvedApiBaseUrl = normalizeApiBaseUrl(
         apiBaseUrlOverride ?? apiBaseUrl,
       );
-      if (lastConnectivityProbeRef.current === resolvedApiBaseUrl) {
-        return apiConnectivityRef.current.status === "reachable";
-      }
-      lastConnectivityProbeRef.current = resolvedApiBaseUrl;
-
       setApiConnectivityIfChanged({
         status: "checking",
         message: null,
@@ -300,7 +290,6 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
     if (storedApiBaseUrl) {
       setApiBaseUrlState(resolvedApiBaseUrl);
-      lastConnectivityProbeRef.current = null;
     }
 
     if (storedAccessToken) {
@@ -357,7 +346,6 @@ export function SessionProvider({ children }: PropsWithChildren) {
             message,
             checkedBaseUrl: apiBaseUrl,
           });
-          lastConnectivityProbeRef.current = apiBaseUrl;
           throw new Error(message);
         }
         throw error;
@@ -377,7 +365,6 @@ export function SessionProvider({ children }: PropsWithChildren) {
         message: null,
         checkedBaseUrl: apiBaseUrl,
       });
-      lastConnectivityProbeRef.current = apiBaseUrl;
       return payload;
     },
     [apiBaseUrl, setApiConnectivityIfChanged],

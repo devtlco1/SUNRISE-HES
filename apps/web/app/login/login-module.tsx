@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { useSession } from "../session-provider";
 
@@ -15,22 +15,12 @@ export function LoginModule({
     setApiBaseUrl,
     login,
     apiConnectivity,
-    probeApiConnectivity,
   } = useSession();
   const [usernameOrEmail, setUsernameOrEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const lastProbedApiBaseUrlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (lastProbedApiBaseUrlRef.current === apiBaseUrl) {
-      return;
-    }
-    lastProbedApiBaseUrlRef.current = apiBaseUrl;
-    void probeApiConnectivity(apiBaseUrl);
-  }, [apiBaseUrl, probeApiConnectivity]);
 
   return (
     <form
@@ -75,6 +65,11 @@ export function LoginModule({
       <div className="auth-connectivity-hint">
         <span className="stat-label">Current local-dev API target</span>
         <strong>{apiBaseUrl}</strong>
+        {apiConnectivity.status === "unknown" ? (
+          <p className="muted">
+            Connectivity is checked when you submit the login form.
+          </p>
+        ) : null}
         {apiConnectivity.status === "checking" ? (
           <p className="muted">Checking API connectivity...</p>
         ) : null}

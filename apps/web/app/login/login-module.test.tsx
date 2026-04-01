@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,9 +38,6 @@ describe("LoginModule", () => {
     const onLoginSuccess = vi.fn();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
-      if (url.endsWith("/api/v1/platform/health")) {
-        return jsonResponse({ status: "ok" });
-      }
       if (url.endsWith("/api/v1/auth/login")) {
         return jsonResponse({
           access_token: "token-1",
@@ -61,14 +58,10 @@ describe("LoginModule", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderLoginModule(onLoginSuccess);
-
-    await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.filter(([input]) =>
-          input.toString().endsWith("/api/v1/platform/health"),
-        ),
-      ).toHaveLength(1);
-    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Connectivity is checked when you submit the login form."),
+    ).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Username or email"), "ops.user");
@@ -87,9 +80,6 @@ describe("LoginModule", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = input.toString();
-        if (url.endsWith("/api/v1/platform/health")) {
-          return jsonResponse({ status: "ok" });
-        }
         if (url.endsWith("/api/v1/auth/login")) {
           return jsonResponse(
             { detail: "Invalid username/email or password." },
@@ -120,10 +110,7 @@ describe("LoginModule", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = input.toString();
-        if (
-          url.endsWith("/api/v1/platform/health") ||
-          url.endsWith("/api/v1/auth/login")
-        ) {
+        if (url.endsWith("/api/v1/auth/login")) {
           throw new TypeError("Failed to fetch");
         }
         throw new Error(`Unhandled request: ${url}`);
@@ -148,5 +135,17 @@ describe("LoginModule", () => {
     expect(
       screen.queryByText("Invalid username/email or password."),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not perform a health probe during login page mount", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderLoginModule();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Connectivity is checked when you submit the login form."),
+    ).toBeInTheDocument();
   });
 });
