@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "./operational-shell";
@@ -21,6 +21,9 @@ describe("OperationalShell", () => {
   });
 
   it("shows the bounded session gate when no session is available", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
     render(
       <OperationalShell
         eyebrow="Operational Pages"
@@ -33,6 +36,7 @@ describe("OperationalShell", () => {
 
     expect(await screen.findByText("Session required")).toBeInTheDocument();
     expect(screen.queryByText("Protected child")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("shows an invalid session state when auth/me rejects the stored token", async () => {
@@ -62,5 +66,50 @@ describe("OperationalShell", () => {
       await screen.findByText("Session is missing or no longer valid."),
     ).toBeInTheDocument();
     expect(screen.queryByText("Protected child")).not.toBeInTheDocument();
+  });
+
+  it("bootstraps the stored session once using the stored API base URL", async () => {
+    window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:9000/");
+    window.localStorage.setItem("sunrise.web.accessToken", "token-1");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === "http://localhost:9000/api/v1/auth/me") {
+        return jsonResponse({
+          id: "user-1",
+          username: "ops.user",
+          email: "ops@example.com",
+          full_name: "Ops User",
+          status: "active",
+          is_superuser: true,
+        });
+      }
+      throw new Error(`Unhandled request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OperationalShell
+        eyebrow="Operational Pages"
+        title="Commands"
+        description="Shell test"
+      >
+        {() => <div>Protected child</div>}
+      </OperationalShell>,
+    );
+
+    expect(await screen.findByText("Protected child")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:9000/api/v1/auth/me",
+      expect.objectContaining({
+        cache: "no-store",
+        headers: {
+          Authorization: "Bearer token-1",
+        },
+      }),
+    );
   });
 });

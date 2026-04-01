@@ -84,6 +84,22 @@ function normalizeApiBaseUrl(value: string): string {
   return fallback.replace(/\/+$/, "");
 }
 
+function readStoredApiBaseUrl(): string {
+  if (typeof window === "undefined") {
+    return normalizeApiBaseUrl(DEFAULT_API_BASE_URL);
+  }
+  return normalizeApiBaseUrl(
+    window.localStorage.getItem(API_BASE_URL_STORAGE_KEY) ?? DEFAULT_API_BASE_URL,
+  );
+}
+
+function readStoredAccessToken(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "";
+}
+
 function buildApiUrl(apiBaseUrl: string, path: string): string {
   return `${normalizeApiBaseUrl(apiBaseUrl)}${path}`;
 }
@@ -107,10 +123,8 @@ function isLikelyNetworkError(error: unknown): boolean {
 }
 
 export function SessionProvider({ children }: PropsWithChildren) {
-  const [apiBaseUrlState, setApiBaseUrlState] = useState(
-    normalizeApiBaseUrl(DEFAULT_API_BASE_URL),
-  );
-  const [accessToken, setAccessToken] = useState("");
+  const [apiBaseUrlState, setApiBaseUrlState] = useState(readStoredApiBaseUrl);
+  const [accessToken, setAccessToken] = useState(readStoredAccessToken);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -119,6 +133,10 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const apiConnectivityRef = useRef<ApiConnectivity>(INITIAL_API_CONNECTIVITY);
 
   const apiBaseUrl = normalizeApiBaseUrl(apiBaseUrlState);
+  const apiBaseUrlRef = useRef(apiBaseUrl);
+  const initialAccessTokenRef = useRef(accessToken);
+  const initialApiBaseUrlRef = useRef(apiBaseUrl);
+  apiBaseUrlRef.current = apiBaseUrl;
 
   const setApiConnectivityIfChanged = useCallback((next: ApiConnectivity) => {
     const current = apiConnectivityRef.current;
@@ -136,18 +154,20 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const setApiBaseUrl = useCallback(
     (value: string) => {
       const normalizedValue = normalizeApiBaseUrl(value);
-      setApiBaseUrlState(normalizedValue);
-      if (normalizedValue !== apiBaseUrl) {
-        setApiConnectivityIfChanged(INITIAL_API_CONNECTIVITY);
+      if (normalizedValue === apiBaseUrlRef.current) {
+        return;
       }
+      apiBaseUrlRef.current = normalizedValue;
+      setApiBaseUrlState(normalizedValue);
+      setApiConnectivityIfChanged(INITIAL_API_CONNECTIVITY);
     },
-    [apiBaseUrl, setApiConnectivityIfChanged],
+    [setApiConnectivityIfChanged],
   );
 
   const probeApiConnectivity = useCallback(
     async (apiBaseUrlOverride?: string) => {
       const resolvedApiBaseUrl = normalizeApiBaseUrl(
-        apiBaseUrlOverride ?? apiBaseUrl,
+        apiBaseUrlOverride ?? apiBaseUrlRef.current,
       );
       setApiConnectivityIfChanged({
         status: "checking",
@@ -186,7 +206,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
         return false;
       }
     },
-    [apiBaseUrl, setApiConnectivityIfChanged],
+    [setApiConnectivityIfChanged],
   );
 
   const authorizedFetch = useCallback<AuthorizedFetch>(
@@ -238,16 +258,25 @@ export function SessionProvider({ children }: PropsWithChildren) {
     [accessToken, apiBaseUrl],
   );
 
-  const hydrateSession = useCallback(
-    async (tokenToUse: string, apiBaseUrlOverride?: string) => {
-      const resolvedApiBaseUrl = apiBaseUrlOverride ?? apiBaseUrl;
-      setIsCheckingSession(true);
+  useEffect(() => {
+    const storedAccessToken = initialAccessTokenRef.current;
+    const resolvedApiBaseUrl = initialApiBaseUrlRef.current;
+
+    if (!storedAccessToken) {
+      setSessionError(null);
+      setIsCheckingSession(false);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const bootstrapSession = async () => {
       try {
         const response = await fetch(
           buildApiUrl(resolvedApiBaseUrl, "/api/v1/auth/me"),
           {
             headers: {
-              Authorization: `Bearer ${tokenToUse}`,
+              Authorization: `Bearer ${storedAccessToken}`,
             },
             cache: "no-store",
           },
@@ -258,9 +287,15 @@ export function SessionProvider({ children }: PropsWithChildren) {
         }
 
         const payload = (await response.json()) as CurrentUser;
+        if (isCancelled) {
+          return;
+        }
         setCurrentUser(payload);
         setSessionError(null);
       } catch (error) {
+        if (isCancelled) {
+          return;
+        }
         setCurrentUser(null);
         setAccessToken("");
         setSessionError(
@@ -271,36 +306,18 @@ export function SessionProvider({ children }: PropsWithChildren) {
               : "Session is missing or no longer valid.",
         );
       } finally {
-        setIsCheckingSession(false);
+        if (!isCancelled) {
+          setIsCheckingSession(false);
+        }
       }
-    },
-    [apiBaseUrl],
-  );
+    };
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
+    void bootstrapSession();
 
-    const storedApiBaseUrl = window.localStorage.getItem(API_BASE_URL_STORAGE_KEY);
-    const storedAccessToken = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-    const resolvedApiBaseUrl = normalizeApiBaseUrl(
-      storedApiBaseUrl ?? DEFAULT_API_BASE_URL,
-    );
-
-    if (storedApiBaseUrl) {
-      setApiBaseUrlState(resolvedApiBaseUrl);
-    }
-
-    if (storedAccessToken) {
-      setAccessToken(storedAccessToken);
-      void hydrateSession(storedAccessToken, resolvedApiBaseUrl);
-      return;
-    }
-
-    setSessionError(null);
-    setIsCheckingSession(false);
-  }, [hydrateSession]);
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
