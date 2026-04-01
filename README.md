@@ -57,10 +57,39 @@ make down
 make logs
 make test-api
 make test-runtime-foundations
+make seed-command-execution
 make lint-api
 make format-api
 make typecheck-api
 ```
+
+## Reproducible Real Command Seed
+
+Use the tracked seed workflow below whenever a local DB reset removes the dev/demo command context needed for truthful relay-control and on-demand-read execution.
+
+1. Start the local platform if it is not already running:
+
+   ```bash
+   make up
+   ```
+
+2. Recreate the seeded command context and sample recent command history:
+
+   ```bash
+   make seed-command-execution
+   ```
+
+This workflow is idempotent. It restarts the API first so the bootstrap super-admin account is recreated after local DB resets, then ensures one seeded meter plus the required manufacturer, model, communication profile, meter profile, communication endpoint, protocol association profile, endpoint assignment, and command templates. It also ensures one successful relay-disconnect execution and one successful on-demand-read execution so `/commands` and the meter command surfaces have real recent history to render.
+
+The seed helper uses the existing application APIs rather than direct database writes. By default it targets `http://localhost:8000/api/v1` and logs in with the bootstrap super-admin account from the example local environment. Override the connection or credentials when needed with:
+
+```bash
+SUNRISE_SEED_API_BASE_URL=http://localhost:8000/api/v1
+SUNRISE_SEED_USERNAME=admin
+SUNRISE_SEED_PASSWORD=ChangeThisPassword123!
+```
+
+The current local runtime path is safe for dev/demo/test use because the execute-now flow runs through the bounded Gurux stub adapter rather than field hardware.
 
 ## Focused Runtime Tests
 
