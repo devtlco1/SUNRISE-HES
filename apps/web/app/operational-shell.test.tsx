@@ -238,6 +238,89 @@ describe("OperationalShell", () => {
     expect(window.localStorage.getItem("sunrise.web.currentUser")).toBeNull();
   });
 
+  it("keeps shell navigation available across the adopted protected surfaces", async () => {
+    window.localStorage.setItem("sunrise.web.accessToken", "token-1");
+    window.localStorage.setItem(
+      "sunrise.web.currentUser",
+      JSON.stringify({
+        id: "user-1",
+        username: "ops.user",
+        email: "ops@example.com",
+        full_name: "Ops User",
+        status: "active",
+        is_superuser: true,
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          id: "user-1",
+          username: "ops.user",
+          email: "ops@example.com",
+          full_name: "Ops User",
+          status: "active",
+          is_superuser: true,
+        }),
+      ),
+    );
+
+    render(
+      <OperationalShell
+        eyebrow="Operational Pages"
+        title="Commands"
+        description="Shell test"
+        currentMeterId="meter-1"
+      >
+        {() => <div>Protected child</div>}
+      </OperationalShell>,
+    );
+
+    expect(await screen.findByText("Protected child")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dashboard home" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(screen.getByRole("link", { name: "Meters" })).toHaveAttribute(
+      "href",
+      "/meters",
+    );
+    expect(screen.getByRole("link", { name: "Commands" })).toHaveAttribute(
+      "href",
+      "/commands",
+    );
+    expect(screen.getByRole("link", { name: "Connectivity" })).toHaveAttribute(
+      "href",
+      "/connectivity",
+    );
+    expect(
+      screen.getByRole("link", { name: "Jobs / Events / Alerts" }),
+    ).toHaveAttribute("href", "/jobs-events-alerts");
+    expect(screen.getByRole("link", { name: "Subscribers" })).toHaveAttribute(
+      "href",
+      "/subscribers",
+    );
+    expect(screen.getByRole("link", { name: "Accounts" })).toHaveAttribute(
+      "href",
+      "/accounts",
+    );
+    expect(screen.getByRole("link", { name: "Service Points" })).toHaveAttribute(
+      "href",
+      "/service-points",
+    );
+    expect(screen.getByRole("link", { name: "GIS Lite" })).toHaveAttribute(
+      "href",
+      "/gis-lite",
+    );
+    expect(
+      screen.getByRole("link", { name: "Transformers / Substations" }),
+    ).toHaveAttribute("href", "/transformers-substations");
+    expect(screen.getByRole("link", { name: "Current meter" })).toHaveAttribute(
+      "href",
+      "/meters/meter-1",
+    );
+  });
+
   it("hydrates the shell without mismatching stored API base URL text", async () => {
     window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:9000/");
     const fetchMock = vi.fn();
