@@ -1,7 +1,7 @@
 COMPOSE ?= docker compose
 PYTHON ?= python3
 
-.PHONY: up down logs api-shell web-shell test-api test-runtime-foundations lint-api format-api typecheck-api seed-command-execution
+.PHONY: up down logs api-shell web-shell test-api test-runtime-foundations lint-api format-api typecheck-api seed-command-execution verify-command-execution-seed
 
 up:
 	$(COMPOSE) up --build
@@ -43,3 +43,7 @@ seed-command-execution:
 	$(COMPOSE) up -d postgres redis api
 	$(COMPOSE) restart api
 	$(PYTHON) apps/api/scripts/seed_real_command_execution.py
+
+verify-command-execution-seed:
+	$(COMPOSE) up -d postgres redis api
+	$(PYTHON) apps/api/scripts/verify_seeded_command_context.py

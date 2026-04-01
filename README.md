@@ -58,6 +58,7 @@ make logs
 make test-api
 make test-runtime-foundations
 make seed-command-execution
+make verify-command-execution-seed
 make lint-api
 make format-api
 make typecheck-api
@@ -90,6 +91,14 @@ SUNRISE_SEED_PASSWORD=ChangeThisPassword123!
 ```
 
 The current local runtime path is safe for dev/demo/test use because the execute-now flow runs through the bounded Gurux stub adapter rather than field hardware.
+
+To verify that the seeded context is still present without reseeding it, run:
+
+```bash
+make verify-command-execution-seed
+```
+
+This verifier checks that the seeded meter is visible, that meter-scoped relay-control and on-demand-read succeeded history exists, and that the global recent command projection still includes the seeded meter context. It fails clearly and boundedly when the seeded context is missing.
 
 ## Focused Runtime Tests
 
