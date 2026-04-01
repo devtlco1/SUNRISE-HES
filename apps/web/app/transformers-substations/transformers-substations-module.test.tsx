@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "../operational-shell";
@@ -116,26 +117,41 @@ describe("TransformersSubstationsModule", () => {
     expect(
       await screen.findByRole("link", { name: "Transformers / Substations" }),
     ).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /TX-1001/i })).toHaveAttribute(
-      "href",
-      "/transformers-substations/transformer-1",
-    );
-    expect(screen.getByRole("link", { name: /TX-1002/i })).toHaveAttribute(
-      "href",
-      "/transformers-substations/transformer-2",
-    );
+    expect(
+      await screen.findByRole("heading", { name: "Infrastructure operations center" }),
+    ).toBeInTheDocument();
+    expect(await screen.findAllByText(/TX-1001/i)).not.toHaveLength(0);
+    expect(screen.getAllByText(/TX-1002/i)).not.toHaveLength(0);
+    expect(
+      screen.getAllByRole("link", { name: "Open infrastructure detail" }),
+    ).not.toHaveLength(0);
   });
 
   it("keeps the bounded navigation path into infrastructure detail clear", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
 
     renderTransformersSubstationsModuleInShell();
 
-    const detailLink = await screen.findByRole("link", {
-      name: /TX-1001/i,
+    const inspectButtons = await screen.findAllByRole("button", {
+      name: "Inspect summary",
     });
-    expect(detailLink).toHaveAttribute("href", "/transformers-substations/transformer-1");
+    await user.click(inspectButtons[1]);
+
+    const summaryPanel = screen
+      .getByRole("heading", { name: "Selected infrastructure summary" })
+      .closest("section");
+    expect(summaryPanel).not.toBeNull();
+
+    expect(
+      within(summaryPanel as HTMLElement).getByText(/TX-1002/i),
+    ).toBeInTheDocument();
+    expect(
+      within(summaryPanel as HTMLElement).getByRole("link", {
+        name: "Open infrastructure detail",
+      }),
+    ).toHaveAttribute("href", "/transformers-substations/transformer-2");
   });
 
   it("renders an empty state when no infrastructure items are available", async () => {

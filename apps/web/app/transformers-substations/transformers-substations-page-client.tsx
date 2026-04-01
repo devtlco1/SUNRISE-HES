@@ -8,7 +8,7 @@ export function TransformersSubstationsPageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="Transformer / Substation Visibility MVP"
-      description="Read-only infrastructure visibility across transformers, parent substations, and bounded linked operational context."
+      description="Infrastructure visibility across transformers, parent substations, and bounded linked operational context."
     >
       {({ authorizedFetch }) => (
         <TransformersSubstationsModule authorizedFetch={authorizedFetch} />

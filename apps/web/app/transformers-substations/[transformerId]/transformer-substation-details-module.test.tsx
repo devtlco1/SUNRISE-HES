@@ -124,7 +124,10 @@ describe("TransformerSubstationDetailsModule", () => {
 
     renderTransformerSubstationDetailsModuleInShell();
 
-    expect(await screen.findByText("TX-1001 · Airport Transformer")).toBeInTheDocument();
+    expect(
+      await screen.findAllByText("TX-1001 · Airport Transformer"),
+    ).not.toHaveLength(0);
+    expect(screen.getAllByText("Active")).not.toHaveLength(0);
     expect(screen.getByRole("link", { name: "Open GIS Lite" })).toHaveAttribute(
       "href",
       "/gis-lite",

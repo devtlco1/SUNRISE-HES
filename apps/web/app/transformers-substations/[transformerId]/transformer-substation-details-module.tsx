@@ -52,6 +52,37 @@ type TransformerSubstationDetail = {
   linked_service_points: LinkedServicePoint[];
 };
 
+function formatStatusLabel(value: string): string {
+  return value
+    .split(/[_\s/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("active") ||
+    normalized.includes("registered") ||
+    normalized.includes("energized")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("inactive") ||
+    normalized.includes("fault") ||
+    normalized.includes("outage") ||
+    normalized.includes("offline")
+  ) {
+    return "danger";
+  }
+  if (normalized.includes("warning") || normalized.includes("maintenance")) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 export function TransformerSubstationDetailsModule({
   transformerId,
   authorizedFetch,
@@ -97,19 +128,59 @@ export function TransformerSubstationDetailsModule({
 
       {detail ? (
         <>
-          <div className="section-heading">
-            <div>
-              <h2>
-                {detail.code} · {detail.name}
-              </h2>
-              <p className="muted">
-                {detail.status} transformer in feeder {detail.feeder_code} with{" "}
-                {detail.linked_meter_count} linked meter(s) and{" "}
-                {detail.linked_service_point_count} linked service point(s).
-              </p>
+          <section className="subpanel infrastructure-overview-panel">
+            <section className="infrastructure-detail-hero">
+              <div className="infrastructure-detail-title-row">
+                <div>
+                  <p className="eyebrow">Infrastructure Detail</p>
+                  <h2>
+                    {detail.code} · {detail.name}
+                  </h2>
+                  <p className="muted">
+                    {formatStatusLabel(detail.status)} transformer in feeder {detail.feeder_code} with{" "}
+                    {detail.linked_meter_count} linked meter(s) and{" "}
+                    {detail.linked_service_point_count} linked service point(s).
+                  </p>
+                </div>
+                <span className={`status-pill ${buildStatusTone(detail.status)}`}>
+                  {formatStatusLabel(detail.status)}
+                </span>
+              </div>
+
+              <div className="command-list-item-badges">
+                <span className="artifact-pill">Transformer {detail.id}</span>
+                <span className="artifact-pill">
+                  {detail.substation.code} · {detail.substation.name}
+                </span>
+                <span className="artifact-pill">
+                  {detail.description ?? "No infrastructure description"}
+                </span>
+              </div>
+            </section>
+
+            <div className="infrastructure-overview-grid">
+              <div className="stat-card infrastructure-overview-card">
+                <span className="stat-label">Feeder</span>
+                <strong>
+                  {detail.feeder_code} · {detail.feeder_name}
+                </strong>
+              </div>
+              <div className="stat-card infrastructure-overview-card">
+                <span className="stat-label">Substation</span>
+                <strong>
+                  {detail.substation.code} · {detail.substation.name}
+                </strong>
+              </div>
+              <div className="stat-card infrastructure-overview-card">
+                <span className="stat-label">Linked meters</span>
+                <strong>{detail.linked_meter_count}</strong>
+              </div>
+              <div className="stat-card infrastructure-overview-card">
+                <span className="stat-label">Linked service points</span>
+                <strong>{detail.linked_service_point_count}</strong>
+              </div>
             </div>
-            <span className="status-pill">{detail.status}</span>
-          </div>
+          </section>
 
           <section className="subpanel">
             <div className="section-heading">
@@ -180,7 +251,9 @@ export function TransformerSubstationDetailsModule({
                   editing.
                 </p>
               </div>
-              <span className="status-pill">{detail.substation.status}</span>
+              <span className={`status-pill ${buildStatusTone(detail.substation.status)}`}>
+                {formatStatusLabel(detail.substation.status)}
+              </span>
             </div>
             <div className="meter-list">
               <div className="meter-list-item">
@@ -188,15 +261,20 @@ export function TransformerSubstationDetailsModule({
                   <strong>
                     {detail.substation.code} · {detail.substation.name}
                   </strong>
-                  <span className="status-pill">{detail.substation.status}</span>
+                  <span className={`status-pill ${buildStatusTone(detail.substation.status)}`}>
+                    {formatStatusLabel(detail.substation.status)}
+                  </span>
                 </div>
-                <div className="command-list-item-meta">
-                  <span>Substation ID {detail.substation.id}</span>
-                  <span>
+                <div className="command-list-item-badges">
+                  <span className="artifact-pill">
                     Sector {detail.substation.sector_code} · {detail.substation.sector_name}
+                  </span>
+                  <span className="artifact-pill">
+                    Region {detail.substation.region_code} · {detail.substation.region_name}
                   </span>
                 </div>
                 <div className="command-list-item-meta">
+                  <span>Substation ID {detail.substation.id}</span>
                   <span>
                     Region {detail.substation.region_code} · {detail.substation.region_name}
                   </span>
@@ -235,16 +313,24 @@ export function TransformerSubstationDetailsModule({
                 >
                   <div className="command-list-item-header">
                     <strong>{servicePoint.service_point_code}</strong>
-                    <span className="status-pill">
-                      {servicePoint.is_active ? "active" : "inactive"}
+                    <span
+                      className={`status-pill ${buildStatusTone(
+                        servicePoint.is_active ? "active" : "inactive",
+                      )}`}
+                    >
+                      {servicePoint.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </div>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {formatStatusLabel(servicePoint.premises_type ?? "premise")}
                     </span>
                   </div>
                   <div className="command-list-item-meta">
                     <span>Service point ID {servicePoint.id}</span>
-                    <span>{servicePoint.premises_type ?? "No premise type"}</span>
+                    <span>{servicePoint.address_line ?? "No address summary"}</span>
                   </div>
                   <div className="command-list-item-meta">
-                    <span>{servicePoint.address_line ?? "No address summary"}</span>
                     <span>Open existing service point detail</span>
                   </div>
                 </Link>
@@ -270,18 +356,22 @@ export function TransformerSubstationDetailsModule({
                 <Link key={meter.id} className="meter-list-item" href={`/meters/${meter.id}`}>
                   <div className="command-list-item-header">
                     <strong>{meter.serial_number}</strong>
-                    <span className="status-pill">{meter.current_status}</span>
+                    <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
+                      {formatStatusLabel(meter.current_status)}
+                    </span>
                   </div>
-                  <div className="command-list-item-meta">
-                    <span>Meter ID {meter.id}</span>
-                    <span>{meter.utility_meter_number ?? "No utility number"}</span>
-                  </div>
-                  <div className="command-list-item-meta">
-                    <span>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {meter.utility_meter_number ?? "No utility number"}
+                    </span>
+                    <span className="artifact-pill">
                       {meter.service_point_code
                         ? `Service point ${meter.service_point_code}`
                         : "No linked service point"}
                     </span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>Meter ID {meter.id}</span>
                     <span>Open existing meter detail</span>
                   </div>
                 </Link>

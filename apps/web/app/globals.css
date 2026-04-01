@@ -505,6 +505,12 @@ a {
   grid-template-columns: 1.1fr 0.95fr 1.15fr;
 }
 
+.infrastructure-module-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1.15fr 1fr;
+}
+
 .jobs-activity-layout {
   display: grid;
   gap: 1rem;
@@ -553,6 +559,12 @@ a {
     rgba(2, 6, 23, 0.24);
 }
 
+.infrastructure-overview-panel {
+  background:
+    linear-gradient(180deg, rgba(249, 115, 22, 0.08), rgba(15, 23, 42, 0.16)),
+    rgba(2, 6, 23, 0.24);
+}
+
 .commands-overview-grid {
   display: grid;
   gap: 0.9rem;
@@ -595,6 +607,12 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+.infrastructure-overview-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .commands-overview-card p {
   margin: 0.55rem 0 0;
   font-size: 0.9rem;
@@ -632,6 +650,12 @@ a {
 }
 
 .gis-overview-card p {
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.infrastructure-overview-card p {
   margin: 0.55rem 0 0;
   font-size: 0.9rem;
   line-height: 1.5;
@@ -727,6 +751,11 @@ a {
 .gis-entity-item.selected {
   border-color: rgba(34, 197, 94, 0.42);
   box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.12);
+}
+
+.infrastructure-list-item.selected {
+  border-color: rgba(249, 115, 22, 0.42);
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.12);
 }
 
 .meter-registry-item {
@@ -911,6 +940,13 @@ a {
   border: 1px solid rgba(34, 197, 94, 0.18);
 }
 
+.infrastructure-detail-hero {
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(249, 115, 22, 0.18);
+}
+
 .commands-detail-title-row {
   display: flex;
   justify-content: space-between;
@@ -954,6 +990,13 @@ a {
 }
 
 .gis-detail-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.infrastructure-detail-title-row {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -1005,6 +1048,13 @@ a {
   letter-spacing: -0.03em;
 }
 
+.infrastructure-detail-title-row h2,
+.infrastructure-detail-title-row h3 {
+  margin: 0;
+  font-size: 1.55rem;
+  letter-spacing: -0.03em;
+}
+
 .commands-detail-title-row .muted {
   margin: 0.55rem 0 0;
 }
@@ -1030,6 +1080,10 @@ a {
 }
 
 .gis-detail-title-row .muted {
+  margin: 0.55rem 0 0;
+}
+
+.infrastructure-detail-title-row .muted {
   margin: 0.55rem 0 0;
 }
 
@@ -1152,6 +1206,7 @@ a {
   .accounts-module-layout,
   .service-points-module-layout,
   .gis-module-layout,
+  .infrastructure-module-layout,
   .subscribers-module-layout,
   .jobs-activity-layout {
     grid-template-columns: 1fr;
@@ -1174,6 +1229,7 @@ a {
   .account-detail-title-row,
   .service-point-detail-title-row,
   .gis-detail-title-row,
+  .infrastructure-detail-title-row,
   .subscriber-detail-title-row,
   .jobs-activity-hero-row,
   .connectivity-row-actions,
