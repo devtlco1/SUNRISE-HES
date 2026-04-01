@@ -8,7 +8,7 @@ export function ConnectivityPageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="Connectivity Overview MVP"
-      description="Compact operational visibility into meter connectivity context with direct paths into the existing meter details experience."
+      description="Operational visibility into meter, endpoint, and recent session context with direct paths into the existing meter details experience."
     >
       {({ authorizedFetch }) => (
         <ConnectivityModule authorizedFetch={authorizedFetch} />

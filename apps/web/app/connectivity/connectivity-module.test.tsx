@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "../operational-shell";
@@ -160,7 +161,9 @@ describe("ConnectivityModule", () => {
     renderConnectivityModuleInShell();
 
     expect(await screen.findByRole("link", { name: "Connectivity" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Connectivity overview" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Connectivity operations center" }),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Meters in result set")).toBeInTheDocument();
@@ -175,16 +178,41 @@ describe("ConnectivityModule", () => {
 
     renderConnectivityModuleInShell();
 
-    expect(await screen.findByRole("link", { name: /SN-1001/i })).toHaveAttribute(
-      "href",
-      "/meters/meter-1",
-    );
-    expect(screen.getByRole("link", { name: /SN-1002/i })).toHaveAttribute(
+    const meterDetailLinks = await screen.findAllByRole("link", {
+      name: "Open meter detail",
+    });
+    expect(meterDetailLinks[0]).toHaveAttribute("href", "/meters/meter-1");
+    expect(meterDetailLinks[1]).toHaveAttribute(
       "href",
       "/meters/meter-2",
     );
-    expect(screen.getByText("TCP Primary")).toBeInTheDocument();
-    expect(screen.getByText("succeeded (connectivity_test)")).toBeInTheDocument();
+    expect(screen.getAllByText("TCP Primary")).not.toHaveLength(0);
+    expect(screen.getAllByText("succeeded (connectivity_test)")).not.toHaveLength(0);
+  });
+
+  it("renders bounded connectivity detail when a meter summary is selected", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderConnectivityModuleInShell();
+
+    const inspectButtons = await screen.findAllByRole("button", {
+      name: "Inspect summary",
+    });
+    await user.click(inspectButtons[1]);
+
+    const detailPanel = screen.getByRole("heading", { name: "Connectivity detail" }).closest("section");
+    expect(detailPanel).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        within(detailPanel as HTMLElement).getAllByText("SN-1002"),
+      ).not.toHaveLength(0);
+      expect(within(detailPanel as HTMLElement).getByText("No active endpoint")).toBeInTheDocument();
+      expect(
+        within(detailPanel as HTMLElement).getAllByText("No recent session"),
+      ).not.toHaveLength(0);
+    });
   });
 
   it("renders a bounded loading state while the overview is bootstrapping", async () => {
