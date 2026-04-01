@@ -590,6 +590,10 @@ describe("MeterDetailsCommandsTab", () => {
     renderMeterTabInShell();
 
     expect(await screen.findByText("Authoritative Meter Record")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open readings" })).toHaveAttribute(
+      "href",
+      "/readings?meterId=meter-1",
+    );
     expect(screen.getByRole("link", { name: "Open account detail" })).toHaveAttribute(
       "href",
       "/accounts/account-1",

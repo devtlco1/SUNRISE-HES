@@ -958,6 +958,9 @@ export function MeterDetailsCommandsTab({
             </div>
 
             <div className="artifact-row">
+              <Link className="primary-button" href={`/readings?meterId=${meter.id}`}>
+                Open readings
+              </Link>
               {consumerLinkage?.consumer_id ? (
                 <Link
                   className="secondary-button"

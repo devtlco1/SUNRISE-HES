@@ -188,14 +188,16 @@ function createMockApi({
   return { fetchMock };
 }
 
-function renderReadingsModuleInShell() {
+function renderReadingsModuleInShell(initialMeterId?: string | null) {
   render(
     <OperationalShell
       eyebrow="Operational Pages"
       title="Readings Overview MVP"
       description="Bounded readings module"
     >
-      {({ authorizedFetch }) => <ReadingsModule authorizedFetch={authorizedFetch} />}
+      {({ authorizedFetch }) => (
+        <ReadingsModule authorizedFetch={authorizedFetch} initialMeterId={initialMeterId} />
+      )}
     </OperationalShell>,
   );
 }
@@ -262,6 +264,116 @@ describe("ReadingsModule", () => {
         within(billingPanel as HTMLElement).getByText(
           "No recent reading values available for the selected meter.",
         ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("preserves a handed-off meter context and loads its billing reads on arrival", async () => {
+    const { fetchMock } = createMockApi({
+      readingsByMeter: {
+        "meter-1": [
+          {
+            id: "reading-1",
+            batch_id: "batch-billing-1",
+            meter_id: "meter-1",
+            obis_code: "1.0.1.8.0.255",
+            reading_type: "register",
+            value_numeric: "123.456",
+            value_text: null,
+            value_timestamp: null,
+            unit: "kWh",
+            quality: "good",
+            captured_at: "2026-04-02T10:58:00.000Z",
+            metadata: null,
+          },
+        ],
+        "meter-2": [
+          {
+            id: "reading-2",
+            batch_id: "batch-billing-2",
+            meter_id: "meter-2",
+            obis_code: "1.0.1.8.0.255",
+            reading_type: "register",
+            value_numeric: "456.789",
+            value_text: null,
+            value_timestamp: null,
+            unit: "kWh",
+            quality: "good",
+            captured_at: "2026-04-03T10:58:00.000Z",
+            metadata: null,
+          },
+        ],
+      },
+      registerSnapshotsByMeter: {
+        "meter-1": [
+          {
+            id: "snapshot-billing-1",
+            meter_id: "meter-1",
+            related_batch_id: "batch-billing-1",
+            snapshot_type: "billing",
+            captured_at: "2026-04-02T10:58:00.000Z",
+            payload: {
+              total_import: "123.456",
+              reset_reason: "scheduled_cycle",
+            },
+            checksum: "checksum-1",
+          },
+        ],
+        "meter-2": [
+          {
+            id: "snapshot-billing-2",
+            meter_id: "meter-2",
+            related_batch_id: "batch-billing-2",
+            snapshot_type: "billing",
+            captured_at: "2026-04-03T10:58:00.000Z",
+            payload: {
+              total_import: "456.789",
+              reset_reason: "manual_close",
+            },
+            checksum: "checksum-2",
+          },
+        ],
+      },
+      readingBatchesByMeter: {
+        "meter-1": [
+          {
+            id: "batch-billing-1",
+            meter_id: "meter-1",
+            source_type: "manual_read",
+            captured_at: "2026-04-02T10:58:00.000Z",
+            received_at: "2026-04-02T10:59:00.000Z",
+            status: "received",
+            reading_context: null,
+            correlation_id: "corr-1",
+          },
+        ],
+        "meter-2": [
+          {
+            id: "batch-billing-2",
+            meter_id: "meter-2",
+            source_type: "scheduled_read",
+            captured_at: "2026-04-03T10:58:00.000Z",
+            received_at: "2026-04-03T10:59:00.000Z",
+            status: "received",
+            reading_context: null,
+            correlation_id: "corr-2",
+          },
+        ],
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderReadingsModuleInShell("meter-2");
+
+    expect(
+      await screen.findByText("Meter handoff preserved for SN-1002"),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getAllByText("SN-1002")).not.toHaveLength(0);
+      expect(screen.getAllByText("Total Import: 456.789")).not.toHaveLength(0);
+      expect(
+        screen.getByText("Total Import 456.789 • Reset Reason manual_close"),
       ).toBeInTheDocument();
     });
   });

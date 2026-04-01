@@ -188,8 +188,10 @@ function formatReadingValue(reading: MeterReadingItem): string {
 
 export function ReadingsModule({
   authorizedFetch,
+  initialMeterId = null,
 }: {
   authorizedFetch: AuthorizedFetch;
+  initialMeterId?: string | null;
 }) {
   const [meters, setMeters] = useState<MeterItem[]>([]);
   const [selectedMeterId, setSelectedMeterId] = useState<string | null>(null);
@@ -201,6 +203,7 @@ export function ReadingsModule({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [isLoadingOverview, setIsLoadingOverview] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const handedOffMeterId = initialMeterId?.trim() || null;
 
   const loadMeters = useCallback(async () => {
     setIsLoadingOverview(true);
@@ -217,6 +220,12 @@ export function ReadingsModule({
         ) {
           return currentSelectedMeterId;
         }
+        if (
+          handedOffMeterId &&
+          response.items.some((item) => item.id === handedOffMeterId)
+        ) {
+          return handedOffMeterId;
+        }
         return response.items[0]?.id ?? null;
       });
     } catch (error) {
@@ -229,7 +238,7 @@ export function ReadingsModule({
     } finally {
       setIsLoadingOverview(false);
     }
-  }, [authorizedFetch]);
+  }, [authorizedFetch, handedOffMeterId]);
 
   const loadSelectedMeterContext = useCallback(
     async (meterId: string) => {
@@ -386,7 +395,11 @@ export function ReadingsModule({
               </p>
             </div>
             <span className="artifact-pill">
-              {selectedMeter ? `Focused on ${selectedMeter.serial_number}` : "Awaiting meter selection"}
+              {selectedMeter
+                ? handedOffMeterId && selectedMeter.id === handedOffMeterId
+                  ? `Meter handoff preserved for ${selectedMeter.serial_number}`
+                  : `Focused on ${selectedMeter.serial_number}`
+                : "Awaiting meter selection"}
             </span>
           </div>
 
