@@ -576,6 +576,12 @@ export function ReadingsModule({
                   </div>
                 </div>
 
+                <div className="artifact-row">
+                  <Link className="primary-button" href={`/meters/${selectedMeter.id}`}>
+                    Return to meter detail
+                  </Link>
+                </div>
+
                 <section className="subpanel">
                   <div className="section-heading">
                     <div>

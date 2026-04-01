@@ -234,6 +234,10 @@ describe("ReadingsModule", () => {
     expect(
       screen.getAllByRole("link", { name: "Open meter detail" })[0],
     ).toHaveAttribute("href", "/meters/meter-1");
+    expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
+      "href",
+      "/meters/meter-1",
+    );
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
     expect(screen.getByText("Total Import 123.456 • Reset Reason scheduled_cycle")).toBeInTheDocument();
   });
@@ -376,6 +380,10 @@ describe("ReadingsModule", () => {
         screen.getByText("Total Import 456.789 • Reset Reason manual_close"),
       ).toBeInTheDocument();
     });
+    expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
+      "href",
+      "/meters/meter-2",
+    );
   });
 
   it("renders a bounded loading state while selected meter readings are bootstrapping", async () => {
