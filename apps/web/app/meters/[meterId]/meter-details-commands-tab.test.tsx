@@ -594,6 +594,10 @@ describe("MeterDetailsCommandsTab", () => {
       "href",
       "/readings?meterId=meter-1",
     );
+    expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
+      "href",
+      "/commands?meterId=meter-1",
+    );
     expect(screen.getByRole("link", { name: "Open account detail" })).toHaveAttribute(
       "href",
       "/accounts/account-1",

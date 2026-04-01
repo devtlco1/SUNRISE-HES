@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import type { AuthorizedFetch } from "../operational-shell";
 
@@ -243,8 +243,10 @@ function matchesApprovalSearch(command: CommandRecentItem, query: string): boole
 
 export function CommandsModule({
   authorizedFetch,
+  initialMeterIds = [],
 }: {
   authorizedFetch: AuthorizedFetch;
+  initialMeterIds?: string[];
 }) {
   const [recentFamilyFilter, setRecentFamilyFilter] = useState<FamilyFilter>("all");
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[]>([]);
@@ -287,6 +289,18 @@ export function CommandsModule({
   const [approvalHistoryFilter, setApprovalHistoryFilter] =
     useState<ApprovalHistoryFilter>("all_decisions");
   const [approvalSearchQuery, setApprovalSearchQuery] = useState("");
+  const hasAppliedInitialTargetScopeRef = useRef(false);
+  const handedOffMeterIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          initialMeterIds
+            .map((meterId) => meterId.trim())
+            .filter(Boolean),
+        ),
+      ),
+    [initialMeterIds],
+  );
 
   const loadRecentCommands = useCallback(
     async (preferredCommandId?: string) => {
@@ -492,11 +506,60 @@ export function CommandsModule({
     );
   }, [availableMeters, wizardMeterSearchQuery]);
 
+  const selectedWizardMeters = useMemo(() => {
+    const metersById = new Map(availableMeters.map((meter) => [meter.id, meter]));
+    return selectedWizardMeterIds
+      .map((meterId) => metersById.get(meterId) ?? null)
+      .filter((meter): meter is MeterItem => meter !== null);
+  }, [availableMeters, selectedWizardMeterIds]);
+
+  const handedOffWizardMeters = useMemo(() => {
+    const metersById = new Map(availableMeters.map((meter) => [meter.id, meter]));
+    return handedOffMeterIds
+      .map((meterId) => metersById.get(meterId) ?? null)
+      .filter((meter): meter is MeterItem => meter !== null);
+  }, [availableMeters, handedOffMeterIds]);
+
+  const unresolvedHandedOffMeterIds = useMemo(
+    () =>
+      handedOffMeterIds.filter(
+        (meterId) => !availableMeters.some((meter) => meter.id === meterId),
+      ),
+    [availableMeters, handedOffMeterIds],
+  );
+
   useEffect(() => {
     if (!wizardTemplates.some((template) => template.id === wizardTemplateId)) {
       setWizardTemplateId(wizardTemplates[0]?.id ?? "");
     }
   }, [wizardTemplateId, wizardTemplates]);
+
+  useEffect(() => {
+    if (hasAppliedInitialTargetScopeRef.current) {
+      return;
+    }
+    if (isLoadingWizardContext) {
+      return;
+    }
+    if (availableMeters.length === 0 && wizardContextError === null) {
+      return;
+    }
+    if (handedOffMeterIds.length === 0) {
+      hasAppliedInitialTargetScopeRef.current = true;
+      return;
+    }
+
+    const availableMeterIds = new Set(availableMeters.map((meter) => meter.id));
+    const matchedHandedOffMeterIds = handedOffMeterIds.filter((meterId) =>
+      availableMeterIds.has(meterId),
+    );
+    setSelectedWizardMeterIds((currentSelectedMeterIds) =>
+      currentSelectedMeterIds.length > 0
+        ? currentSelectedMeterIds
+        : matchedHandedOffMeterIds,
+    );
+    hasAppliedInitialTargetScopeRef.current = true;
+  }, [availableMeters, handedOffMeterIds, isLoadingWizardContext, wizardContextError]);
 
   const filteredPendingApprovals = useMemo(
     () =>
@@ -578,6 +641,10 @@ export function CommandsModule({
   const selectAllFilteredWizardMeters = useCallback(() => {
     setSelectedWizardMeterIds(filteredWizardMeters.map((meter) => meter.id));
   }, [filteredWizardMeters]);
+
+  const restoreHandedOffWizardMeters = useCallback(() => {
+    setSelectedWizardMeterIds(handedOffWizardMeters.map((meter) => meter.id));
+  }, [handedOffWizardMeters]);
 
   const handleBulkSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -821,6 +888,86 @@ export function CommandsModule({
                   </span>
                 </div>
 
+                {handedOffMeterIds.length > 0 ? (
+                  <div className="artifact-row">
+                    <span className="artifact-pill">
+                      {handedOffWizardMeters.length} handed-off target
+                      {handedOffWizardMeters.length === 1 ? "" : "s"} loaded
+                    </span>
+                    {unresolvedHandedOffMeterIds.length > 0 ? (
+                      <span className="artifact-pill">
+                        {unresolvedHandedOffMeterIds.length} handoff target
+                        {unresolvedHandedOffMeterIds.length === 1 ? "" : "s"} outside the
+                        current wizard context
+                      </span>
+                    ) : null}
+                    <span className="muted">
+                      Meter-context handoff is preserved until you change the target scope.
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="detail-stack">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Selected target review</h3>
+                      <p className="muted">
+                        Confirm the current bulk target scope and remove any meter before
+                        submitting for approval.
+                      </p>
+                    </div>
+                    <span className="artifact-pill">
+                      {selectedWizardMeters.length} included meter
+                      {selectedWizardMeters.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  {selectedWizardMeters.length === 0 ? (
+                    <p className="muted">
+                      No targets selected yet. Choose meters below
+                      {handedOffMeterIds.length > 0
+                        ? " or restore the handed-off scope."
+                        : "."}
+                    </p>
+                  ) : (
+                    <div className="command-list">
+                      {selectedWizardMeters.map((meter) => (
+                        <article key={meter.id} className="command-list-item">
+                          <div className="command-list-item-header">
+                            <strong>{meter.serial_number}</strong>
+                            <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
+                              {formatStatusLabel(meter.current_status)}
+                            </span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>Meter {meter.id}</span>
+                            <span>
+                              {meter.utility_meter_number ?? "No utility meter number"}
+                            </span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>
+                              {meter.communication_profile_code ??
+                                meter.meter_profile_code ??
+                                "No profile summary"}
+                            </span>
+                            <span>Last seen {formatDateTime(meter.last_seen_at)}</span>
+                          </div>
+                          <div className="artifact-row">
+                            <button
+                              className="secondary-button"
+                              onClick={() => toggleWizardMeterSelection(meter.id)}
+                              type="button"
+                            >
+                              Remove {meter.serial_number}
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="inline-form">
                   <label className="field">
                     <span>Target filter</span>
@@ -849,6 +996,15 @@ export function CommandsModule({
                   >
                     Clear selection
                   </button>
+                  {handedOffMeterIds.length > 0 ? (
+                    <button
+                      className="secondary-button"
+                      onClick={restoreHandedOffWizardMeters}
+                      type="button"
+                    >
+                      Restore handed-off targets
+                    </button>
+                  ) : null}
                   <button
                     className="primary-button"
                     disabled={

@@ -961,6 +961,9 @@ export function MeterDetailsCommandsTab({
               <Link className="primary-button" href={`/readings?meterId=${meter.id}`}>
                 Open readings
               </Link>
+              <Link className="secondary-button" href={`/commands?meterId=${meter.id}`}>
+                Open bulk commands
+              </Link>
               {consumerLinkage?.consumer_id ? (
                 <Link
                   className="secondary-button"

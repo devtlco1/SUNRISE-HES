@@ -449,14 +449,16 @@ function createMockApi() {
   return { fetchMock };
 }
 
-function renderCommandsModuleInShell() {
+function renderCommandsModuleInShell({ initialMeterIds = [] }: { initialMeterIds?: string[] } = {}) {
   render(
     <OperationalShell
       eyebrow="Operational Pages"
       title="Global Commands MVP"
       description="Bounded commands module"
     >
-      {({ authorizedFetch }) => <CommandsModule authorizedFetch={authorizedFetch} />}
+      {({ authorizedFetch }) => (
+        <CommandsModule authorizedFetch={authorizedFetch} initialMeterIds={initialMeterIds} />
+      )}
     </OperationalShell>,
   );
 }
@@ -531,6 +533,55 @@ describe("CommandsModule", () => {
     expect(screen.getAllByText("Profile capture")).not.toHaveLength(0);
     expect(screen.getAllByText("Relay control")).not.toHaveLength(0);
     expect(screen.getAllByText("On-demand read")).not.toHaveLength(0);
+  });
+
+  it("initializes bulk target scope from handed-off meter context and supports removal", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell({ initialMeterIds: ["meter-2", "meter-3"] });
+
+    expect(await screen.findByText("2 handed-off targets loaded")).toBeInTheDocument();
+
+    const selectedTargetReviewHeading = screen.getByRole("heading", {
+      name: "Selected target review",
+    });
+    const selectedTargetReview = selectedTargetReviewHeading.closest(".detail-stack");
+    expect(selectedTargetReview).not.toBeNull();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Restore handed-off targets" })).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByRole("button", {
+          name: "Remove SN-1002",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByRole("button", {
+          name: "Remove SN-1003",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(
+      within(selectedTargetReview as HTMLElement).getByRole("button", {
+        name: "Remove SN-1002",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        within(selectedTargetReview as HTMLElement).queryByRole("button", {
+          name: "Remove SN-1002",
+        }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByRole("button", {
+          name: "Remove SN-1003",
+        }),
+      ).toBeInTheDocument();
+    });
   });
 
   it("submits a bounded bulk command request and shows it in the approvals queue", async () => {
