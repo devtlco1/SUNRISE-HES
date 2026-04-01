@@ -135,7 +135,7 @@ def resolve_protocol_execution_plan(
             ip_mode=communication_profile.ip_mode if communication_profile is not None else None,
             host=endpoint.host,
             port=endpoint.port or (communication_profile.port if communication_profile is not None else None),
-            ip_address=endpoint.ip_address,
+            ip_address=str(endpoint.ip_address) if endpoint.ip_address is not None else None,
             apn=endpoint.apn or (communication_profile.apn if communication_profile is not None else None),
             network_provider=endpoint.network_provider,
             gateway_identifier=endpoint.gateway_identifier,

@@ -96,6 +96,48 @@ def test_build_runtime_plan_from_valid_meter_command(client, db_session: Session
     assert payload["security"]["authentication_mode"] == "low"
 
 
+def test_build_runtime_plan_stringifies_inet_endpoint_ip_address(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    endpoint_assignment_id, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+    assignment = db_session.get(MeterEndpointAssignment, UUID(endpoint_assignment_id))
+    assert assignment is not None
+    endpoint = assignment.endpoint
+    assert endpoint is not None
+    endpoint.host = None
+    endpoint.ip_address = "127.0.0.1"
+    db_session.add(endpoint)
+    db_session.commit()
+    db_session.refresh(endpoint)
+    template_id = _create_command_template_record(client, token, "runtime-ip-address-only")
+
+    command_response = client.post(
+        f"/api/v1/meters/{meter_id}/commands",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "command_template_id": template_id,
+            "endpoint_assignment_id": endpoint_assignment_id,
+            "protocol_association_profile_id": protocol_profile_id,
+            "idempotency_key": f"runtime-ip-{_suffix()}",
+            "request_payload": {"obis": ["1.0.1.8.0.255"], "capture_mode": "current"},
+        },
+    )
+    assert command_response.status_code == 201
+
+    response = client.post(
+        f"/api/v1/internal/commands/{command_response.json()['id']}/build-runtime-plan",
+        headers={INTERNAL_TOKEN_HEADER: settings.internal_api_token},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["transport"]["host"] is None
+    assert payload["transport"]["ip_address"] == "127.0.0.1"
+
+
 def test_reject_runtime_plan_when_connectivity_or_protocol_missing(client, db_session: Session) -> None:
     token = _login_as_super_admin(client, db_session)
     meter_id = _create_meter_record(client, token)
