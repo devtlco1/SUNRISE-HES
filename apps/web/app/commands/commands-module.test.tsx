@@ -571,6 +571,15 @@ describe("CommandsModule", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Restore handed-off targets" })).toBeInTheDocument();
       expect(
+        within(selectedTargetReview as HTMLElement).getByText("2 handed-off targets"),
+      ).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByText("0 manually added targets"),
+      ).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getAllByText("Handed-off target"),
+      ).toHaveLength(2);
+      expect(
         within(selectedTargetReview as HTMLElement).getByRole("button", {
           name: "Remove SN-1002",
         }),
@@ -582,6 +591,36 @@ describe("CommandsModule", () => {
       ).toBeInTheDocument();
     });
 
+    await user.type(screen.getByRole("searchbox", { name: "Bulk target filter" }), "SN-1001");
+    await user.click(screen.getByRole("checkbox", { name: "Include in bulk request" }));
+
+    await waitFor(() => {
+      expect(
+        within(selectedTargetReview as HTMLElement).getByText("2 handed-off targets"),
+      ).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByText("1 manually added target"),
+      ).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByText(
+          "Handed-off and manually added targets are both included in the current review scope.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByRole("button", {
+          name: "Remove SN-1001",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getAllByText("Handed-off target"),
+      ).toHaveLength(2);
+      expect(
+        within(selectedTargetReview as HTMLElement).getByText("Manually added target"),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Restore handed-off targets" }));
+
     await user.click(
       within(selectedTargetReview as HTMLElement).getByRole("button", {
         name: "Remove SN-1002",
@@ -589,6 +628,17 @@ describe("CommandsModule", () => {
     );
 
     await waitFor(() => {
+      expect(
+        within(selectedTargetReview as HTMLElement).queryByRole("button", {
+          name: "Remove SN-1001",
+        }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByText("1 handed-off target"),
+      ).toBeInTheDocument();
+      expect(
+        within(selectedTargetReview as HTMLElement).getByText("0 manually added targets"),
+      ).toBeInTheDocument();
       expect(
         within(selectedTargetReview as HTMLElement).queryByRole("button", {
           name: "Remove SN-1002",

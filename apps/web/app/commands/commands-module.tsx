@@ -529,6 +529,15 @@ export function CommandsModule({
       ),
     [availableMeters, handedOffMeterIds],
   );
+  const handedOffMeterIdSet = useMemo(() => new Set(handedOffMeterIds), [handedOffMeterIds]);
+  const selectedHandedOffWizardMeters = useMemo(
+    () => selectedWizardMeters.filter((meter) => handedOffMeterIdSet.has(meter.id)),
+    [handedOffMeterIdSet, selectedWizardMeters],
+  );
+  const selectedManualWizardMeters = useMemo(
+    () => selectedWizardMeters.filter((meter) => !handedOffMeterIdSet.has(meter.id)),
+    [handedOffMeterIdSet, selectedWizardMeters],
+  );
 
   const handedOffScopeSummary = useMemo(() => {
     if (handedOffMeterIds.length === 0) {
@@ -941,6 +950,26 @@ export function CommandsModule({
                     </span>
                   </div>
 
+                  {selectedWizardMeters.length > 0 ? (
+                    <div className="artifact-row">
+                      <span className="artifact-pill">
+                        {selectedHandedOffWizardMeters.length} handed-off target
+                        {selectedHandedOffWizardMeters.length === 1 ? "" : "s"}
+                      </span>
+                      <span className="artifact-pill">
+                        {selectedManualWizardMeters.length} manually added target
+                        {selectedManualWizardMeters.length === 1 ? "" : "s"}
+                      </span>
+                      {selectedHandedOffWizardMeters.length > 0 &&
+                      selectedManualWizardMeters.length > 0 ? (
+                        <span className="muted">
+                          Handed-off and manually added targets are both included in the
+                          current review scope.
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {selectedWizardMeters.length === 0 ? (
                     <p className="muted">
                       No targets selected yet. Choose meters below
@@ -954,9 +983,16 @@ export function CommandsModule({
                         <article key={meter.id} className="command-list-item">
                           <div className="command-list-item-header">
                             <strong>{meter.serial_number}</strong>
-                            <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
-                              {formatStatusLabel(meter.current_status)}
-                            </span>
+                            <div className="artifact-row">
+                              <span className="artifact-pill">
+                                {handedOffMeterIdSet.has(meter.id)
+                                  ? "Handed-off target"
+                                  : "Manually added target"}
+                              </span>
+                              <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
+                                {formatStatusLabel(meter.current_status)}
+                              </span>
+                            </div>
                           </div>
                           <div className="command-list-item-meta">
                             <span>Meter {meter.id}</span>
