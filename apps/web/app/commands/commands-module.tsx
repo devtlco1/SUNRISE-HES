@@ -241,6 +241,15 @@ function matchesApprovalSearch(command: CommandRecentItem, query: string): boole
     .some((value) => String(value).toLowerCase().includes(normalizedQuery));
 }
 
+function haveSameMeterIds(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const leftSet = new Set(left);
+  return right.every((meterId) => leftSet.has(meterId));
+}
+
 export function CommandsModule({
   authorizedFetch,
   initialMeterIds = [],
@@ -285,6 +294,8 @@ export function CommandsModule({
   const [wizardTemplateId, setWizardTemplateId] = useState("");
   const [wizardMeterSearchQuery, setWizardMeterSearchQuery] = useState("");
   const [selectedWizardMeterIds, setSelectedWizardMeterIds] = useState<string[]>([]);
+  const [isSelectFilteredConfirmationVisible, setIsSelectFilteredConfirmationVisible] =
+    useState(false);
   const [bulkNotes, setBulkNotes] = useState("");
   const [approvalFamilyFilter, setApprovalFamilyFilter] =
     useState<ApprovalFamilyFilter>("all");
@@ -507,6 +518,10 @@ export function CommandsModule({
         .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
     );
   }, [availableMeters, wizardMeterSearchQuery]);
+  const filteredWizardMeterIds = useMemo(
+    () => filteredWizardMeters.map((meter) => meter.id),
+    [filteredWizardMeters],
+  );
 
   const selectedWizardMeters = useMemo(() => {
     const metersById = new Map(availableMeters.map((meter) => [meter.id, meter]));
@@ -550,6 +565,23 @@ export function CommandsModule({
 
     return `${handedOffMeterIds.length} handed-off target${handedOffMeterIds.length === 1 ? "" : "s"} arrived in the bulk wizard. Review the scope below before continuing.`;
   }, [handedOffMeterIds, initialMeterScopeSource]);
+  const shouldConfirmSelectFilteredReplacement = useMemo(
+    () =>
+      selectedWizardMeterIds.length > 0 &&
+      !haveSameMeterIds(selectedWizardMeterIds, filteredWizardMeterIds),
+    [filteredWizardMeterIds, selectedWizardMeterIds],
+  );
+  const selectFilteredConfirmationSummary = useMemo(() => {
+    if (!shouldConfirmSelectFilteredReplacement) {
+      return null;
+    }
+
+    return `Select filtered will replace the current ${selectedWizardMeterIds.length} selected target${selectedWizardMeterIds.length === 1 ? "" : "s"} with the ${filteredWizardMeterIds.length} meter${filteredWizardMeterIds.length === 1 ? "" : "s"} currently visible in the target filter. Click Confirm replace with filtered to continue.`;
+  }, [
+    filteredWizardMeterIds.length,
+    selectedWizardMeterIds.length,
+    shouldConfirmSelectFilteredReplacement,
+  ]);
 
   useEffect(() => {
     if (!wizardTemplates.some((template) => template.id === wizardTemplateId)) {
@@ -583,6 +615,10 @@ export function CommandsModule({
     );
     hasAppliedInitialTargetScopeRef.current = true;
   }, [availableMeters, handedOffMeterIds, isLoadingWizardContext, wizardContextError]);
+
+  useEffect(() => {
+    setIsSelectFilteredConfirmationVisible(false);
+  }, [filteredWizardMeterIds, selectedWizardMeterIds, wizardMeterSearchQuery]);
 
   const filteredPendingApprovals = useMemo(
     () =>
@@ -662,8 +698,18 @@ export function CommandsModule({
   }, []);
 
   const selectAllFilteredWizardMeters = useCallback(() => {
-    setSelectedWizardMeterIds(filteredWizardMeters.map((meter) => meter.id));
-  }, [filteredWizardMeters]);
+    if (shouldConfirmSelectFilteredReplacement && !isSelectFilteredConfirmationVisible) {
+      setIsSelectFilteredConfirmationVisible(true);
+      return;
+    }
+
+    setSelectedWizardMeterIds(filteredWizardMeterIds);
+    setIsSelectFilteredConfirmationVisible(false);
+  }, [
+    filteredWizardMeterIds,
+    isSelectFilteredConfirmationVisible,
+    shouldConfirmSelectFilteredReplacement,
+  ]);
 
   const restoreHandedOffWizardMeters = useCallback(() => {
     setSelectedWizardMeterIds(handedOffWizardMeters.map((meter) => meter.id));
@@ -1042,7 +1088,9 @@ export function CommandsModule({
                     onClick={selectAllFilteredWizardMeters}
                     type="button"
                   >
-                    Select filtered
+                    {isSelectFilteredConfirmationVisible && shouldConfirmSelectFilteredReplacement
+                      ? "Confirm replace with filtered"
+                      : "Select filtered"}
                   </button>
                   <button
                     className="secondary-button"
@@ -1072,6 +1120,10 @@ export function CommandsModule({
                     {isSubmittingBulkRequest ? "Submitting..." : "Submit for approval"}
                   </button>
                 </div>
+
+                {isSelectFilteredConfirmationVisible && selectFilteredConfirmationSummary ? (
+                  <p className="muted">{selectFilteredConfirmationSummary}</p>
+                ) : null}
 
                 <p className="muted">
                   Select filtered replaces the current selected target set with the{" "}
