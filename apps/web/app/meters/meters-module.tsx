@@ -94,6 +94,14 @@ export function MetersModule({
     return `${totalMeters} recent meters`;
   }, [appliedSearch, totalMeters]);
 
+  const visibleScopeSummary = useMemo(() => {
+    if (appliedSearch.trim()) {
+      return `Visible result set is limited to meters matching "${appliedSearch.trim()}". Select visible adds only this filtered list to the bulk handoff.`;
+    }
+
+    return "Visible result set includes every meter currently shown in this list. Select visible adds only the meters shown here to the bulk handoff.";
+  }, [appliedSearch]);
+
   const selectedMeters = useMemo(
     () => meters.filter((meter) => selectedMeterIds.includes(meter.id)),
     [meters, selectedMeterIds],
@@ -212,17 +220,19 @@ export function MetersModule({
 
         <div className="commands-selection-summary">
           <span className="artifact-pill">
-            {selectedMeterIds.length} selected meter
-            {selectedMeterIds.length === 1 ? "" : "s"}
+            {selectedMeterIds.length} selected target
+            {selectedMeterIds.length === 1 ? "" : "s"} for bulk handoff
           </span>
           <span className="artifact-pill">
-            {meters.length} visible meter
-            {meters.length === 1 ? "" : "s"}
+            {meters.length} meter
+            {meters.length === 1 ? "" : "s"} visible in current result set
           </span>
           <span className="artifact-pill">
-            Bulk handoff stays bounded to the current visible meter result set
+            Bulk handoff uses the current visible result set only
           </span>
         </div>
+
+        <p className="muted">{visibleScopeSummary}</p>
 
         <div className="artifact-row">
           <button

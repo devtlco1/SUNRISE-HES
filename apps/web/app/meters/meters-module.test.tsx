@@ -65,9 +65,28 @@ function createMockApi({
         return jsonResponse({ detail }, status);
       }
 
+      const parsedUrl = new URL(url);
+      const search = parsedUrl.searchParams.get("search")?.trim().toLowerCase() ?? "";
+      const filteredItems =
+        search.length === 0
+          ? items
+          : items.filter((item) =>
+              [
+                item.id,
+                item.serial_number,
+                item.utility_meter_number,
+                item.manufacturer_code,
+                item.meter_model_code,
+                item.communication_profile_code,
+                item.meter_profile_code,
+              ]
+                .filter(Boolean)
+                .some((value) => String(value).toLowerCase().includes(search)),
+            );
+
       return jsonResponse({
-        total: items.length,
-        items,
+        total: filteredItems.length,
+        items: filteredItems,
       });
     }
 
@@ -112,6 +131,11 @@ describe("MetersModule", () => {
     expect(await screen.findByText("SN-1001")).toBeInTheDocument();
     expect(screen.getByText("SN-1002")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open bulk commands" })).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Visible result set includes every meter currently shown in this list. Select visible adds only the meters shown here to the bulk handoff.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("keeps the navigation path into the existing meter details page clear", async () => {
@@ -140,9 +164,10 @@ describe("MetersModule", () => {
     await user.click(screen.getByRole("button", { name: "Select visible" }));
 
     await waitFor(() => {
-      expect(screen.getByText("2 selected meters")).toBeInTheDocument();
+      expect(screen.getByText("2 selected targets for bulk handoff")).toBeInTheDocument();
       expect(screen.getAllByText("SN-1001").length).toBeGreaterThan(0);
       expect(screen.getAllByText("SN-1002").length).toBeGreaterThan(0);
+      expect(screen.getByText("2 meters visible in current result set")).toBeInTheDocument();
     });
 
     expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
@@ -187,11 +212,43 @@ describe("MetersModule", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("1 selected meter")).toBeInTheDocument();
+      expect(screen.getByText("1 selected target for bulk handoff")).toBeInTheDocument();
     });
     expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
       "href",
       "/commands?meterIds=meter-2",
+    );
+  });
+
+  it("clarifies that select visible uses only the filtered visible result set", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMetersModuleInShell();
+
+    await screen.findByText("SN-1001");
+    await user.type(screen.getByRole("textbox", { name: "Search" }), "SN-1001");
+    await user.click(screen.getByRole("button", { name: "Load meters" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("1 matching meters")).toBeInTheDocument();
+      expect(screen.getByText("1 meter visible in current result set")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Visible result set is limited to meters matching "SN-1001". Select visible adds only this filtered list to the bulk handoff.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Select visible" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("1 selected target for bulk handoff")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
+      "href",
+      "/commands?meterIds=meter-1",
     );
   });
 
