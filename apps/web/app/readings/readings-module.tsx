@@ -387,9 +387,24 @@ export function ReadingsModule({
   const latestBillingPrimaryValue = latestBillingSnapshot
     ? formatBillingPrimaryValue(latestBillingSnapshot.payload)
     : "No billing read recorded";
+  const latestBillingSummary = latestBillingSnapshot
+    ? formatBillingSummary(latestBillingSnapshot.payload)
+    : "No structured billing payload recorded.";
   const latestBillingContextLabel = latestBillingSnapshot
     ? "Billing-read context available"
     : "Billing-read context missing";
+  const latestBillingSourceLabel = latestBillingBatch
+    ? formatStatusLabel(latestBillingBatch.source_type)
+    : "Not available";
+  const latestBillingStatusLabel = latestBillingBatch
+    ? formatStatusLabel(latestBillingBatch.status)
+    : "Not recorded";
+  const latestBillingReceivedLabel = formatDateTime(latestBillingBatch?.received_at ?? null);
+  const latestBillingNarrative = latestBillingSnapshot
+    ? `Latest billing snapshot captured ${formatDateTime(
+        latestBillingSnapshot.captured_at,
+      )} for ${selectedMeter?.serial_number ?? "the selected meter"}, received ${latestBillingReceivedLabel}, and sourced from ${latestBillingSourceLabel}.`
+    : "No billing-read context is recorded yet for the selected meter. Use the meter detail return path if you need to confirm whether a billing read should exist for this meter.";
   const selectedMeterStatusLabel = selectedMeter
     ? formatStatusLabel(selectedMeter.current_status)
     : "No selection";
@@ -692,6 +707,69 @@ export function ReadingsModule({
                   </div>
                 </section>
 
+                <section className="subpanel readings-billing-context-panel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Current billing context</h3>
+                      <p className="muted">{latestBillingNarrative}</p>
+                    </div>
+                    <span className={`status-pill ${buildStatusTone(latestBillingBatch?.status ?? null)}`}>
+                      {latestBillingSnapshot
+                        ? `Latest batch ${latestBillingStatusLabel}`
+                        : "No billing batch yet"}
+                    </span>
+                  </div>
+
+                  <div className="artifact-row">
+                    <span className="artifact-pill">{latestBillingContextLabel}</span>
+                    <span className="artifact-pill">
+                      {latestBillingSnapshot
+                        ? `Primary value ${latestBillingPrimaryValue}`
+                        : "Primary value unavailable"}
+                    </span>
+                    <span className="artifact-pill">
+                      {latestBillingSnapshot
+                        ? `Source ${latestBillingSourceLabel}`
+                        : "Source unavailable"}
+                    </span>
+                  </div>
+
+                  <div className="detail-grid">
+                    <div className="stat-card">
+                      <span className="stat-label">Latest billing read</span>
+                      <strong>
+                        {latestBillingSnapshot
+                          ? formatDateTime(latestBillingSnapshot.captured_at)
+                          : "Not available"}
+                      </strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Billing-read context</span>
+                      <strong>{latestBillingContextLabel}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Latest billing source</span>
+                      <strong>{latestBillingSourceLabel}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Latest billing status</span>
+                      <strong>{latestBillingStatusLabel}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Latest billing received</span>
+                      <strong>{latestBillingReceivedLabel}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Latest billing value</span>
+                      <strong>{latestBillingPrimaryValue}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Billing payload summary</span>
+                      <strong>{latestBillingSummary}</strong>
+                    </div>
+                  </div>
+                </section>
+
                 <div className="detail-grid">
                   <div className="stat-card">
                     <span className="stat-label">Meter ID</span>
@@ -714,34 +792,6 @@ export function ReadingsModule({
                         selectedMeter.meter_profile_code ??
                         "No profile summary"}
                     </strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Latest billing read</span>
-                    <strong>
-                      {latestBillingSnapshot
-                        ? formatDateTime(latestBillingSnapshot.captured_at)
-                        : "Not available"}
-                    </strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Billing-read context</span>
-                    <strong>{latestBillingContextLabel}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Latest billing value</span>
-                    <strong>{latestBillingPrimaryValue}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Latest billing source</span>
-                    <strong>
-                      {latestBillingBatch
-                        ? formatStatusLabel(latestBillingBatch.source_type)
-                        : "Not available"}
-                    </strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Latest billing received</span>
-                    <strong>{formatDateTime(latestBillingBatch?.received_at ?? null)}</strong>
                   </div>
                   <div className="stat-card">
                     <span className="stat-label">Latest raw reading</span>

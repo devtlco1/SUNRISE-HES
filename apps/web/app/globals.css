@@ -968,6 +968,12 @@ a {
   border: 1px solid rgba(168, 85, 247, 0.18);
 }
 
+.readings-billing-context-panel {
+  background:
+    linear-gradient(180deg, rgba(168, 85, 247, 0.08), rgba(15, 23, 42, 0.18)),
+    rgba(2, 6, 23, 0.24);
+}
+
 .jobs-activity-hero {
   padding: 1rem 1.1rem;
   border-radius: 18px;

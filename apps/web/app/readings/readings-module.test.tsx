@@ -241,16 +241,21 @@ describe("ReadingsModule", () => {
     expect(screen.getByText("Selected meter focus")).toBeInTheDocument();
     expect(screen.getByText("Selected meter SN-1001")).toBeInTheDocument();
     expect(screen.getByText("Overview reflects current billing context")).toBeInTheDocument();
+    expect(screen.getByText("Current billing context")).toBeInTheDocument();
+    expect(screen.getByText(/Latest billing snapshot captured/)).toBeInTheDocument();
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
     expect(screen.getByText("Newest first")).toBeInTheDocument();
     expect(screen.getAllByText("Latest billing read")).not.toHaveLength(0);
     expect(screen.getByText("Received at")).toBeInTheDocument();
-    expect(screen.getByText("Latest batch Received")).toBeInTheDocument();
+    expect(screen.getAllByText("Latest batch Received")).not.toHaveLength(0);
     expect(screen.getAllByText("Billing-read context available")).not.toHaveLength(0);
+    expect(screen.getByText("Latest billing status")).toBeInTheDocument();
     expect(screen.getAllByText("Latest billing value")).not.toHaveLength(0);
     expect(screen.getAllByText("Total Import: 123.456")).not.toHaveLength(0);
     expect(screen.getByText("Latest billing source")).toBeInTheDocument();
-    expect(screen.getByText("Source Manual Read")).toBeInTheDocument();
+    expect(screen.getAllByText("Source Manual Read")).not.toHaveLength(0);
+    expect(screen.getByText("Billing payload summary")).toBeInTheDocument();
+    expect(screen.getByText("Primary value Total Import: 123.456")).toBeInTheDocument();
     expect(screen.getByText("Batch receipt recorded")).toBeInTheDocument();
     expect(screen.getByText("Current primary billing value")).toBeInTheDocument();
     expect(screen.getByText(/Source Manual Read • Received/)).toBeInTheDocument();
@@ -294,6 +299,18 @@ describe("ReadingsModule", () => {
           "No billing-read context recorded yet for the selected meter.",
         ),
       ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText("Current billing context"),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText(
+          "No billing-read context is recorded yet for the selected meter. Use the meter detail return path if you need to confirm whether a billing read should exist for this meter.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText("Primary value unavailable"),
+      ).toBeInTheDocument();
+      expect(within(billingPanel as HTMLElement).getByText("Source unavailable")).toBeInTheDocument();
     });
   });
 
@@ -449,7 +466,9 @@ describe("ReadingsModule", () => {
       expect(screen.getAllByText("Total Import: 456.789")).not.toHaveLength(0);
       expect(screen.getByText("Selected meter SN-1002")).toBeInTheDocument();
       expect(screen.getByText("Overview reflects current billing context")).toBeInTheDocument();
-      expect(screen.getByText("Source Scheduled Read")).toBeInTheDocument();
+      expect(screen.getAllByText("Source Scheduled Read")).not.toHaveLength(0);
+      expect(screen.getByText("Latest billing status")).toBeInTheDocument();
+      expect(screen.getByText("Primary value Total Import: 456.789")).toBeInTheDocument();
       expect(screen.getAllByText("Total Import 456.789 • Reset Reason manual_close")).not.toHaveLength(0);
     });
     expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
