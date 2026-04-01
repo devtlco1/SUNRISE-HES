@@ -239,6 +239,8 @@ describe("ReadingsModule", () => {
       "/meters/meter-1",
     );
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
+    expect(screen.getByText("Newest first")).toBeInTheDocument();
+    expect(screen.getAllByText("Latest billing read")).not.toHaveLength(0);
     expect(screen.getByText("Received at")).toBeInTheDocument();
     expect(screen.getByText("Latest batch Received")).toBeInTheDocument();
     expect(screen.getAllByText("Billing-read context available")).not.toHaveLength(0);
@@ -246,6 +248,8 @@ describe("ReadingsModule", () => {
     expect(screen.getAllByText("Total Import: 123.456")).not.toHaveLength(0);
     expect(screen.getByText("Latest billing source")).toBeInTheDocument();
     expect(screen.getByText("Source Manual Read")).toBeInTheDocument();
+    expect(screen.getByText("Batch receipt recorded")).toBeInTheDocument();
+    expect(screen.getByText("Current primary billing value")).toBeInTheDocument();
     expect(screen.getByText("Total Import 123.456 • Reset Reason scheduled_cycle")).toBeInTheDocument();
   });
 
@@ -271,7 +275,7 @@ describe("ReadingsModule", () => {
       ).not.toHaveLength(0);
       expect(
         within(billingPanel as HTMLElement).getByText(
-          "No billing reads available for the selected meter.",
+          "No billing reads available for the selected meter yet. The selected meter summary above reflects the current missing billing-read context.",
         ),
       ).toBeInTheDocument();
       expect(

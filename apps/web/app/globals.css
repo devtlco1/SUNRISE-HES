@@ -1173,6 +1173,18 @@ a {
   color: #e2e8f0;
 }
 
+.readings-table-row-latest td {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.readings-table-row:hover td {
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.readings-table-row-latest:hover td {
+  background: rgba(37, 99, 235, 0.12);
+}
+
 .readings-table tbody tr:last-child td {
   border-bottom: none;
 }

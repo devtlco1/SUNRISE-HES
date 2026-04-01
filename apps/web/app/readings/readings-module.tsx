@@ -707,10 +707,14 @@ export function ReadingsModule({
                         snapshots only.
                       </p>
                     </div>
+                    <span className="artifact-pill">Newest first</span>
                   </div>
 
                   {billingSnapshots.length === 0 ? (
-                    <p className="muted">No billing reads available for the selected meter.</p>
+                    <p className="muted">
+                      No billing reads available for the selected meter yet. The selected
+                      meter summary above reflects the current missing billing-read context.
+                    </p>
                   ) : (
                     <div className="readings-table-shell">
                       <table className="readings-table">
@@ -724,13 +728,26 @@ export function ReadingsModule({
                           </tr>
                         </thead>
                         <tbody>
-                          {billingSnapshots.map((snapshot) => {
+                          {billingSnapshots.map((snapshot, index) => {
                             const relatedBatch = batchById.get(snapshot.related_batch_id) ?? null;
+                            const isLatestSnapshot = index === 0;
                             return (
-                              <tr key={snapshot.id}>
+                              <tr
+                                key={snapshot.id}
+                                className={
+                                  isLatestSnapshot
+                                    ? "readings-table-row readings-table-row-latest"
+                                    : "readings-table-row"
+                                }
+                              >
                                 <td>
                                   <strong>{formatDateTime(snapshot.captured_at)}</strong>
-                                  <div className="muted">Billing snapshot</div>
+                                  <div className="artifact-row">
+                                    {isLatestSnapshot ? (
+                                      <span className="artifact-pill">Latest billing read</span>
+                                    ) : null}
+                                    <span className="muted">Billing snapshot</span>
+                                  </div>
                                 </td>
                                 <td>
                                   <div className="detail-stack">
@@ -748,8 +765,18 @@ export function ReadingsModule({
                                     </span>
                                   </div>
                                 </td>
-                                <td>{formatDateTime(relatedBatch?.received_at ?? null)}</td>
-                                <td>{formatBillingPrimaryValue(snapshot.payload)}</td>
+                                <td>
+                                  <strong>{formatDateTime(relatedBatch?.received_at ?? null)}</strong>
+                                  <div className="muted">
+                                    {relatedBatch
+                                      ? "Batch receipt recorded"
+                                      : "Receipt not recorded"}
+                                  </div>
+                                </td>
+                                <td>
+                                  <strong>{formatBillingPrimaryValue(snapshot.payload)}</strong>
+                                  <div className="muted">Current primary billing value</div>
+                                </td>
                                 <td>
                                   <strong>{formatBillingSummary(snapshot.payload)}</strong>
                                   {snapshot.checksum ? (
