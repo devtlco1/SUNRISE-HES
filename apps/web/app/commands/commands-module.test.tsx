@@ -50,6 +50,7 @@ function createCommandRecord({
     command_status: status,
     approval_status: approvalStatus,
     approval_reviewed_at: approvalStatus === "not_required" ? null : updatedAt,
+    approval_notes: approvalNotes,
     meter_id: meterId,
     command_template_code: templateCode,
     latest_command_execution_attempt_id: latestAttemptId,
@@ -200,6 +201,51 @@ function createMockApi() {
         updatedAt: "2026-03-30T08:02:00.000Z",
       }),
     ],
+    [
+      "cmd-approved-1",
+      createCommandRecord({
+        commandId: "cmd-approved-1",
+        family: "relay_control",
+        category: "remote_disconnect",
+        status: "pending",
+        approvalStatus: "approved",
+        meterId: "meter-1",
+        templateCode: "relay-disconnect-template",
+        latestAttemptId: null,
+        latestAttemptStatus: null,
+        runtimeRecordId: null,
+        familySpecificOutcomeSummary: {
+          relay_control_operation: "disconnect",
+          relay_control_execution_outcome: "pending",
+        },
+        createdAt: "2026-03-30T07:30:00.000Z",
+        updatedAt: "2026-03-30T07:45:00.000Z",
+        approvalNotes: "Approved by the duty operator.",
+      }),
+    ],
+    [
+      "cmd-rejected-1",
+      createCommandRecord({
+        commandId: "cmd-rejected-1",
+        family: "on_demand_read",
+        category: "on_demand_read",
+        status: "cancelled",
+        approvalStatus: "rejected",
+        meterId: "meter-2",
+        templateCode: "on-demand-read-template",
+        latestAttemptId: null,
+        latestAttemptStatus: null,
+        runtimeRecordId: null,
+        familySpecificOutcomeSummary: {
+          on_demand_read_operation: "read_billing_snapshot",
+          snapshot_type: "billing",
+          on_demand_read_execution_outcome: "pending",
+        },
+        createdAt: "2026-03-30T07:00:00.000Z",
+        updatedAt: "2026-03-30T07:10:00.000Z",
+        approvalNotes: "Rejected while awaiting meter-side confirmation.",
+      }),
+    ],
   ]);
 
   let bulkCounter = 0;
@@ -231,26 +277,32 @@ function createMockApi() {
     if (url.includes("/api/v1/commands/recent")) {
       const parsedUrl = new URL(url);
       const family = parsedUrl.searchParams.get("family");
-      const items =
-        family === null
-          ? listRecentItems()
-          : listRecentItems().filter((item) => item.command_family === family);
+      const approval = parsedUrl.searchParams.get("approval");
+      const items = listRecentItems().filter((item) => {
+        const matchesFamily = family === null ? true : item.command_family === family;
+        const matchesApproval = approval === null ? true : item.approval_status === approval;
+        return matchesFamily && matchesApproval;
+      });
       return jsonResponse({
         total: items.length,
         limit: Number(parsedUrl.searchParams.get("limit") ?? "20"),
         family_filter: family,
+        approval_filter: approval,
         items,
       });
     }
 
     if (url.includes("/api/v1/commands/approvals/pending")) {
-      const items = listRecentItems().filter(
-        (item) => item.approval_status === "submitted_for_approval",
-      );
+      const parsedUrl = new URL(url);
+      const family = parsedUrl.searchParams.get("family");
+      const items = listRecentItems().filter((item) => {
+        const matchesFamily = family === null ? true : item.command_family === family;
+        return item.approval_status === "submitted_for_approval" && matchesFamily;
+      });
       return jsonResponse({
         total: items.length,
         limit: 20,
-        family_filter: null,
+        family_filter: family,
         items,
       });
     }
@@ -429,8 +481,12 @@ describe("CommandsModule", () => {
     expect(await screen.findByRole("link", { name: "Commands" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Commands command center" })).toBeInTheDocument();
     expect(screen.getByText("Bulk command wizard")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Pending approvals" })).toBeInTheDocument();
-    expect(screen.getByText("No commands are currently waiting in the bounded approvals queue.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Approvals queue" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent approval decisions" })).toBeInTheDocument();
+    expect(await screen.findByText("Approved by the duty operator.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Rejected while awaiting meter-side confirmation."),
+    ).toBeInTheDocument();
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
     expect(screen.getAllByText("relay-disconnect-template")).not.toHaveLength(0);
     expect(screen.getAllByText("on-demand-read-template")).not.toHaveLength(0);
@@ -443,10 +499,13 @@ describe("CommandsModule", () => {
 
     renderCommandsModuleInShell();
 
-    const relayRow = await screen.findByRole("button", {
+    const recentCommandsHeading = await screen.findByText("Recent commands");
+    const recentCommandsPanel = recentCommandsHeading.closest("section");
+    expect(recentCommandsPanel).not.toBeNull();
+    const relayRows = await within(recentCommandsPanel as HTMLElement).findAllByRole("button", {
       name: /relay-disconnect-template/i,
     });
-    await user.click(relayRow);
+    await user.click(relayRows[0]);
 
     const detailPanel = screen.getAllByRole("heading", { name: "Command detail" })[0]
       .closest("section");
@@ -514,6 +573,32 @@ describe("CommandsModule", () => {
     await waitFor(() => {
       expect(screen.getByText("Selected command approval accepted.")).toBeInTheDocument();
       expect(screen.getAllByText("Approved")).not.toHaveLength(0);
+    });
+  });
+
+  it("filters approval history visibility by decision state and family", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell();
+
+    expect(await screen.findByText("Approved by the duty operator.")).toBeInTheDocument();
+    expect(screen.getByText("Rejected while awaiting meter-side confirmation.")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Decision state"), "rejected");
+
+    await waitFor(() => {
+      expect(screen.getByText("Rejected while awaiting meter-side confirmation.")).toBeInTheDocument();
+      expect(screen.queryByText("Approved by the duty operator.")).not.toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Approval family"), "relay_control");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("No recent approval decisions match the current filters."),
+      ).toBeInTheDocument();
     });
   });
 

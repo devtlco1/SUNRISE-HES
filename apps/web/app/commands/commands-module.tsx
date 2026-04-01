@@ -10,6 +10,8 @@ type CommandOperationalFamily =
   | "on_demand_read";
 type FamilyFilter = "all" | CommandOperationalFamily;
 type BulkCommandFamily = "relay_control" | "on_demand_read";
+type ApprovalFamilyFilter = "all" | BulkCommandFamily;
+type ApprovalHistoryFilter = "all_decisions" | "approved" | "rejected";
 type RelayOperation = "disconnect" | "reconnect";
 type OnDemandReadOperation = "read_billing_snapshot";
 
@@ -20,6 +22,7 @@ type CommandRecentItem = {
   command_status: string;
   approval_status: string;
   approval_reviewed_at: string | null;
+  approval_notes: string | null;
   meter_id: string;
   command_template_code: string;
   latest_command_execution_attempt_id: string | null;
@@ -37,6 +40,7 @@ type CommandRecentListResponse = {
   total: number;
   limit: number;
   family_filter: CommandOperationalFamily | null;
+  approval_filter?: string | null;
   items: CommandRecentItem[];
 };
 
@@ -209,6 +213,34 @@ function formatProjectionKey(value: string): string {
     .join(" ");
 }
 
+function sortRecentCommandsByUpdatedAt(items: CommandRecentItem[]): CommandRecentItem[] {
+  return [...items].sort(
+    (left, right) =>
+      new Date(right.approval_reviewed_at ?? right.latest_updated_at).getTime() -
+      new Date(left.approval_reviewed_at ?? left.latest_updated_at).getTime(),
+  );
+}
+
+function matchesApprovalSearch(command: CommandRecentItem, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [
+    command.command_template_code,
+    command.meter_id,
+    command.command_category,
+    command.command_family,
+    command.command_status,
+    command.approval_status,
+    command.approval_notes,
+    formatFamilySummary(command.family_specific_outcome_summary),
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalizedQuery));
+}
+
 export function CommandsModule({
   authorizedFetch,
 }: {
@@ -219,6 +251,7 @@ export function CommandsModule({
   const [availableMeters, setAvailableMeters] = useState<MeterItem[]>([]);
   const [availableTemplates, setAvailableTemplates] = useState<CommandTemplate[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<CommandRecentItem[]>([]);
+  const [approvalHistoryItems, setApprovalHistoryItems] = useState<CommandRecentItem[]>([]);
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
   const [selectedCommandDetail, setSelectedCommandDetail] =
     useState<CommandDetail | null>(null);
@@ -236,6 +269,7 @@ export function CommandsModule({
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isLoadingWizardContext, setIsLoadingWizardContext] = useState(false);
   const [isLoadingPendingApprovals, setIsLoadingPendingApprovals] = useState(false);
+  const [isLoadingApprovalHistory, setIsLoadingApprovalHistory] = useState(false);
   const [isSubmittingBulkRequest, setIsSubmittingBulkRequest] = useState(false);
   const [activeApprovalActionCommandId, setActiveApprovalActionCommandId] = useState<
     string | null
@@ -248,6 +282,11 @@ export function CommandsModule({
   const [wizardMeterSearchQuery, setWizardMeterSearchQuery] = useState("");
   const [selectedWizardMeterIds, setSelectedWizardMeterIds] = useState<string[]>([]);
   const [bulkNotes, setBulkNotes] = useState("");
+  const [approvalFamilyFilter, setApprovalFamilyFilter] =
+    useState<ApprovalFamilyFilter>("all");
+  const [approvalHistoryFilter, setApprovalHistoryFilter] =
+    useState<ApprovalHistoryFilter>("all_decisions");
+  const [approvalSearchQuery, setApprovalSearchQuery] = useState("");
 
   const loadRecentCommands = useCallback(
     async (preferredCommandId?: string) => {
@@ -314,8 +353,10 @@ export function CommandsModule({
     setApprovalActionError(null);
 
     try {
+      const familyQuery =
+        approvalFamilyFilter === "all" ? "" : `&family=${approvalFamilyFilter}`;
       const response = await authorizedFetch<CommandRecentListResponse>(
-        "/api/v1/commands/approvals/pending?limit=20",
+        `/api/v1/commands/approvals/pending?limit=20${familyQuery}`,
       );
       setPendingApprovals(response.items);
     } catch (error) {
@@ -326,7 +367,46 @@ export function CommandsModule({
     } finally {
       setIsLoadingPendingApprovals(false);
     }
-  }, [authorizedFetch]);
+  }, [approvalFamilyFilter, authorizedFetch]);
+
+  const loadApprovalHistory = useCallback(async () => {
+    setIsLoadingApprovalHistory(true);
+
+    try {
+      const familyQuery =
+        approvalFamilyFilter === "all" ? "" : `&family=${approvalFamilyFilter}`;
+
+      if (approvalHistoryFilter === "approved" || approvalHistoryFilter === "rejected") {
+        const response = await authorizedFetch<CommandRecentListResponse>(
+          `/api/v1/commands/recent?limit=20${familyQuery}&approval=${approvalHistoryFilter}`,
+        );
+        setApprovalHistoryItems(sortRecentCommandsByUpdatedAt(response.items));
+        return;
+      }
+
+      const [approvedResponse, rejectedResponse] = await Promise.all([
+        authorizedFetch<CommandRecentListResponse>(
+          `/api/v1/commands/recent?limit=20${familyQuery}&approval=approved`,
+        ),
+        authorizedFetch<CommandRecentListResponse>(
+          `/api/v1/commands/recent?limit=20${familyQuery}&approval=rejected`,
+        ),
+      ]);
+      setApprovalHistoryItems(
+        sortRecentCommandsByUpdatedAt([...approvedResponse.items, ...rejectedResponse.items]).slice(
+          0,
+          20,
+        ),
+      );
+    } catch (error) {
+      setApprovalHistoryItems([]);
+      setApprovalActionError(
+        error instanceof Error ? error.message : "Unable to load recent approval history.",
+      );
+    } finally {
+      setIsLoadingApprovalHistory(false);
+    }
+  }, [approvalFamilyFilter, approvalHistoryFilter, authorizedFetch]);
 
   const loadCommandDetail = useCallback(
     async (commandId: string) => {
@@ -361,6 +441,10 @@ export function CommandsModule({
   useEffect(() => {
     void loadPendingApprovals();
   }, [loadPendingApprovals]);
+
+  useEffect(() => {
+    void loadApprovalHistory();
+  }, [loadApprovalHistory]);
 
   useEffect(() => {
     if (!selectedCommandId) {
@@ -414,6 +498,18 @@ export function CommandsModule({
     }
   }, [wizardTemplateId, wizardTemplates]);
 
+  const filteredPendingApprovals = useMemo(
+    () =>
+      pendingApprovals.filter((command) => matchesApprovalSearch(command, approvalSearchQuery)),
+    [approvalSearchQuery, pendingApprovals],
+  );
+
+  const filteredApprovalHistoryItems = useMemo(
+    () =>
+      approvalHistoryItems.filter((command) => matchesApprovalSearch(command, approvalSearchQuery)),
+    [approvalHistoryItems, approvalSearchQuery],
+  );
+
   const overviewCards = useMemo(
     () => [
       {
@@ -453,8 +549,22 @@ export function CommandsModule({
             ? "Bulk-requested commands currently waiting for review"
             : "No commands are waiting for approval",
       },
+      {
+        label: "Recent approval decisions",
+        value: String(approvalHistoryItems.length),
+        note:
+          approvalHistoryItems.length > 0
+            ? "Approved and rejected outcomes visible from the bounded command projection"
+            : "No recent approval decisions are currently visible",
+      },
     ],
-    [pendingApprovals.length, recentCommands, recentFamilyFilter, selectedRecentCommand],
+    [
+      approvalHistoryItems.length,
+      pendingApprovals.length,
+      recentCommands,
+      recentFamilyFilter,
+      selectedRecentCommand,
+    ],
   );
 
   const toggleWizardMeterSelection = useCallback((meterId: string) => {
@@ -501,6 +611,7 @@ export function CommandsModule({
         await Promise.all([
           loadRecentCommands(firstSubmittedCommand ?? undefined),
           loadPendingApprovals(),
+          loadApprovalHistory(),
         ]);
       } catch (error) {
         setBulkActionError(
@@ -513,6 +624,7 @@ export function CommandsModule({
     [
       authorizedFetch,
       bulkNotes,
+      loadApprovalHistory,
       loadPendingApprovals,
       loadRecentCommands,
       selectedWizardMeterIds,
@@ -540,7 +652,11 @@ export function CommandsModule({
           }),
         });
 
-        await Promise.all([loadPendingApprovals(), loadRecentCommands(commandId)]);
+        await Promise.all([
+          loadPendingApprovals(),
+          loadApprovalHistory(),
+          loadRecentCommands(commandId),
+        ]);
         await loadCommandDetail(commandId);
         setSelectedCommandId(commandId);
         setApprovalActionSuccess(
@@ -556,7 +672,13 @@ export function CommandsModule({
         setActiveApprovalActionCommandId(null);
       }
     },
-    [authorizedFetch, loadCommandDetail, loadPendingApprovals, loadRecentCommands],
+    [
+      authorizedFetch,
+      loadApprovalHistory,
+      loadCommandDetail,
+      loadPendingApprovals,
+      loadRecentCommands,
+    ],
   );
 
   const projectionEntries = useMemo(
@@ -809,30 +931,76 @@ export function CommandsModule({
           <section className="subpanel">
             <div className="section-heading">
               <div>
-                <h2>Pending approvals</h2>
+                <h2>Approvals queue</h2>
                 <p className="muted">
-                  Bounded queue for commands submitted through the bulk wizard and still
-                  waiting for one-step operator review.
+                  Bounded queue and recent decision visibility for commands routed through the
+                  current one-step approvals MVP.
                 </p>
               </div>
-              <span className="artifact-pill">{pendingApprovals.length} waiting</span>
+              <span className="artifact-pill">{filteredPendingApprovals.length} waiting</span>
             </div>
 
             {approvalActionError ? <p className="error-banner">{approvalActionError}</p> : null}
-            {approvalActionSuccess ? <p className="success-banner">{approvalActionSuccess}</p> : null}
+            {approvalActionSuccess ? (
+              <p className="success-banner">{approvalActionSuccess}</p>
+            ) : null}
+
+            <div className="inline-form">
+              <label className="field">
+                <span>Approval family</span>
+                <select
+                  onChange={(event) =>
+                    setApprovalFamilyFilter(event.target.value as ApprovalFamilyFilter)
+                  }
+                  value={approvalFamilyFilter}
+                >
+                  <option value="all">All approval families</option>
+                  <option value="relay_control">Relay control</option>
+                  <option value="on_demand_read">On-demand read</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Approval search</span>
+                <input
+                  aria-label="Approval search"
+                  onChange={(event) => setApprovalSearchQuery(event.target.value)}
+                  placeholder="Search template, meter, family, status, or approval note"
+                  type="search"
+                  value={approvalSearchQuery}
+                />
+              </label>
+            </div>
+
+            <div className="artifact-row">
+              <span className="artifact-pill">
+                {approvalFamilyFilter === "all"
+                  ? "All approval families in view"
+                  : `${formatCommandFamilyLabel(approvalFamilyFilter)} approvals only`}
+              </span>
+              <span className="artifact-pill">
+                {filteredPendingApprovals.length} pending review item
+                {filteredPendingApprovals.length === 1 ? "" : "s"}
+              </span>
+              <span className="artifact-pill">
+                {filteredApprovalHistoryItems.length} recent decision
+                {filteredApprovalHistoryItems.length === 1 ? "" : "s"} visible
+              </span>
+            </div>
 
             {isLoadingPendingApprovals ? (
               <p className="muted">Loading pending approvals...</p>
             ) : null}
 
-            {!isLoadingPendingApprovals && pendingApprovals.length === 0 ? (
+            {!isLoadingPendingApprovals && filteredPendingApprovals.length === 0 ? (
               <p className="muted">
-                No commands are currently waiting in the bounded approvals queue.
+                {approvalSearchQuery.trim() || approvalFamilyFilter !== "all"
+                  ? "No pending approvals match the current approval filters."
+                  : "No commands are currently waiting in the bounded approvals queue."}
               </p>
             ) : null}
 
             <div className="command-list">
-              {pendingApprovals.map((command) => (
+              {filteredPendingApprovals.map((command) => (
                 <article key={command.command_id} className="command-list-item">
                   <div className="command-list-item-header">
                     <strong>{command.command_template_code}</strong>
@@ -853,6 +1021,10 @@ export function CommandsModule({
                   <div className="command-list-item-meta">
                     <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
                     <span>Last updated {formatDateTime(command.latest_updated_at)}</span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>Next action approve or reject</span>
+                    <span>Awaiting one-step operator review</span>
                   </div>
                   <div className="artifact-row">
                     <button
@@ -882,6 +1054,83 @@ export function CommandsModule({
                 </article>
               ))}
             </div>
+
+            <section className="subpanel commands-detail-subpanel">
+              <div className="section-heading">
+                <div>
+                  <h3>Recent approval decisions</h3>
+                  <p className="muted">
+                    Latest approved and rejected decisions visible from the bounded commands
+                    read model.
+                  </p>
+                </div>
+                <label className="inline-select">
+                  <span>Decision state</span>
+                  <select
+                    onChange={(event) =>
+                      setApprovalHistoryFilter(event.target.value as ApprovalHistoryFilter)
+                    }
+                    value={approvalHistoryFilter}
+                  >
+                    <option value="all_decisions">Approved + rejected</option>
+                    <option value="approved">Approved only</option>
+                    <option value="rejected">Rejected only</option>
+                  </select>
+                </label>
+              </div>
+
+              {isLoadingApprovalHistory ? (
+                <p className="muted">Loading recent approval decisions...</p>
+              ) : null}
+
+              {!isLoadingApprovalHistory && filteredApprovalHistoryItems.length === 0 ? (
+                <p className="muted">
+                  {approvalSearchQuery.trim() ||
+                  approvalFamilyFilter !== "all" ||
+                  approvalHistoryFilter !== "all_decisions"
+                    ? "No recent approval decisions match the current filters."
+                    : "No recent approval decisions are currently visible."}
+                </p>
+              ) : null}
+
+              <div className="command-list">
+                {filteredApprovalHistoryItems.map((command) => (
+                  <article key={command.command_id} className="command-list-item">
+                    <div className="command-list-item-header">
+                      <strong>{command.command_template_code}</strong>
+                      <span className={`status-pill ${buildStatusTone(command.approval_status)}`}>
+                        {formatStatusLabel(command.approval_status)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-badges">
+                      <span className="artifact-pill">
+                        {formatCommandFamilyLabel(command.command_family)}
+                      </span>
+                      <span className="artifact-pill">
+                        Runtime {formatStatusLabel(command.command_status)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>Meter {command.meter_id}</span>
+                      <span>Reviewed {formatDateTime(command.approval_reviewed_at)}</span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
+                      <span>{command.approval_notes ?? "No approval note recorded"}</span>
+                    </div>
+                    <div className="artifact-row">
+                      <button
+                        className="secondary-button"
+                        onClick={() => setSelectedCommandId(command.command_id)}
+                        type="button"
+                      >
+                        Inspect decision
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
           </section>
         </div>
 

@@ -577,6 +577,7 @@ def list_recent_meter_command_operational_items_endpoint(
 def list_recent_command_operational_items_endpoint(
     limit: int = Query(default=20, ge=1, le=100),
     family: CommandOperationalFamily | None = Query(default=None),
+    approval: CommandApprovalStatus | None = Query(default=None),
     session: Session = Depends(get_db_session),
     _: User = Depends(require_permission("commands.read")),
 ) -> CommandOperationalRecentListResponse:
@@ -584,6 +585,7 @@ def list_recent_command_operational_items_endpoint(
         session,
         limit=limit,
         family_filter=family,
+        approval_filter=approval,
     )
 
 

@@ -976,6 +976,7 @@ class CommandOperationalRecentListItem(BaseModel):
     command_status: CommandStatus
     approval_status: CommandApprovalStatus
     approval_reviewed_at: datetime | None = None
+    approval_notes: str | None = None
     meter_id: UUID
     command_template_code: str
     latest_command_execution_attempt_id: UUID | None = None
@@ -993,6 +994,7 @@ class CommandOperationalRecentListResponse(BaseModel):
     total: int
     limit: int
     family_filter: CommandOperationalFamily | None = None
+    approval_filter: CommandApprovalStatus | None = None
     items: list[CommandOperationalRecentListItem]
 
 

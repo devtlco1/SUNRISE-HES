@@ -120,6 +120,15 @@ def test_bulk_command_request_submits_into_pending_approvals_and_can_be_approved
     assert detail_payload["approval_status"] == "approved"
     assert detail_payload["approval_notes"] == "Approved for bounded relay-control MVP"
 
+    approved_recent_response = client.get(
+        "/api/v1/commands/recent",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"approval": "approved"},
+    )
+    assert approved_recent_response.status_code == 200
+    approved_ids = {item["command_id"] for item in approved_recent_response.json()["items"]}
+    assert created_command_ids[0] in approved_ids
+
 
 def test_bulk_command_request_can_be_rejected_and_leaves_pending_queue(
     client,
@@ -166,3 +175,12 @@ def test_bulk_command_request_can_be_rejected_and_leaves_pending_queue(
     assert pending_response.status_code == 200
     pending_command_ids = {item["command_id"] for item in pending_response.json()["items"]}
     assert command_id not in pending_command_ids
+
+    rejected_recent_response = client.get(
+        "/api/v1/commands/recent",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"approval": "rejected"},
+    )
+    assert rejected_recent_response.status_code == 200
+    rejected_ids = {item["command_id"] for item in rejected_recent_response.json()["items"]}
+    assert command_id in rejected_ids

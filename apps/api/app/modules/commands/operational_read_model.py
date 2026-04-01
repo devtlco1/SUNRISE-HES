@@ -67,6 +67,7 @@ def list_recent_command_operational_items(
         total=len(projections),
         limit=limit,
         family_filter=family_filter,
+        approval_filter=approval_filter,
         items=projections,
     )
 
@@ -203,6 +204,7 @@ def _build_command_operational_recent_list_item(
         command_status=command.current_status,
         approval_status=command.approval_status,
         approval_reviewed_at=command.approval_reviewed_at,
+        approval_notes=command.approval_notes,
         meter_id=command.meter_id,
         command_template_code=command.command_template.code,
         latest_command_execution_attempt_id=latest_attempt.id if latest_attempt is not None else None,
