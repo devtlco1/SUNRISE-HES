@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     queue_backend: str = "mock"
     log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
+    cors_allowed_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
     jwt_secret_key: str = "change-me-before-production-with-at-least-32-characters"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
@@ -60,6 +64,17 @@ class Settings(BaseSettings):
         if value is not None and len(value) < 12:
             raise ValueError("Bootstrap super admin password must be at least 12 characters.")
         return value
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def normalize_cors_allowed_origins(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, str):
+            value = value.split(",")
+
+        normalized = [origin.strip().rstrip("/") for origin in value if origin.strip()]
+        if not normalized:
+            raise ValueError("cors_allowed_origins must include at least one origin.")
+        return normalized
 
     @field_validator("jwt_secret_key")
     @classmethod

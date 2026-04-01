@@ -102,6 +102,7 @@ def auth_settings(local_test_service_settings: None) -> Generator[None, None, No
         "jwt_algorithm": settings.jwt_algorithm,
         "jwt_access_token_expire_minutes": settings.jwt_access_token_expire_minutes,
         "jwt_issuer": settings.jwt_issuer,
+        "cors_allowed_origins": settings.cors_allowed_origins,
         "internal_api_token": settings.internal_api_token,
         "bootstrap_super_admin_username": settings.bootstrap_super_admin_username,
         "bootstrap_super_admin_email": settings.bootstrap_super_admin_email,
@@ -112,6 +113,10 @@ def auth_settings(local_test_service_settings: None) -> Generator[None, None, No
     settings.jwt_algorithm = "HS256"
     settings.jwt_access_token_expire_minutes = 30
     settings.jwt_issuer = "sunrise-hes-platform-test"
+    settings.cors_allowed_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
     settings.internal_api_token = "test-internal-token"
     settings.bootstrap_super_admin_username = None
     settings.bootstrap_super_admin_email = None
