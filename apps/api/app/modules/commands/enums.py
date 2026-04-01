@@ -27,6 +27,13 @@ class CommandStatus(StringEnum):
     TIMED_OUT = "timed_out"
 
 
+class CommandApprovalStatus(StringEnum):
+    NOT_REQUIRED = "not_required"
+    SUBMITTED_FOR_APPROVAL = "submitted_for_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class CommandExecutionAttemptStatus(StringEnum):
     STARTED = "started"
     RUNNING = "running"

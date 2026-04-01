@@ -489,6 +489,12 @@ a {
   grid-template-columns: 1.1fr 1.2fr;
 }
 
+.commands-phase-two-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1.1fr 1fr;
+}
+
 .connectivity-module-layout {
   display: grid;
   gap: 1rem;
@@ -1333,6 +1339,7 @@ a {
 
 @media (max-width: 1180px) {
   .commands-tab-layout,
+  .commands-phase-two-layout,
   .commands-module-layout,
   .connectivity-module-layout,
   .readings-module-layout,

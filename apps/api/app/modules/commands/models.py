@@ -11,6 +11,7 @@ from app.db.base import Base
 from app.db.enums import enum_type
 from app.db.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.modules.commands.enums import (
+    CommandApprovalStatus,
     CommandCategory,
     CommandExecutionAttemptStatus,
     CommandPriority,
@@ -71,6 +72,14 @@ class MeterCommand(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         server_default=CommandStatus.PENDING.value,
     )
+    approval_status: Mapped[CommandApprovalStatus] = mapped_column(
+        enum_type(CommandApprovalStatus, name="command_approval_status"),
+        nullable=False,
+        server_default=CommandApprovalStatus.NOT_REQUIRED.value,
+    )
+    approval_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approval_reviewed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approval_notes: Mapped[str | None] = mapped_column(Text())
     priority: Mapped[CommandPriority] = mapped_column(
         enum_type(CommandPriority, name="command_priority"),
         nullable=False,
@@ -99,6 +108,7 @@ class MeterCommand(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("idempotency_key"),
         Index("ix_commands_meter_requested_at", "meter_id", "requested_at"),
         Index("ix_commands_status_requested_at", "status", "requested_at"),
+        Index("ix_commands_approval_status_requested_at", "approval_status", "requested_at"),
         Index("ix_commands_pending_queue_lookup", "status", "queued_at"),
         Index("ix_commands_correlation_id", "correlation_id"),
     )

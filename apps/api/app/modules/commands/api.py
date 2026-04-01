@@ -66,6 +66,10 @@ from app.modules.commands.profile_capture_runtime_terminalization import (
 )
 from app.modules.commands.schemas import (
     CaptureLoadProfileCommandCreate,
+    BulkCommandWizardRequest,
+    BulkCommandWizardResponse,
+    CommandApprovalActionRequest,
+    CommandApprovalStatus,
     CommandExecutionAttemptListResponse,
     CommandOperationalDetailResponse,
     CommandOperationalFamily,
@@ -132,10 +136,13 @@ from app.modules.commands.service import (
     bootstrap_profile_capture_command_attempt,
     bootstrap_relay_control_command_attempt,
     create_command_template,
+    approve_command_approval,
     create_meter_command,
     submit_capture_load_profile_command,
+    reject_command_approval,
     submit_on_demand_read_command,
     submit_relay_control_command,
+    submit_bulk_commands_for_approval,
     get_meter_command,
     get_command_template,
     list_command_attempts,
@@ -578,6 +585,115 @@ def list_recent_command_operational_items_endpoint(
         limit=limit,
         family_filter=family,
     )
+
+
+@commands_router.get(
+    "/approvals/pending",
+    response_model=CommandOperationalRecentListResponse,
+)
+def list_pending_command_approvals_endpoint(
+    limit: int = Query(default=20, ge=1, le=100),
+    family: CommandOperationalFamily | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+    _: User = Depends(require_permission("commands.read")),
+) -> CommandOperationalRecentListResponse:
+    return list_recent_command_operational_items(
+        session,
+        limit=limit,
+        family_filter=family,
+        approval_filter=CommandApprovalStatus.SUBMITTED_FOR_APPROVAL,
+    )
+
+
+@commands_router.post(
+    "/bulk-requests",
+    response_model=BulkCommandWizardResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_bulk_commands_for_approval_endpoint(
+    payload: BulkCommandWizardRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> BulkCommandWizardResponse:
+    response = submit_bulk_commands_for_approval(
+        session,
+        payload=payload,
+        requested_by_user_id=current_user.id,
+    )
+    record_audit_event(
+        session,
+        action="commands.bulk_requests.create",
+        resource_type="commands",
+        resource_id=None,
+        actor_user_id=current_user.id,
+        description="Bulk command request created for approval routing.",
+        details={
+            "family": payload.family.value,
+            "meter_ids": [str(meter_id) for meter_id in payload.meter_ids],
+            "command_template_id": str(payload.command_template_id),
+            "submitted_total": response.submitted_total,
+            "failed_total": response.failed_total,
+        },
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@commands_router.post("/{command_id}/approvals/approve", response_model=MeterCommandResponse)
+def approve_command_approval_endpoint(
+    command_id: uuid.UUID,
+    payload: CommandApprovalActionRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> MeterCommandResponse:
+    command = approve_command_approval(
+        session,
+        command_id=command_id,
+        payload=payload,
+        reviewed_by_user_id=current_user.id,
+    )
+    response = serialize_meter_command(command)
+    record_audit_event(
+        session,
+        action="commands.approvals.approve",
+        resource_type="commands",
+        resource_id=command.id,
+        actor_user_id=current_user.id,
+        description="Command approval accepted.",
+        details={"approval_status": command.approval_status.value},
+        request_context=request.state.request_audit_context,
+    )
+    return response
+
+
+@commands_router.post("/{command_id}/approvals/reject", response_model=MeterCommandResponse)
+def reject_command_approval_endpoint(
+    command_id: uuid.UUID,
+    payload: CommandApprovalActionRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_permission("commands.execute.request")),
+) -> MeterCommandResponse:
+    command = reject_command_approval(
+        session,
+        command_id=command_id,
+        payload=payload,
+        reviewed_by_user_id=current_user.id,
+    )
+    response = serialize_meter_command(command)
+    record_audit_event(
+        session,
+        action="commands.approvals.reject",
+        resource_type="commands",
+        resource_id=command.id,
+        actor_user_id=current_user.id,
+        description="Command approval rejected.",
+        details={"approval_status": command.approval_status.value},
+        request_context=request.state.request_audit_context,
+    )
+    return response
 
 
 @commands_router.get("/{command_id}", response_model=MeterCommandDetailResponse)

@@ -6,7 +6,11 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.modules.commands.enums import CommandCategory, CommandOperationalFamily
+from app.modules.commands.enums import (
+    CommandApprovalStatus,
+    CommandCategory,
+    CommandOperationalFamily,
+)
 from app.modules.commands.models import CommandExecutionAttempt, CommandTemplate, MeterCommand
 from app.modules.commands.profile_capture_status_readback import (
     get_profile_capture_execution_status,
@@ -51,11 +55,13 @@ def list_recent_command_operational_items(
     *,
     limit: int = 20,
     family_filter: CommandOperationalFamily | None = None,
+    approval_filter: CommandApprovalStatus | None = None,
 ) -> CommandOperationalRecentListResponse:
     projections = _list_command_operational_recent_items(
         session,
         limit=limit,
         family_filter=family_filter,
+        approval_filter=approval_filter,
     )
     return CommandOperationalRecentListResponse(
         total=len(projections),
@@ -111,6 +117,7 @@ def _list_command_operational_recent_items(
     *,
     limit: int,
     family_filter: CommandOperationalFamily | None,
+    approval_filter: CommandApprovalStatus | None = None,
     meter_id: uuid.UUID | None = None,
 ) -> list[CommandOperationalRecentListItem]:
     categories = _resolve_supported_categories(family_filter)
@@ -124,6 +131,8 @@ def _list_command_operational_recent_items(
     )
     if meter_id is not None:
         query = query.where(MeterCommand.meter_id == meter_id)
+    if approval_filter is not None:
+        query = query.where(MeterCommand.approval_status == approval_filter)
 
     commands = session.scalars(query).unique().all()
     return [
@@ -154,6 +163,10 @@ def _build_command_operational_detail_result(
         command_family=projection["command_family"],
         command_category=command.command_template.category,
         command_status=command.current_status,
+        approval_status=command.approval_status,
+        approval_reviewed_at=command.approval_reviewed_at,
+        approval_reviewed_by_user_id=command.approval_reviewed_by_user_id,
+        approval_notes=command.approval_notes,
         meter_id=command.meter_id,
         command_template_code=command.command_template.code,
         latest_command_execution_attempt_id=latest_attempt.id if latest_attempt is not None else None,
@@ -188,6 +201,8 @@ def _build_command_operational_recent_list_item(
         command_family=projection["command_family"],
         command_category=command.command_template.category,
         command_status=command.current_status,
+        approval_status=command.approval_status,
+        approval_reviewed_at=command.approval_reviewed_at,
         meter_id=command.meter_id,
         command_template_code=command.command_template.code,
         latest_command_execution_attempt_id=latest_attempt.id if latest_attempt is not None else None,

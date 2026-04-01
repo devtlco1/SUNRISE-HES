@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { AuthorizedFetch } from "../operational-shell";
 
@@ -9,12 +9,17 @@ type CommandOperationalFamily =
   | "relay_control"
   | "on_demand_read";
 type FamilyFilter = "all" | CommandOperationalFamily;
+type BulkCommandFamily = "relay_control" | "on_demand_read";
+type RelayOperation = "disconnect" | "reconnect";
+type OnDemandReadOperation = "read_billing_snapshot";
 
 type CommandRecentItem = {
   command_id: string;
   command_family: CommandOperationalFamily;
   command_category: string;
   command_status: string;
+  approval_status: string;
+  approval_reviewed_at: string | null;
   meter_id: string;
   command_template_code: string;
   latest_command_execution_attempt_id: string | null;
@@ -40,6 +45,10 @@ type CommandDetail = {
   command_family: CommandOperationalFamily;
   command_category: string;
   command_status: string;
+  approval_status: string;
+  approval_reviewed_at: string | null;
+  approval_reviewed_by_user_id: string | null;
+  approval_notes: string | null;
   meter_id: string;
   command_template_code: string;
   latest_command_execution_attempt_id: string | null;
@@ -56,6 +65,51 @@ type CommandDetail = {
 
 type CommandDetailResponse = {
   result: CommandDetail;
+};
+
+type MeterItem = {
+  id: string;
+  serial_number: string;
+  utility_meter_number: string | null;
+  communication_profile_code: string | null;
+  meter_profile_code: string | null;
+  current_status: string;
+  last_seen_at: string | null;
+};
+
+type MeterListResponse = {
+  total: number;
+  items: MeterItem[];
+};
+
+type CommandTemplate = {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  is_active: boolean;
+};
+
+type CommandTemplateListResponse = {
+  total: number;
+  items: CommandTemplate[];
+};
+
+type BulkCommandResultItem = {
+  meter_id: string;
+  command_id: string | null;
+  command_template_code: string | null;
+  command_family: BulkCommandFamily;
+  command_status: string | null;
+  approval_status: string | null;
+  submission_status: string;
+  detail: string | null;
+};
+
+type BulkCommandResponse = {
+  submitted_total: number;
+  failed_total: number;
+  items: BulkCommandResultItem[];
 };
 
 function formatDateTime(value: string | null): string {
@@ -162,13 +216,38 @@ export function CommandsModule({
 }) {
   const [recentFamilyFilter, setRecentFamilyFilter] = useState<FamilyFilter>("all");
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[]>([]);
+  const [availableMeters, setAvailableMeters] = useState<MeterItem[]>([]);
+  const [availableTemplates, setAvailableTemplates] = useState<CommandTemplate[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<CommandRecentItem[]>([]);
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
   const [selectedCommandDetail, setSelectedCommandDetail] =
     useState<CommandDetail | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [wizardContextError, setWizardContextError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [bulkActionError, setBulkActionError] = useState<string | null>(null);
+  const [bulkActionSuccess, setBulkActionSuccess] = useState<string | null>(null);
+  const [bulkSubmissionResult, setBulkSubmissionResult] = useState<BulkCommandResponse | null>(
+    null,
+  );
+  const [approvalActionError, setApprovalActionError] = useState<string | null>(null);
+  const [approvalActionSuccess, setApprovalActionSuccess] = useState<string | null>(null);
   const [isLoadingRecentCommands, setIsLoadingRecentCommands] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isLoadingWizardContext, setIsLoadingWizardContext] = useState(false);
+  const [isLoadingPendingApprovals, setIsLoadingPendingApprovals] = useState(false);
+  const [isSubmittingBulkRequest, setIsSubmittingBulkRequest] = useState(false);
+  const [activeApprovalActionCommandId, setActiveApprovalActionCommandId] = useState<
+    string | null
+  >(null);
+  const [wizardFamily, setWizardFamily] = useState<BulkCommandFamily>("relay_control");
+  const [wizardRelayOperation, setWizardRelayOperation] = useState<RelayOperation>("disconnect");
+  const [wizardOnDemandReadOperation] =
+    useState<OnDemandReadOperation>("read_billing_snapshot");
+  const [wizardTemplateId, setWizardTemplateId] = useState("");
+  const [wizardMeterSearchQuery, setWizardMeterSearchQuery] = useState("");
+  const [selectedWizardMeterIds, setSelectedWizardMeterIds] = useState<string[]>([]);
+  const [bulkNotes, setBulkNotes] = useState("");
 
   const loadRecentCommands = useCallback(
     async (preferredCommandId?: string) => {
@@ -208,6 +287,47 @@ export function CommandsModule({
     [authorizedFetch, recentFamilyFilter],
   );
 
+  const loadWizardContext = useCallback(async () => {
+    setIsLoadingWizardContext(true);
+    setWizardContextError(null);
+
+    try {
+      const [metersResponse, templatesResponse] = await Promise.all([
+        authorizedFetch<MeterListResponse>("/api/v1/meters?offset=0&limit=20"),
+        authorizedFetch<CommandTemplateListResponse>("/api/v1/command-templates"),
+      ]);
+      setAvailableMeters(metersResponse.items);
+      setAvailableTemplates(templatesResponse.items);
+    } catch (error) {
+      setAvailableMeters([]);
+      setAvailableTemplates([]);
+      setWizardContextError(
+        error instanceof Error ? error.message : "Unable to load bulk command wizard context.",
+      );
+    } finally {
+      setIsLoadingWizardContext(false);
+    }
+  }, [authorizedFetch]);
+
+  const loadPendingApprovals = useCallback(async () => {
+    setIsLoadingPendingApprovals(true);
+    setApprovalActionError(null);
+
+    try {
+      const response = await authorizedFetch<CommandRecentListResponse>(
+        "/api/v1/commands/approvals/pending?limit=20",
+      );
+      setPendingApprovals(response.items);
+    } catch (error) {
+      setPendingApprovals([]);
+      setApprovalActionError(
+        error instanceof Error ? error.message : "Unable to load pending approvals.",
+      );
+    } finally {
+      setIsLoadingPendingApprovals(false);
+    }
+  }, [authorizedFetch]);
+
   const loadCommandDetail = useCallback(
     async (commandId: string) => {
       setIsLoadingDetail(true);
@@ -235,6 +355,14 @@ export function CommandsModule({
   }, [loadRecentCommands]);
 
   useEffect(() => {
+    void loadWizardContext();
+  }, [loadWizardContext]);
+
+  useEffect(() => {
+    void loadPendingApprovals();
+  }, [loadPendingApprovals]);
+
+  useEffect(() => {
     if (!selectedCommandId) {
       setSelectedCommandDetail(null);
       setDetailError(null);
@@ -250,6 +378,41 @@ export function CommandsModule({
       null,
     [recentCommands, selectedCommandId],
   );
+
+  const wizardTemplates = useMemo(() => {
+    const activeTemplates = availableTemplates.filter((template) => template.is_active);
+    if (wizardFamily === "relay_control") {
+      const expectedCategory =
+        wizardRelayOperation === "disconnect" ? "remote_disconnect" : "remote_reconnect";
+      return activeTemplates.filter((template) => template.category === expectedCategory);
+    }
+    return activeTemplates.filter((template) => template.category === "on_demand_read");
+  }, [availableTemplates, wizardFamily, wizardRelayOperation]);
+
+  const filteredWizardMeters = useMemo(() => {
+    const normalizedQuery = wizardMeterSearchQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return availableMeters;
+    }
+
+    return availableMeters.filter((meter) =>
+      [
+        meter.serial_number,
+        meter.utility_meter_number,
+        meter.communication_profile_code,
+        meter.meter_profile_code,
+        meter.id,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
+    );
+  }, [availableMeters, wizardMeterSearchQuery]);
+
+  useEffect(() => {
+    if (!wizardTemplates.some((template) => template.id === wizardTemplateId)) {
+      setWizardTemplateId(wizardTemplates[0]?.id ?? "");
+    }
+  }, [wizardTemplateId, wizardTemplates]);
 
   const overviewCards = useMemo(
     () => [
@@ -282,8 +445,118 @@ export function CommandsModule({
           ? formatFamilySummary(selectedRecentCommand.family_specific_outcome_summary)
           : "Choose a command to inspect bounded detail",
       },
+      {
+        label: "Pending approvals",
+        value: String(pendingApprovals.length),
+        note:
+          pendingApprovals.length > 0
+            ? "Bulk-requested commands currently waiting for review"
+            : "No commands are waiting for approval",
+      },
     ],
-    [recentCommands, recentFamilyFilter, selectedRecentCommand],
+    [pendingApprovals.length, recentCommands, recentFamilyFilter, selectedRecentCommand],
+  );
+
+  const toggleWizardMeterSelection = useCallback((meterId: string) => {
+    setSelectedWizardMeterIds((current) =>
+      current.includes(meterId)
+        ? current.filter((item) => item !== meterId)
+        : [...current, meterId],
+    );
+  }, []);
+
+  const selectAllFilteredWizardMeters = useCallback(() => {
+    setSelectedWizardMeterIds(filteredWizardMeters.map((meter) => meter.id));
+  }, [filteredWizardMeters]);
+
+  const handleBulkSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setIsSubmittingBulkRequest(true);
+      setBulkActionError(null);
+      setBulkActionSuccess(null);
+      setBulkSubmissionResult(null);
+
+      try {
+        const response = await authorizedFetch<BulkCommandResponse>("/api/v1/commands/bulk-requests", {
+          method: "POST",
+          body: JSON.stringify({
+            family: wizardFamily,
+            meter_ids: selectedWizardMeterIds,
+            command_template_id: wizardTemplateId,
+            relay_operation: wizardFamily === "relay_control" ? wizardRelayOperation : undefined,
+            on_demand_read_operation:
+              wizardFamily === "on_demand_read" ? wizardOnDemandReadOperation : undefined,
+            notes: bulkNotes.trim() || undefined,
+          }),
+        });
+
+        setBulkSubmissionResult(response);
+        setBulkActionSuccess(
+          response.failed_total > 0
+            ? `${response.submitted_total} bulk command requests submitted for approval. ${response.failed_total} targets need operator follow-up.`
+            : `${response.submitted_total} bulk command requests submitted for approval.`,
+        );
+        const firstSubmittedCommand = response.items.find((item) => item.command_id)?.command_id;
+        await Promise.all([
+          loadRecentCommands(firstSubmittedCommand ?? undefined),
+          loadPendingApprovals(),
+        ]);
+      } catch (error) {
+        setBulkActionError(
+          error instanceof Error ? error.message : "Unable to submit bulk commands for approval.",
+        );
+      } finally {
+        setIsSubmittingBulkRequest(false);
+      }
+    },
+    [
+      authorizedFetch,
+      bulkNotes,
+      loadPendingApprovals,
+      loadRecentCommands,
+      selectedWizardMeterIds,
+      wizardFamily,
+      wizardOnDemandReadOperation,
+      wizardRelayOperation,
+      wizardTemplateId,
+    ],
+  );
+
+  const handleApprovalAction = useCallback(
+    async (commandId: string, action: "approve" | "reject") => {
+      setActiveApprovalActionCommandId(commandId);
+      setApprovalActionError(null);
+      setApprovalActionSuccess(null);
+
+      try {
+        await authorizedFetch(`/api/v1/commands/${commandId}/approvals/${action}`, {
+          method: "POST",
+          body: JSON.stringify({
+            approval_notes:
+              action === "approve"
+                ? "Approved from the bounded bulk approvals MVP."
+                : "Rejected from the bounded bulk approvals MVP.",
+          }),
+        });
+
+        await Promise.all([loadPendingApprovals(), loadRecentCommands(commandId)]);
+        await loadCommandDetail(commandId);
+        setSelectedCommandId(commandId);
+        setApprovalActionSuccess(
+          action === "approve"
+            ? "Selected command approval accepted."
+            : "Selected command approval rejected.",
+        );
+      } catch (error) {
+        setApprovalActionError(
+          error instanceof Error ? error.message : "Unable to update command approval.",
+        );
+      } finally {
+        setActiveApprovalActionCommandId(null);
+      }
+    },
+    [authorizedFetch, loadCommandDetail, loadPendingApprovals, loadRecentCommands],
   );
 
   const projectionEntries = useMemo(
@@ -327,6 +600,290 @@ export function CommandsModule({
             ))}
           </div>
         </section>
+
+        <div className="commands-phase-two-layout">
+          <section className="subpanel">
+            <div className="section-heading">
+              <div>
+                <h2>Bulk command wizard</h2>
+                <p className="muted">
+                  Bounded Phase 2 request flow for relay control and on-demand read,
+                  starting with manual multi-select and approval routing only.
+                </p>
+              </div>
+              <span className="artifact-pill">Submits for approval</span>
+            </div>
+
+            {wizardContextError ? <p className="error-banner">{wizardContextError}</p> : null}
+            {bulkActionError ? <p className="error-banner">{bulkActionError}</p> : null}
+            {bulkActionSuccess ? <p className="success-banner">{bulkActionSuccess}</p> : null}
+
+            {isLoadingWizardContext ? (
+              <p className="muted">Loading bulk command wizard context...</p>
+            ) : (
+              <form className="detail-stack" onSubmit={handleBulkSubmit}>
+                <div className="inline-form">
+                  <label className="field">
+                    <span>Command family</span>
+                    <select
+                      onChange={(event) =>
+                        setWizardFamily(event.target.value as BulkCommandFamily)
+                      }
+                      value={wizardFamily}
+                    >
+                      <option value="relay_control">Relay control</option>
+                      <option value="on_demand_read">On-demand read</option>
+                    </select>
+                  </label>
+
+                  {wizardFamily === "relay_control" ? (
+                    <label className="field">
+                      <span>Relay operation</span>
+                      <select
+                        onChange={(event) =>
+                          setWizardRelayOperation(event.target.value as RelayOperation)
+                        }
+                        value={wizardRelayOperation}
+                      >
+                        <option value="disconnect">Disconnect</option>
+                        <option value="reconnect">Reconnect</option>
+                      </select>
+                    </label>
+                  ) : null}
+
+                  <label className="field">
+                    <span>Command template</span>
+                    <select
+                      onChange={(event) => setWizardTemplateId(event.target.value)}
+                      value={wizardTemplateId}
+                    >
+                      {wizardTemplates.length === 0 ? (
+                        <option value="">No compatible template</option>
+                      ) : null}
+                      {wizardTemplates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.code}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="inline-form">
+                  <label className="field">
+                    <span>Bulk notes</span>
+                    <textarea
+                      onChange={(event) => setBulkNotes(event.target.value)}
+                      placeholder="Optional operator context for the bounded approvals queue"
+                      rows={3}
+                      value={bulkNotes}
+                    />
+                  </label>
+                </div>
+
+                <div className="commands-selection-summary">
+                  <span className="artifact-pill">
+                    {selectedWizardMeterIds.length} target
+                    {selectedWizardMeterIds.length === 1 ? "" : "s"} selected
+                  </span>
+                  <span className="artifact-pill">
+                    {filteredWizardMeters.length} meter
+                    {filteredWizardMeters.length === 1 ? "" : "s"} in current target filter
+                  </span>
+                  <span className="artifact-pill">
+                    {wizardFamily === "relay_control"
+                      ? `${formatCommandFamilyLabel(wizardFamily)} ${formatStatusLabel(
+                          wizardRelayOperation,
+                        )}`
+                      : "On-demand read billing snapshot"}
+                  </span>
+                </div>
+
+                <div className="inline-form">
+                  <label className="field">
+                    <span>Target filter</span>
+                    <input
+                      aria-label="Bulk target filter"
+                      onChange={(event) => setWizardMeterSearchQuery(event.target.value)}
+                      placeholder="Search serial number, utility number, profile, or meter ID"
+                      type="search"
+                      value={wizardMeterSearchQuery}
+                    />
+                  </label>
+                </div>
+
+                <div className="artifact-row">
+                  <button
+                    className="secondary-button"
+                    onClick={selectAllFilteredWizardMeters}
+                    type="button"
+                  >
+                    Select filtered
+                  </button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => setSelectedWizardMeterIds([])}
+                    type="button"
+                  >
+                    Clear selection
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={
+                      isSubmittingBulkRequest ||
+                      selectedWizardMeterIds.length === 0 ||
+                      wizardTemplateId === ""
+                    }
+                    type="submit"
+                  >
+                    {isSubmittingBulkRequest ? "Submitting..." : "Submit for approval"}
+                  </button>
+                </div>
+
+                <div className="command-list">
+                  {filteredWizardMeters.length === 0 ? (
+                    <p className="muted">
+                      No meters match the current bulk target filter.
+                    </p>
+                  ) : null}
+
+                  {filteredWizardMeters.map((meter) => {
+                    const isSelected = selectedWizardMeterIds.includes(meter.id);
+                    return (
+                      <article
+                        key={meter.id}
+                        className={isSelected ? "command-list-item selected" : "command-list-item"}
+                      >
+                        <div className="command-list-item-header">
+                          <strong>{meter.serial_number}</strong>
+                          <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
+                            {formatStatusLabel(meter.current_status)}
+                          </span>
+                        </div>
+                        <div className="command-list-item-meta">
+                          <span>Meter {meter.id}</span>
+                          <span>{meter.utility_meter_number ?? "No utility meter number"}</span>
+                        </div>
+                        <div className="command-list-item-meta">
+                          <span>
+                            {meter.communication_profile_code ??
+                              meter.meter_profile_code ??
+                              "No profile summary"}
+                          </span>
+                          <span>Last seen {formatDateTime(meter.last_seen_at)}</span>
+                        </div>
+                        <div className="artifact-row">
+                          <label className="artifact-pill">
+                            <input
+                              checked={isSelected}
+                              onChange={() => toggleWizardMeterSelection(meter.id)}
+                              type="checkbox"
+                            />{" "}
+                            Include in bulk request
+                          </label>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                {bulkSubmissionResult ? (
+                  <div className="detail-grid">
+                    {bulkSubmissionResult.items.slice(0, 4).map((item) => (
+                      <div key={`${item.meter_id}-${item.command_id ?? item.submission_status}`} className="stat-card">
+                        <span className="stat-label">Target {item.meter_id}</span>
+                        <strong>
+                          {item.command_id
+                            ? item.command_template_code ?? "Command created"
+                            : "Submission needs follow-up"}
+                        </strong>
+                        <p className="muted">{item.detail ?? "No detail recorded."}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </form>
+            )}
+          </section>
+
+          <section className="subpanel">
+            <div className="section-heading">
+              <div>
+                <h2>Pending approvals</h2>
+                <p className="muted">
+                  Bounded queue for commands submitted through the bulk wizard and still
+                  waiting for one-step operator review.
+                </p>
+              </div>
+              <span className="artifact-pill">{pendingApprovals.length} waiting</span>
+            </div>
+
+            {approvalActionError ? <p className="error-banner">{approvalActionError}</p> : null}
+            {approvalActionSuccess ? <p className="success-banner">{approvalActionSuccess}</p> : null}
+
+            {isLoadingPendingApprovals ? (
+              <p className="muted">Loading pending approvals...</p>
+            ) : null}
+
+            {!isLoadingPendingApprovals && pendingApprovals.length === 0 ? (
+              <p className="muted">
+                No commands are currently waiting in the bounded approvals queue.
+              </p>
+            ) : null}
+
+            <div className="command-list">
+              {pendingApprovals.map((command) => (
+                <article key={command.command_id} className="command-list-item">
+                  <div className="command-list-item-header">
+                    <strong>{command.command_template_code}</strong>
+                    <span className={`status-pill ${buildStatusTone(command.approval_status)}`}>
+                      {formatStatusLabel(command.approval_status)}
+                    </span>
+                  </div>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {formatCommandFamilyLabel(command.command_family)}
+                    </span>
+                    <span className="artifact-pill">{formatStatusLabel(command.command_status)}</span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>Meter {command.meter_id}</span>
+                    <span>Requested {formatDateTime(command.created_at)}</span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
+                    <span>Last updated {formatDateTime(command.latest_updated_at)}</span>
+                  </div>
+                  <div className="artifact-row">
+                    <button
+                      className="secondary-button"
+                      onClick={() => setSelectedCommandId(command.command_id)}
+                      type="button"
+                    >
+                      Inspect
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={activeApprovalActionCommandId === command.command_id}
+                      onClick={() => void handleApprovalAction(command.command_id, "approve")}
+                      type="button"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={activeApprovalActionCommandId === command.command_id}
+                      onClick={() => void handleApprovalAction(command.command_id, "reject")}
+                      type="button"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
 
         <div className="commands-module-layout">
           <section className="subpanel">
@@ -400,6 +957,9 @@ export function CommandsModule({
                     <span className="artifact-pill">
                       {formatCommandCategoryLabel(command.command_category)}
                     </span>
+                    <span className={`status-pill ${buildStatusTone(command.approval_status)}`}>
+                      Approval {formatStatusLabel(command.approval_status)}
+                    </span>
                   </div>
                   <div className="command-list-item-meta">
                     <span>Meter {command.meter_id}</span>
@@ -459,6 +1019,9 @@ export function CommandsModule({
                     <span className="artifact-pill">
                       {formatCommandCategoryLabel(selectedCommandDetail.command_category)}
                     </span>
+                    <span className={`status-pill ${buildStatusTone(selectedCommandDetail.approval_status)}`}>
+                      Approval {formatStatusLabel(selectedCommandDetail.approval_status)}
+                    </span>
                     <span className="artifact-pill">
                       Outcome:{" "}
                       {formatFamilySummary(
@@ -488,6 +1051,14 @@ export function CommandsModule({
                   <div className="stat-card">
                     <span className="stat-label">Status</span>
                     <strong>{formatStatusLabel(selectedCommandDetail.command_status)}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Approval status</span>
+                    <strong>{formatStatusLabel(selectedCommandDetail.approval_status)}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Approval reviewed</span>
+                    <strong>{formatDateTime(selectedCommandDetail.approval_reviewed_at)}</strong>
                   </div>
                   <div className="stat-card">
                     <span className="stat-label">Latest attempt</span>
@@ -520,6 +1091,27 @@ export function CommandsModule({
                     <strong>{formatDateTime(selectedCommandDetail.latest_updated_at)}</strong>
                   </div>
                 </div>
+
+                <section className="subpanel commands-detail-subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Approval context</h3>
+                      <p className="muted">
+                        One-step approval visibility for the bounded bulk command MVP.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="detail-grid">
+                    <div className="stat-card">
+                      <span className="stat-label">Approval status</span>
+                      <strong>{formatStatusLabel(selectedCommandDetail.approval_status)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Approval note</span>
+                      <strong>{selectedCommandDetail.approval_notes ?? "Not recorded"}</strong>
+                    </div>
+                  </div>
+                </section>
 
                 <section className="subpanel commands-detail-subpanel">
                   <div className="section-heading">

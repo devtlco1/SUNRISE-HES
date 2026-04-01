@@ -9,14 +9,21 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.modules.commands.models import CommandExecutionAttempt, CommandTemplate, MeterCommand
 from app.modules.commands.enums import (
+    CommandApprovalStatus,
     CommandCategory,
     CommandExecutionAttemptStatus,
+    CommandOperationalFamily,
+    CommandPriority,
     CommandStatus,
     OnDemandReadCommandOperation,
     RelayControlCommandOperation,
 )
 from app.modules.commands.schemas import (
+    BulkCommandWizardRequest,
+    BulkCommandWizardResponse,
+    BulkCommandWizardResultItem,
     CaptureLoadProfileCommandCreate,
+    CommandApprovalActionRequest,
     CommandExecutionAttemptListResponse,
     CommandExecutionAttemptResponse,
     CommandTemplateCreate,
@@ -106,6 +113,7 @@ def create_meter_command(
     meter_id: uuid.UUID,
     payload: MeterCommandCreate,
     requested_by_user_id: uuid.UUID | None,
+    approval_status: CommandApprovalStatus = CommandApprovalStatus.NOT_REQUIRED,
     commit: bool = True,
 ) -> MeterCommand:
     meter = session.get(Meter, meter_id)
@@ -158,6 +166,7 @@ def create_meter_command(
         protocol_association_profile_id=payload.protocol_association_profile_id,
         correlation_id=payload.correlation_id,
         idempotency_key=payload.idempotency_key,
+        approval_status=approval_status,
         priority=payload.priority,
         request_payload=payload.request_payload,
         normalized_payload=payload.normalized_payload or payload.request_payload,
@@ -182,6 +191,8 @@ def submit_capture_load_profile_command(
     meter_id: uuid.UUID,
     payload: CaptureLoadProfileCommandCreate,
     requested_by_user_id: uuid.UUID | None,
+    approval_status: CommandApprovalStatus = CommandApprovalStatus.NOT_REQUIRED,
+    commit: bool = True,
 ) -> MeterCommand:
     meter = session.get(Meter, meter_id)
     if meter is None:
@@ -299,6 +310,8 @@ def submit_capture_load_profile_command(
             notes=payload.notes,
         ),
         requested_by_user_id=requested_by_user_id,
+        approval_status=approval_status,
+        commit=commit,
     )
     return command
 
@@ -316,6 +329,8 @@ def submit_relay_control_command(
     meter_id: uuid.UUID,
     payload: RelayControlCommandCreate,
     requested_by_user_id: uuid.UUID | None,
+    approval_status: CommandApprovalStatus = CommandApprovalStatus.NOT_REQUIRED,
+    commit: bool = True,
 ) -> MeterCommand:
     meter = session.get(Meter, meter_id)
     if meter is None:
@@ -405,6 +420,8 @@ def submit_relay_control_command(
             notes=payload.notes,
         ),
         requested_by_user_id=requested_by_user_id,
+        approval_status=approval_status,
+        commit=commit,
     )
     return command
 
@@ -462,6 +479,8 @@ def submit_on_demand_read_command(
     meter_id: uuid.UUID,
     payload: OnDemandReadCommandCreate,
     requested_by_user_id: uuid.UUID | None,
+    approval_status: CommandApprovalStatus = CommandApprovalStatus.NOT_REQUIRED,
+    commit: bool = True,
 ) -> MeterCommand:
     meter = session.get(Meter, meter_id)
     if meter is None:
@@ -548,6 +567,8 @@ def submit_on_demand_read_command(
             notes=payload.notes,
         ),
         requested_by_user_id=requested_by_user_id,
+        approval_status=approval_status,
+        commit=commit,
     )
     return command
 
@@ -567,6 +588,185 @@ def _normalize_on_demand_read_submission(
             },
         },
     }
+
+
+def _resolve_bulk_endpoint_assignment(
+    session: Session,
+    *,
+    meter_id: uuid.UUID,
+) -> MeterEndpointAssignment:
+    assignment = session.scalar(
+        select(MeterEndpointAssignment)
+        .where(
+            MeterEndpointAssignment.meter_id == meter_id,
+            MeterEndpointAssignment.assignment_status == EndpointAssignmentStatus.ACTIVE,
+        )
+        .order_by(MeterEndpointAssignment.is_primary.desc(), MeterEndpointAssignment.assigned_at.desc())
+    )
+    if assignment is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Selected meter has no active endpoint assignment for bulk command submission.",
+        )
+    return assignment
+
+
+def _resolve_bulk_protocol_profile(session: Session) -> ProtocolAssociationProfile:
+    profile = session.scalar(
+        select(ProtocolAssociationProfile)
+        .where(
+            ProtocolAssociationProfile.is_active.is_(True),
+            ProtocolAssociationProfile.protocol_family == ProtocolFamily.DLMS_COSEM,
+        )
+        .order_by(ProtocolAssociationProfile.created_at.asc())
+    )
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No active DLMS protocol profile is available for bulk command submission.",
+        )
+    return profile
+
+
+def submit_bulk_commands_for_approval(
+    session: Session,
+    *,
+    payload: BulkCommandWizardRequest,
+    requested_by_user_id: uuid.UUID | None,
+) -> BulkCommandWizardResponse:
+    if payload.family not in {
+        CommandOperationalFamily.RELAY_CONTROL,
+        CommandOperationalFamily.ON_DEMAND_READ,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bulk command wizard supports relay control and on-demand read only in this MVP.",
+        )
+
+    protocol_profile = _resolve_bulk_protocol_profile(session)
+    deduped_meter_ids = list(dict.fromkeys(payload.meter_ids))
+    items: list[BulkCommandWizardResultItem] = []
+
+    for meter_id in deduped_meter_ids:
+        try:
+            endpoint_assignment = _resolve_bulk_endpoint_assignment(session, meter_id=meter_id)
+
+            if payload.family == CommandOperationalFamily.RELAY_CONTROL:
+                if payload.relay_operation is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Relay operation is required for relay-control bulk submission.",
+                    )
+                command = submit_relay_control_command(
+                    session,
+                    meter_id=meter_id,
+                    payload=RelayControlCommandCreate(
+                        command_template_id=payload.command_template_id,
+                        relay_operation=payload.relay_operation,
+                        endpoint_assignment_id=endpoint_assignment.id,
+                        protocol_association_profile_id=protocol_profile.id,
+                        priority=CommandPriority.HIGH,
+                        notes=payload.notes,
+                    ),
+                    requested_by_user_id=requested_by_user_id,
+                    approval_status=CommandApprovalStatus.SUBMITTED_FOR_APPROVAL,
+                )
+            else:
+                command = submit_on_demand_read_command(
+                    session,
+                    meter_id=meter_id,
+                    payload=OnDemandReadCommandCreate(
+                        command_template_id=payload.command_template_id,
+                        on_demand_read_operation=(
+                            payload.on_demand_read_operation
+                            or OnDemandReadCommandOperation.READ_BILLING_SNAPSHOT
+                        ),
+                        endpoint_assignment_id=endpoint_assignment.id,
+                        protocol_association_profile_id=protocol_profile.id,
+                        priority=CommandPriority.HIGH,
+                        notes=payload.notes,
+                    ),
+                    requested_by_user_id=requested_by_user_id,
+                    approval_status=CommandApprovalStatus.SUBMITTED_FOR_APPROVAL,
+                )
+
+            items.append(
+                BulkCommandWizardResultItem(
+                    meter_id=meter_id,
+                    command_id=command.id,
+                    command_template_code=command.command_template.code,
+                    command_family=payload.family,
+                    command_status=command.current_status,
+                    approval_status=command.approval_status,
+                    submission_status="submitted_for_approval",
+                    detail="Command request created and routed into the bounded approvals queue.",
+                )
+            )
+        except HTTPException as error:
+            session.rollback()
+            items.append(
+                BulkCommandWizardResultItem(
+                    meter_id=meter_id,
+                    command_family=payload.family,
+                    submission_status="submission_failed",
+                    detail=str(error.detail),
+                )
+            )
+
+    submitted_total = sum(1 for item in items if item.command_id is not None)
+    failed_total = len(items) - submitted_total
+    return BulkCommandWizardResponse(
+        submitted_total=submitted_total,
+        failed_total=failed_total,
+        items=items,
+    )
+
+
+def approve_command_approval(
+    session: Session,
+    *,
+    command_id: uuid.UUID,
+    payload: CommandApprovalActionRequest,
+    reviewed_by_user_id: uuid.UUID | None,
+) -> MeterCommand:
+    command = get_meter_command(session, command_id)
+    if command.approval_status != CommandApprovalStatus.SUBMITTED_FOR_APPROVAL:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Command is not waiting for approval.",
+        )
+
+    command.approval_status = CommandApprovalStatus.APPROVED
+    command.approval_reviewed_at = datetime.now(UTC)
+    command.approval_reviewed_by_user_id = reviewed_by_user_id
+    command.approval_notes = payload.approval_notes
+    session.add(command)
+    session.commit()
+    return get_meter_command(session, command.id)
+
+
+def reject_command_approval(
+    session: Session,
+    *,
+    command_id: uuid.UUID,
+    payload: CommandApprovalActionRequest,
+    reviewed_by_user_id: uuid.UUID | None,
+) -> MeterCommand:
+    command = get_meter_command(session, command_id)
+    if command.approval_status != CommandApprovalStatus.SUBMITTED_FOR_APPROVAL:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Command is not waiting for approval.",
+        )
+
+    command.approval_status = CommandApprovalStatus.REJECTED
+    command.approval_reviewed_at = datetime.now(UTC)
+    command.approval_reviewed_by_user_id = reviewed_by_user_id
+    command.approval_notes = payload.approval_notes
+    command.current_status = CommandStatus.CANCELLED
+    session.add(command)
+    session.commit()
+    return get_meter_command(session, command.id)
 
 
 def bootstrap_on_demand_read_command_attempt(
@@ -1479,6 +1679,10 @@ def serialize_meter_command(item: MeterCommand) -> MeterCommandResponse:
         command_template_code=item.command_template.code,
         command_template_name=item.command_template.name,
         current_status=item.current_status,
+        approval_status=item.approval_status,
+        approval_reviewed_at=item.approval_reviewed_at,
+        approval_reviewed_by_user_id=item.approval_reviewed_by_user_id,
+        approval_notes=item.approval_notes,
         priority=item.priority,
         requested_by_user_id=item.requested_by_user_id,
         requested_at=item.requested_at,

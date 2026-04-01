@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.modules.commands.enums import (
+    CommandApprovalStatus,
     CommandCategory,
     CommandExecutionAttemptStatus,
     CommandOperationalFamily,
@@ -109,6 +110,36 @@ class OnDemandReadCommandCreate(BaseModel):
     correlation_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)
     notes: str | None = None
+
+
+class BulkCommandWizardRequest(BaseModel):
+    family: CommandOperationalFamily
+    meter_ids: list[UUID] = Field(min_length=1)
+    command_template_id: UUID
+    relay_operation: RelayControlCommandOperation | None = None
+    on_demand_read_operation: OnDemandReadCommandOperation | None = None
+    notes: str | None = None
+
+
+class BulkCommandWizardResultItem(BaseModel):
+    meter_id: UUID
+    command_id: UUID | None = None
+    command_template_code: str | None = None
+    command_family: CommandOperationalFamily
+    command_status: CommandStatus | None = None
+    approval_status: CommandApprovalStatus | None = None
+    submission_status: str
+    detail: str | None = None
+
+
+class BulkCommandWizardResponse(BaseModel):
+    submitted_total: int
+    failed_total: int
+    items: list[BulkCommandWizardResultItem]
+
+
+class CommandApprovalActionRequest(BaseModel):
+    approval_notes: str | None = None
 
 
 class OnDemandReadAttemptBootstrapRequest(BaseModel):
@@ -881,6 +912,10 @@ class MeterCommandResponse(BaseModel):
     command_template_code: str
     command_template_name: str
     current_status: CommandStatus
+    approval_status: CommandApprovalStatus
+    approval_reviewed_at: datetime | None
+    approval_reviewed_by_user_id: UUID | None
+    approval_notes: str | None
     priority: CommandPriority
     requested_by_user_id: UUID | None
     requested_at: datetime
@@ -912,6 +947,10 @@ class CommandOperationalDetailResult(BaseModel):
     command_family: CommandOperationalFamily
     command_category: CommandCategory
     command_status: CommandStatus
+    approval_status: CommandApprovalStatus
+    approval_reviewed_at: datetime | None = None
+    approval_reviewed_by_user_id: UUID | None = None
+    approval_notes: str | None = None
     meter_id: UUID
     command_template_code: str
     latest_command_execution_attempt_id: UUID | None = None
@@ -935,6 +974,8 @@ class CommandOperationalRecentListItem(BaseModel):
     command_family: CommandOperationalFamily
     command_category: CommandCategory
     command_status: CommandStatus
+    approval_status: CommandApprovalStatus
+    approval_reviewed_at: datetime | None = None
     meter_id: UUID
     command_template_code: str
     latest_command_execution_attempt_id: UUID | None = None
