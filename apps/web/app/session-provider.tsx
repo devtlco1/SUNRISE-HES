@@ -68,6 +68,7 @@ type SessionContextValue = {
 
 const ACCESS_TOKEN_STORAGE_KEY = "sunrise.web.accessToken";
 const API_BASE_URL_STORAGE_KEY = "sunrise.web.apiBaseUrl";
+const CURRENT_USER_STORAGE_KEY = "sunrise.web.currentUser";
 const DEFAULT_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const INITIAL_API_CONNECTIVITY: ApiConnectivity = {
@@ -104,6 +105,24 @@ function isLikelyNetworkError(error: unknown): boolean {
     message.includes("networkerror") ||
     message.includes("load failed")
   );
+}
+
+function readStoredCurrentUser(): CurrentUser | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const rawValue = window.localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawValue) as CurrentUser;
+  } catch {
+    window.localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+    return null;
+  }
 }
 
 export function SessionProvider({ children }: PropsWithChildren) {
@@ -254,6 +273,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     );
     const storedAccessToken =
       window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "";
+    const storedCurrentUser = readStoredCurrentUser();
 
     if (resolvedApiBaseUrl !== apiBaseUrlRef.current) {
       apiBaseUrlRef.current = resolvedApiBaseUrl;
@@ -261,14 +281,21 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }
 
     if (!storedAccessToken) {
+      setCurrentUser(null);
       setSessionError(null);
       setIsCheckingSession(false);
       return;
     }
 
     setAccessToken(storedAccessToken);
+    if (storedCurrentUser) {
+      setCurrentUser(storedCurrentUser);
+      setSessionError(null);
+      setIsCheckingSession(false);
+    }
 
     let isCancelled = false;
+    const shouldBlockOnBootstrap = storedCurrentUser === null;
 
     const bootstrapSession = async () => {
       try {
@@ -306,7 +333,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
               : "Session is missing or no longer valid.",
         );
       } finally {
-        if (!isCancelled) {
+        if (!isCancelled && shouldBlockOnBootstrap) {
           setIsCheckingSession(false);
         }
       }
@@ -336,6 +363,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }
     window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
   }, [accessToken]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (currentUser) {
+      window.localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(currentUser));
+      return;
+    }
+    window.localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+  }, [currentUser]);
 
   const login = useCallback(
     async ({
@@ -376,12 +414,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
       const payload = (await response.json()) as LoginResponse;
       setAccessToken(payload.access_token);
       setCurrentUser(payload.user);
+      setIsCheckingSession(false);
       setSessionError(null);
       setApiConnectivityIfChanged({
         status: "reachable",
         message: null,
         checkedBaseUrl: apiBaseUrl,
       });
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, payload.access_token);
+        window.localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(payload.user));
+      }
       return payload;
     },
     [apiBaseUrl, setApiConnectivityIfChanged],
@@ -423,7 +466,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const logout = useCallback(() => {
     setAccessToken("");
     setCurrentUser(null);
+    setIsCheckingSession(false);
     setSessionError(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+      window.localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+    }
   }, []);
 
   const value = useMemo<SessionContextValue>(

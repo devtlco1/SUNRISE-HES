@@ -103,6 +103,10 @@ describe("LoginModule", () => {
 
     expect(await screen.findByText("Signed in as ops.user.")).toBeInTheDocument();
     expect(onLoginSuccess).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("sunrise.web.accessToken")).toBe("token-1");
+    expect(window.localStorage.getItem("sunrise.web.currentUser")).toContain(
+      '"username":"ops.user"',
+    );
   });
 
   it("renders an error when login fails", async () => {

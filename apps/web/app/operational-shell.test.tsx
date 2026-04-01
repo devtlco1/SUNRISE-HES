@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { act, type ReactElement } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
@@ -141,6 +142,100 @@ describe("OperationalShell", () => {
         },
       }),
     );
+  });
+
+  it("unlocks protected content immediately when a stored user snapshot exists", async () => {
+    window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:9000/");
+    window.localStorage.setItem("sunrise.web.accessToken", "token-1");
+    window.localStorage.setItem(
+      "sunrise.web.currentUser",
+      JSON.stringify({
+        id: "user-1",
+        username: "ops.user",
+        email: "ops@example.com",
+        full_name: "Ops User",
+        status: "active",
+        is_superuser: true,
+      }),
+    );
+
+    const fetchMock = vi.fn(
+      async () =>
+        new Promise<Response>((resolve) => {
+          window.setTimeout(() => {
+            resolve(
+              jsonResponse({
+                id: "user-1",
+                username: "ops.user",
+                email: "ops@example.com",
+                full_name: "Ops User",
+                status: "active",
+                is_superuser: true,
+              }),
+            );
+          }, 100);
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OperationalShell
+        eyebrow="Operational Pages"
+        title="Commands"
+        description="Shell test"
+      >
+        {() => <div>Protected child</div>}
+      </OperationalShell>,
+    );
+
+    expect(await screen.findByText("Protected child")).toBeInTheDocument();
+    expect(screen.queryByText("Checking session")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("clears the stored session snapshot on logout", async () => {
+    window.localStorage.setItem("sunrise.web.accessToken", "token-1");
+    window.localStorage.setItem(
+      "sunrise.web.currentUser",
+      JSON.stringify({
+        id: "user-1",
+        username: "ops.user",
+        email: "ops@example.com",
+        full_name: "Ops User",
+        status: "active",
+        is_superuser: true,
+      }),
+    );
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        id: "user-1",
+        username: "ops.user",
+        email: "ops@example.com",
+        full_name: "Ops User",
+        status: "active",
+        is_superuser: true,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OperationalShell
+        eyebrow="Operational Pages"
+        title="Commands"
+        description="Shell test"
+      >
+        {() => <div>Protected child</div>}
+      </OperationalShell>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Sign out" }));
+
+    expect(await screen.findByText("Session required")).toBeInTheDocument();
+    expect(window.localStorage.getItem("sunrise.web.accessToken")).toBeNull();
+    expect(window.localStorage.getItem("sunrise.web.currentUser")).toBeNull();
   });
 
   it("hydrates the shell without mismatching stored API base URL text", async () => {
