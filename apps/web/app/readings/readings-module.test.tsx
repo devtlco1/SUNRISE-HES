@@ -225,7 +225,7 @@ describe("ReadingsModule", () => {
     ).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText("Billing reads loaded")).toBeInTheDocument();
+      expect(screen.getAllByText("Billing-read context")).not.toHaveLength(0);
       expect(screen.getByText("Recent raw readings loaded")).toBeInTheDocument();
       expect(screen.getAllByText("Total Import: 123.456")).not.toHaveLength(0);
       expect(screen.getAllByText("Received")).not.toHaveLength(0);
@@ -238,19 +238,25 @@ describe("ReadingsModule", () => {
       "href",
       "/meters/meter-1",
     );
+    expect(screen.getByText("Selected meter focus")).toBeInTheDocument();
+    expect(screen.getByText("Selected meter SN-1001")).toBeInTheDocument();
+    expect(screen.getByText("Overview reflects current billing context")).toBeInTheDocument();
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
     expect(screen.getByText("Newest first")).toBeInTheDocument();
     expect(screen.getAllByText("Latest billing read")).not.toHaveLength(0);
     expect(screen.getByText("Received at")).toBeInTheDocument();
     expect(screen.getByText("Latest batch Received")).toBeInTheDocument();
     expect(screen.getAllByText("Billing-read context available")).not.toHaveLength(0);
-    expect(screen.getByText("Latest billing value")).toBeInTheDocument();
+    expect(screen.getAllByText("Latest billing value")).not.toHaveLength(0);
     expect(screen.getAllByText("Total Import: 123.456")).not.toHaveLength(0);
     expect(screen.getByText("Latest billing source")).toBeInTheDocument();
     expect(screen.getByText("Source Manual Read")).toBeInTheDocument();
     expect(screen.getByText("Batch receipt recorded")).toBeInTheDocument();
     expect(screen.getByText("Current primary billing value")).toBeInTheDocument();
-    expect(screen.getByText("Total Import 123.456 • Reset Reason scheduled_cycle")).toBeInTheDocument();
+    expect(screen.getByText(/Source Manual Read • Received/)).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Total Import 123.456 • Reset Reason scheduled_cycle"),
+    ).not.toHaveLength(0);
   });
 
   it("switches the bounded billing reads surface when a different meter is selected", async () => {
@@ -304,6 +310,9 @@ describe("ReadingsModule", () => {
     await waitFor(() => {
       expect(screen.getAllByText("SN-1002")).not.toHaveLength(0);
       expect(screen.getByText("1 of 2 meters match the current filter")).toBeInTheDocument();
+      expect(screen.getByText("1 filtered meter in scope")).toBeInTheDocument();
+      expect(screen.getByText("Selected meter SN-1002")).toBeInTheDocument();
+      expect(screen.getByText("Overview reflects missing billing context")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
         "href",
         "/meters/meter-2",
@@ -438,10 +447,10 @@ describe("ReadingsModule", () => {
       expect(screen.getAllByText("SN-1002")).not.toHaveLength(0);
       expect(screen.getAllByText("Billing-read context available")).not.toHaveLength(0);
       expect(screen.getAllByText("Total Import: 456.789")).not.toHaveLength(0);
+      expect(screen.getByText("Selected meter SN-1002")).toBeInTheDocument();
+      expect(screen.getByText("Overview reflects current billing context")).toBeInTheDocument();
       expect(screen.getByText("Source Scheduled Read")).toBeInTheDocument();
-      expect(
-        screen.getByText("Total Import 456.789 • Reset Reason manual_close"),
-      ).toBeInTheDocument();
+      expect(screen.getAllByText("Total Import 456.789 • Reset Reason manual_close")).not.toHaveLength(0);
     });
     expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
       "href",

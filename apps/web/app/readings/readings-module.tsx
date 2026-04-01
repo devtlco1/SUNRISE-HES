@@ -186,6 +186,10 @@ function formatReadingValue(reading: MeterReadingItem): string {
   return "Not available";
 }
 
+function formatCountLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export function ReadingsModule({
   authorizedFetch,
   initialMeterId = null,
@@ -386,6 +390,19 @@ export function ReadingsModule({
   const latestBillingContextLabel = latestBillingSnapshot
     ? "Billing-read context available"
     : "Billing-read context missing";
+  const selectedMeterStatusLabel = selectedMeter
+    ? formatStatusLabel(selectedMeter.current_status)
+    : "No selection";
+  const selectedMeterSignalLabel = selectedMeter
+    ? selectedMeter.last_seen_at
+      ? `Last signal ${formatDateTime(selectedMeter.last_seen_at)}`
+      : "No recent signal recorded"
+    : "Select a meter to inspect readings";
+  const latestBillingBatchSummary = latestBillingBatch
+    ? `Source ${formatStatusLabel(latestBillingBatch.source_type)} • Received ${formatDateTime(
+        latestBillingBatch.received_at,
+      )}`
+    : "No batch source or receipt recorded";
 
   const overviewCards = useMemo(
     () => [
@@ -404,17 +421,23 @@ export function ReadingsModule({
           : "Based on the current bounded meter list",
       },
       {
-        label: "Selected meter",
+        label: "Selected meter focus",
         value: selectedMeter?.serial_number ?? "No selection",
         note: selectedMeter
-          ? formatStatusLabel(selectedMeter.current_status)
+          ? `${selectedMeterStatusLabel} • ${selectedMeterSignalLabel}`
           : "Choose a meter to inspect readings",
       },
       {
-        label: "Billing reads loaded",
-        value: String(billingSnapshots.length),
+        label: "Billing-read context",
+        value: latestBillingContextLabel,
         note: selectedMeter
-          ? `Billing register snapshots for ${selectedMeter.serial_number}`
+          ? latestBillingSnapshot
+            ? `${formatCountLabel(
+                billingSnapshots.length,
+                "billing read",
+                "billing reads",
+              )} loaded for ${selectedMeter.serial_number}`
+            : `No billing reads loaded for ${selectedMeter.serial_number}`
           : "No selected meter billing context",
       },
       {
@@ -423,8 +446,15 @@ export function ReadingsModule({
           ? formatDateTime(latestBillingSnapshot.captured_at)
           : "Not available",
         note: latestBillingSnapshot
-          ? formatBillingPrimaryValue(latestBillingSnapshot.payload)
+          ? latestBillingBatchSummary
           : "No billing read recorded",
+      },
+      {
+        label: "Latest billing value",
+        value: latestBillingPrimaryValue,
+        note: latestBillingSnapshot
+          ? formatBillingSummary(latestBillingSnapshot.payload)
+          : "No billing payload recorded for the current selection",
       },
       {
         label: "Recent raw readings loaded",
@@ -438,10 +468,15 @@ export function ReadingsModule({
       billingSnapshots.length,
       filteredMeters,
       latestBillingSnapshot,
+      latestBillingBatchSummary,
+      latestBillingContextLabel,
+      latestBillingPrimaryValue,
       latestReading,
       meterReadings.length,
       meterSearchQuery,
       selectedMeter,
+      selectedMeterSignalLabel,
+      selectedMeterStatusLabel,
       totalMeters,
     ],
   );
@@ -473,14 +508,40 @@ export function ReadingsModule({
           {isLoadingOverview ? <p className="muted">Loading readings overview...</p> : null}
 
           {!isLoadingOverview ? (
-            <div className="readings-overview-grid">
-              {overviewCards.map((card) => (
-                <div key={card.label} className="stat-card readings-overview-card">
-                  <span className="stat-label">{card.label}</span>
-                  <strong>{card.value}</strong>
-                  <p className="muted">{card.note}</p>
-                </div>
-              ))}
+            <div className="detail-stack">
+              <div className="readings-overview-grid">
+                {overviewCards.map((card) => (
+                  <div key={card.label} className="stat-card readings-overview-card">
+                    <span className="stat-label">{card.label}</span>
+                    <strong>{card.value}</strong>
+                    <p className="muted">{card.note}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="artifact-row">
+                <span className="artifact-pill">
+                  {meterSearchQuery.trim()
+                    ? `${formatCountLabel(filteredMeters.length, "filtered meter", "filtered meters")} in scope`
+                    : `${formatCountLabel(totalMeters, "meter", "meters")} in current bounded scope`}
+                </span>
+                <span className="artifact-pill">
+                  {selectedMeter
+                    ? `Selected meter ${selectedMeter.serial_number}`
+                    : "Awaiting selected meter context"}
+                </span>
+                <span
+                  className={`status-pill ${buildStatusTone(
+                    latestBillingBatch?.status ?? (latestBillingSnapshot ? "received" : null),
+                  )}`}
+                >
+                  {selectedMeter
+                    ? latestBillingSnapshot
+                      ? `Overview reflects current billing context`
+                      : "Overview reflects missing billing context"
+                    : "Overview awaiting current billing context"}
+                </span>
+              </div>
             </div>
           ) : null}
         </section>
