@@ -36,6 +36,12 @@ jobs:
       - name: Run operational readiness flow
         run: ./scripts/local-operational-readiness.sh
 
+      - name: Capture compose diagnostics on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail=200 api
+
       - name: Tear down compose services
         if: always()
         run: docker compose down --remove-orphans --volumes
