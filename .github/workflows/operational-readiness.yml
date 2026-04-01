@@ -33,6 +33,11 @@ jobs:
           ./.venv/bin/python -m pip install --upgrade pip
           ./.venv/bin/python -m pip install -e packages/shared-python -e "apps/api[dev]"
 
+      - name: Prepare migrated api services
+        run: |
+          docker compose up -d postgres redis api
+          docker compose exec -T api alembic upgrade head
+
       - name: Run operational readiness flow
         run: ./scripts/local-operational-readiness.sh
 
