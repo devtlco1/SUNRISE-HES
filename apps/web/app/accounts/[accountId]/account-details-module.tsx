@@ -37,6 +37,37 @@ type AccountDetail = {
   linked_meters: AccountLinkedMeter[];
 };
 
+function formatStatusLabel(value: string): string {
+  return value
+    .split(/[_\s/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("active") ||
+    normalized.includes("registered") ||
+    normalized.includes("residential")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("inactive") ||
+    normalized.includes("closed") ||
+    normalized.includes("blocked") ||
+    normalized.includes("suspend")
+  ) {
+    return "danger";
+  }
+  if (normalized.includes("pending") || normalized.includes("review")) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 export function AccountDetailsModule({
   accountId,
   authorizedFetch,
@@ -78,15 +109,52 @@ export function AccountDetailsModule({
 
       {detail ? (
         <>
-          <div className="section-heading">
-            <div>
-              <h2>{detail.account_number}</h2>
-              <p className="muted">
-                {detail.status} account with {detail.linked_meter_count} linked current meter(s).
-              </p>
+          <section className="subpanel accounts-overview-panel">
+            <section className="account-detail-hero">
+              <div className="account-detail-title-row">
+                <div>
+                  <p className="eyebrow">Account Detail</p>
+                  <h2>{detail.account_number}</h2>
+                  <p className="muted">
+                    {formatStatusLabel(detail.status)} account with {detail.linked_meter_count} linked
+                    current meter(s).
+                  </p>
+                </div>
+                <span className={`status-pill ${buildStatusTone(detail.status)}`}>
+                  {formatStatusLabel(detail.status)}
+                </span>
+              </div>
+
+              <div className="command-list-item-badges">
+                <span className="artifact-pill">Account {detail.id}</span>
+                <span className="artifact-pill">
+                  {detail.subscriber.full_name}
+                </span>
+                <span className="artifact-pill">
+                  {detail.service_point?.service_point_code ?? "No linked service point"}
+                </span>
+              </div>
+            </section>
+
+            <div className="accounts-overview-grid">
+              <div className="stat-card accounts-overview-card">
+                <span className="stat-label">Billing cycle</span>
+                <strong>{detail.billing_cycle ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card accounts-overview-card">
+                <span className="stat-label">Subscriber type</span>
+                <strong>{formatStatusLabel(detail.subscriber.consumer_type)}</strong>
+              </div>
+              <div className="stat-card accounts-overview-card">
+                <span className="stat-label">Service point</span>
+                <strong>{detail.service_point?.service_point_code ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card accounts-overview-card">
+                <span className="stat-label">Linked current meters</span>
+                <strong>{detail.linked_meter_count}</strong>
+              </div>
             </div>
-            <span className="status-pill">{detail.status}</span>
-          </div>
+          </section>
 
           <section className="subpanel">
             <div className="section-heading">
@@ -112,7 +180,7 @@ export function AccountDetailsModule({
               </div>
               <div className="stat-card">
                 <span className="stat-label">Subscriber type</span>
-                <strong>{detail.subscriber.consumer_type}</strong>
+                <strong>{formatStatusLabel(detail.subscriber.consumer_type)}</strong>
               </div>
               <div className="stat-card">
                 <span className="stat-label">Service point</span>
@@ -160,8 +228,12 @@ export function AccountDetailsModule({
                 >
                   <div className="command-list-item-header">
                     <strong>{detail.service_point.service_point_code}</strong>
-                    <span className="status-pill">
-                      {detail.service_point.premises_type ?? "premise"}
+                    <span
+                      className={`status-pill ${buildStatusTone(
+                        detail.service_point.premises_type,
+                      )}`}
+                    >
+                      {formatStatusLabel(detail.service_point.premises_type ?? "premise")}
                     </span>
                   </div>
                   <div className="command-list-item-meta">
@@ -193,15 +265,18 @@ export function AccountDetailsModule({
                 <Link key={meter.id} className="meter-list-item" href={`/meters/${meter.id}`}>
                   <div className="command-list-item-header">
                     <strong>{meter.serial_number}</strong>
-                    <span className="status-pill">{meter.current_status}</span>
+                    <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
+                      {formatStatusLabel(meter.current_status)}
+                    </span>
+                  </div>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {meter.utility_meter_number ?? "No utility number"}
+                    </span>
                   </div>
                   <div className="command-list-item-meta">
                     <span>Meter ID {meter.id}</span>
-                    <span>{meter.utility_meter_number ?? "No utility number"}</span>
-                  </div>
-                  <div className="command-list-item-meta">
                     <span>Open existing meter detail</span>
-                    <span>Current account linkage</span>
                   </div>
                 </Link>
               ))}

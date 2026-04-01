@@ -104,7 +104,8 @@ describe("AccountDetailsModule", () => {
 
     renderAccountDetailsModuleInShell();
 
-    expect(await screen.findByText("ACC-1001")).toBeInTheDocument();
+    expect(await screen.findAllByText("ACC-1001")).not.toHaveLength(0);
+    expect(screen.getAllByText("Active")).not.toHaveLength(0);
     expect(screen.getByRole("link", { name: "Open subscriber detail" })).toHaveAttribute(
       "href",
       "/subscribers/consumer-1",

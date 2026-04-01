@@ -487,6 +487,12 @@ a {
   grid-template-columns: 1.15fr 1fr;
 }
 
+.accounts-module-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1.15fr 1fr;
+}
+
 .jobs-activity-layout {
   display: grid;
   gap: 1rem;
@@ -517,6 +523,12 @@ a {
     rgba(2, 6, 23, 0.24);
 }
 
+.accounts-overview-panel {
+  background:
+    linear-gradient(180deg, rgba(251, 191, 36, 0.08), rgba(15, 23, 42, 0.16)),
+    rgba(2, 6, 23, 0.24);
+}
+
 .commands-overview-grid {
   display: grid;
   gap: 0.9rem;
@@ -541,6 +553,12 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+.accounts-overview-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 .commands-overview-card p {
   margin: 0.55rem 0 0;
   font-size: 0.9rem;
@@ -560,6 +578,12 @@ a {
 }
 
 .subscribers-overview-card p {
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.accounts-overview-card p {
   margin: 0.55rem 0 0;
   font-size: 0.9rem;
   line-height: 1.5;
@@ -640,6 +664,11 @@ a {
 .subscriber-list-item.selected {
   border-color: rgba(45, 212, 191, 0.48);
   box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12);
+}
+
+.account-list-item.selected {
+  border-color: rgba(251, 191, 36, 0.42);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.12);
 }
 
 .meter-registry-item {
@@ -803,6 +832,13 @@ a {
   border: 1px solid rgba(45, 212, 191, 0.18);
 }
 
+.account-detail-hero {
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(251, 191, 36, 0.18);
+}
+
 .commands-detail-title-row {
   display: flex;
   justify-content: space-between;
@@ -825,6 +861,13 @@ a {
 }
 
 .subscriber-detail-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.account-detail-title-row {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -856,6 +899,13 @@ a {
   letter-spacing: -0.03em;
 }
 
+.account-detail-title-row h2,
+.account-detail-title-row h3 {
+  margin: 0;
+  font-size: 1.55rem;
+  letter-spacing: -0.03em;
+}
+
 .commands-detail-title-row .muted {
   margin: 0.55rem 0 0;
 }
@@ -869,6 +919,10 @@ a {
 }
 
 .subscriber-detail-title-row .muted {
+  margin: 0.55rem 0 0;
+}
+
+.account-detail-title-row .muted {
   margin: 0.55rem 0 0;
 }
 
@@ -959,6 +1013,7 @@ a {
   .commands-tab-layout,
   .commands-module-layout,
   .connectivity-module-layout,
+  .accounts-module-layout,
   .subscribers-module-layout,
   .jobs-activity-layout {
     grid-template-columns: 1fr;
@@ -978,6 +1033,7 @@ a {
   .commands-selection-summary,
   .commands-detail-title-row,
   .connectivity-detail-title-row,
+  .account-detail-title-row,
   .subscriber-detail-title-row,
   .jobs-activity-hero-row,
   .connectivity-row-actions,

@@ -12,7 +12,7 @@ export function AccountDetailsPageClient({
     <OperationalShell
       eyebrow="Operational Pages"
       title={`Account ${accountId}`}
-      description="Bounded account detail surface showing compact linked subscriber, service-point, and current meter context."
+      description="Bounded account detail surface showing linked subscriber, service-point, and current meter context."
     >
       {({ authorizedFetch }) => (
         <AccountDetailsModule accountId={accountId} authorizedFetch={authorizedFetch} />

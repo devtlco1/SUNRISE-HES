@@ -8,7 +8,7 @@ export function AccountsPageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="Account Visibility MVP"
-      description="Compact account-level visibility across existing subscriber, service-point, and meter linkage surfaces."
+      description="Account visibility surface across existing subscriber, service-point, and meter linkage routes."
     >
       {({ authorizedFetch }) => <AccountsModule authorizedFetch={authorizedFetch} />}
     </OperationalShell>
