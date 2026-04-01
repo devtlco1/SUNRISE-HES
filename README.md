@@ -118,6 +118,14 @@ make local-operational-readiness
 
 This target first runs the stable backend readiness/public smoke, then runs the existing seeded command-execution smoke so local startup readiness ends with one broader pass/fail signal.
 
+For CI, automation, or external wrappers that should not depend on `make` as the direct entrypoint, run:
+
+```bash
+./scripts/local-operational-readiness.sh
+```
+
+This script delegates to the same stable local operational readiness flow and returns the same pass/fail result.
+
 ## Focused Runtime Tests
 
 The preferred local path for the runtime placeholder foundation suite is Docker-backed, because those tests expect both PostgreSQL and Redis to be available.
