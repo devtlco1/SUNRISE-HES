@@ -1,5 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { act, type ReactElement } from "react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthEntryShell } from "../auth-entry-shell";
@@ -22,6 +25,33 @@ function renderLoginModule(onLoginSuccess?: () => void) {
       <LoginModule onLoginSuccess={onLoginSuccess} />
     </AuthEntryShell>,
   );
+}
+
+async function expectNoHydrationMismatch(ui: ReactElement) {
+  const container = document.createElement("div");
+  container.innerHTML = renderToString(ui);
+  document.body.appendChild(container);
+
+  const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  await act(async () => {
+    hydrateRoot(container, ui);
+    await Promise.resolve();
+  });
+
+  expect(
+    consoleErrorSpy.mock.calls.some(([value]) => {
+      const message = String(value);
+      return (
+        message.includes("Hydration failed") ||
+        message.includes("didn't match") ||
+        message.includes("server rendered text didn't match")
+      );
+    }),
+  ).toBe(false);
+
+  consoleErrorSpy.mockRestore();
+  container.remove();
 }
 
 describe("LoginModule", () => {
@@ -147,5 +177,24 @@ describe("LoginModule", () => {
     expect(
       screen.getByText("Connectivity is checked when you submit the login form."),
     ).toBeInTheDocument();
+  });
+
+  it("hydrates the login page without mismatching stored API base URL text", async () => {
+    window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:9000/");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const ui = (
+      <AuthEntryShell
+        eyebrow="Auth Entry MVP"
+        title="Welcome back"
+        description="Sign in to access the platform."
+      >
+        <LoginModule />
+      </AuthEntryShell>
+    );
+
+    await expectNoHydrationMismatch(ui);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

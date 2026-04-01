@@ -1,4 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { act, type ReactElement } from "react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "./operational-shell";
@@ -8,6 +11,33 @@ function jsonResponse(payload: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+async function expectNoHydrationMismatch(ui: ReactElement) {
+  const container = document.createElement("div");
+  container.innerHTML = renderToString(ui);
+  document.body.appendChild(container);
+
+  const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  await act(async () => {
+    hydrateRoot(container, ui);
+    await Promise.resolve();
+  });
+
+  expect(
+    consoleErrorSpy.mock.calls.some(([value]) => {
+      const message = String(value);
+      return (
+        message.includes("Hydration failed") ||
+        message.includes("didn't match") ||
+        message.includes("server rendered text didn't match")
+      );
+    }),
+  ).toBe(false);
+
+  consoleErrorSpy.mockRestore();
+  container.remove();
 }
 
 describe("OperationalShell", () => {
@@ -111,5 +141,24 @@ describe("OperationalShell", () => {
         },
       }),
     );
+  });
+
+  it("hydrates the shell without mismatching stored API base URL text", async () => {
+    window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:9000/");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const ui = (
+      <OperationalShell
+        eyebrow="Operational Pages"
+        title="Commands"
+        description="Shell test"
+      >
+        {() => <div>Protected child</div>}
+      </OperationalShell>
+    );
+
+    await expectNoHydrationMismatch(ui);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

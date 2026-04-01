@@ -84,22 +84,6 @@ function normalizeApiBaseUrl(value: string): string {
   return fallback.replace(/\/+$/, "");
 }
 
-function readStoredApiBaseUrl(): string {
-  if (typeof window === "undefined") {
-    return normalizeApiBaseUrl(DEFAULT_API_BASE_URL);
-  }
-  return normalizeApiBaseUrl(
-    window.localStorage.getItem(API_BASE_URL_STORAGE_KEY) ?? DEFAULT_API_BASE_URL,
-  );
-}
-
-function readStoredAccessToken(): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "";
-}
-
 function buildApiUrl(apiBaseUrl: string, path: string): string {
   return `${normalizeApiBaseUrl(apiBaseUrl)}${path}`;
 }
@@ -123,19 +107,20 @@ function isLikelyNetworkError(error: unknown): boolean {
 }
 
 export function SessionProvider({ children }: PropsWithChildren) {
-  const [apiBaseUrlState, setApiBaseUrlState] = useState(readStoredApiBaseUrl);
-  const [accessToken, setAccessToken] = useState(readStoredAccessToken);
+  const [apiBaseUrlState, setApiBaseUrlState] = useState(
+    normalizeApiBaseUrl(DEFAULT_API_BASE_URL),
+  );
+  const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [apiConnectivity, setApiConnectivity] =
     useState<ApiConnectivity>(INITIAL_API_CONNECTIVITY);
   const apiConnectivityRef = useRef<ApiConnectivity>(INITIAL_API_CONNECTIVITY);
+  const bootstrapStartedRef = useRef(false);
 
   const apiBaseUrl = normalizeApiBaseUrl(apiBaseUrlState);
   const apiBaseUrlRef = useRef(apiBaseUrl);
-  const initialAccessTokenRef = useRef(accessToken);
-  const initialApiBaseUrlRef = useRef(apiBaseUrl);
   apiBaseUrlRef.current = apiBaseUrl;
 
   const setApiConnectivityIfChanged = useCallback((next: ApiConnectivity) => {
@@ -259,14 +244,29 @@ export function SessionProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => {
-    const storedAccessToken = initialAccessTokenRef.current;
-    const resolvedApiBaseUrl = initialApiBaseUrlRef.current;
+    if (typeof window === "undefined" || bootstrapStartedRef.current) {
+      return;
+    }
+    bootstrapStartedRef.current = true;
+
+    const resolvedApiBaseUrl = normalizeApiBaseUrl(
+      window.localStorage.getItem(API_BASE_URL_STORAGE_KEY) ?? DEFAULT_API_BASE_URL,
+    );
+    const storedAccessToken =
+      window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "";
+
+    if (resolvedApiBaseUrl !== apiBaseUrlRef.current) {
+      apiBaseUrlRef.current = resolvedApiBaseUrl;
+      setApiBaseUrlState(resolvedApiBaseUrl);
+    }
 
     if (!storedAccessToken) {
       setSessionError(null);
       setIsCheckingSession(false);
       return;
     }
+
+    setAccessToken(storedAccessToken);
 
     let isCancelled = false;
 

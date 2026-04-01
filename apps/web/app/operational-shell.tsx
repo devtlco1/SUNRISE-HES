@@ -150,7 +150,11 @@ function OperationalShellInner({
             <div className="dashboard-user-card">
               <strong>{currentUser?.full_name || currentUser?.username || "Guest"}</strong>
               <span className="muted">
-                {currentUser ? currentUser.email : `API ${apiBaseUrl}`}
+                {currentUser
+                  ? currentUser.email
+                  : isCheckingSession
+                    ? "Session bootstrap in progress"
+                    : `API ${apiBaseUrl}`}
               </span>
               {currentUser ? (
                 <button className="secondary-button" onClick={logout} type="button">
