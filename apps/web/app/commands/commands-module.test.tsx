@@ -216,6 +216,10 @@ describe("CommandsModule", () => {
     renderCommandsModuleInShell();
 
     expect(await screen.findByRole("link", { name: "Commands" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Commands command center" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Commands in current result set")).toBeInTheDocument();
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
     expect(screen.getAllByText("relay-disconnect-template")).not.toHaveLength(0);
     expect(screen.getAllByText("on-demand-read-template")).not.toHaveLength(0);
@@ -248,8 +252,10 @@ describe("CommandsModule", () => {
 
     renderCommandsModuleInShell();
 
-    expect(await screen.findByText("acknowledged")).toBeInTheDocument();
+    expect(await screen.findAllByText("acknowledged")).not.toHaveLength(0);
     expect(screen.getByText("disconnect (succeeded)")).toBeInTheDocument();
+    expect(screen.getAllByText("Profile capture")).not.toHaveLength(0);
+    expect(screen.getAllByText("Relay control")).not.toHaveLength(0);
   });
 
   it("renders on-demand-read summaries and bounded detail correctly", async () => {
@@ -262,6 +268,7 @@ describe("CommandsModule", () => {
     expect(
       await screen.findByText("read_billing_snapshot billing (succeeded)"),
     ).toBeInTheDocument();
+    expect(screen.getAllByText("On-demand read")).not.toHaveLength(0);
 
     const onDemandRow = screen.getByRole("button", {
       name: /on-demand-read-template/i,

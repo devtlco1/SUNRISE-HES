@@ -8,7 +8,7 @@ export function CommandsPageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="Global Commands MVP"
-      description="Compact operational command visibility over the stable profile capture and relay control read models."
+      description="Operational command visibility over the stable profile capture, relay control, and on-demand read command projections."
     >
       {({ authorizedFetch }) => <CommandsModule authorizedFetch={authorizedFetch} />}
     </OperationalShell>

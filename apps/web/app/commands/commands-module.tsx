@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AuthorizedFetch } from "../operational-shell";
 
@@ -88,6 +88,73 @@ function formatFamilySummary(item: Record<string, string | null>): string {
   return "No operational summary yet";
 }
 
+function formatCommandFamilyLabel(value: CommandOperationalFamily): string {
+  switch (value) {
+    case "profile_capture":
+      return "Profile capture";
+    case "relay_control":
+      return "Relay control";
+    case "on_demand_read":
+      return "On-demand read";
+  }
+}
+
+function formatCommandCategoryLabel(value: string): string {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatStatusLabel(value: string | null): string {
+  if (!value) {
+    return "Not recorded";
+  }
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("succeed") ||
+    normalized.includes("complete") ||
+    normalized.includes("acknowledged") ||
+    normalized.includes("active")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("fail") ||
+    normalized.includes("error") ||
+    normalized.includes("cancel") ||
+    normalized.includes("reject")
+  ) {
+    return "danger";
+  }
+  if (
+    normalized.includes("pending") ||
+    normalized.includes("queued") ||
+    normalized.includes("running") ||
+    normalized.includes("progress")
+  ) {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function formatProjectionKey(value: string): string {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function CommandsModule({
   authorizedFetch,
 }: {
@@ -132,9 +199,7 @@ export function CommandsModule({
         });
       } catch (error) {
         setPageError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load recent commands.",
+          error instanceof Error ? error.message : "Unable to load recent commands.",
         );
       } finally {
         setIsLoadingRecentCommands(false);
@@ -156,9 +221,7 @@ export function CommandsModule({
       } catch (error) {
         setSelectedCommandDetail(null);
         setDetailError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load command detail.",
+          error instanceof Error ? error.message : "Unable to load command detail.",
         );
       } finally {
         setIsLoadingDetail(false);
@@ -174,169 +237,350 @@ export function CommandsModule({
   useEffect(() => {
     if (!selectedCommandId) {
       setSelectedCommandDetail(null);
+      setDetailError(null);
       return;
     }
     void loadCommandDetail(selectedCommandId);
   }, [loadCommandDetail, selectedCommandId]);
 
+  const selectedRecentCommand = useMemo(
+    () =>
+      recentCommands.find((command) => command.command_id === selectedCommandId) ??
+      recentCommands[0] ??
+      null,
+    [recentCommands, selectedCommandId],
+  );
+
+  const overviewCards = useMemo(
+    () => [
+      {
+        label: "Commands in current result set",
+        value: String(recentCommands.length),
+        note:
+          recentFamilyFilter === "all"
+            ? "All stable command families"
+            : `${formatCommandFamilyLabel(recentFamilyFilter)} only`,
+      },
+      {
+        label: "Families represented",
+        value: String(new Set(recentCommands.map((item) => item.command_family)).size),
+        note: "Profile capture, relay control, on-demand read",
+      },
+      {
+        label: "Commands with runtime records",
+        value: String(
+          recentCommands.filter((item) => item.runtime_execution_record_id !== null).length,
+        ),
+        note: "Visible from the current command projection",
+      },
+      {
+        label: "Selected command status",
+        value: selectedRecentCommand
+          ? formatStatusLabel(selectedRecentCommand.command_status)
+          : "No selection",
+        note: selectedRecentCommand
+          ? formatFamilySummary(selectedRecentCommand.family_specific_outcome_summary)
+          : "Choose a command to inspect bounded detail",
+      },
+    ],
+    [recentCommands, recentFamilyFilter, selectedRecentCommand],
+  );
+
+  const projectionEntries = useMemo(
+    () =>
+      selectedCommandDetail
+        ? Object.entries(selectedCommandDetail.family_specific_outcome_summary).filter(
+            ([, value]) => value !== null,
+          )
+        : [],
+    [selectedCommandDetail],
+  );
+
   return (
     <section className="panel">
       {pageError ? <p className="error-banner">{pageError}</p> : null}
 
-      <div className="commands-module-layout">
-        <section className="subpanel">
+      <div className="detail-stack">
+        <section className="subpanel commands-overview-panel">
           <div className="section-heading">
             <div>
-              <h2>Recent commands</h2>
+              <h2>Commands command center</h2>
               <p className="muted">
-                Global operational list for the stable command families only.
+                Operational command visibility aligned with the adopted shell while
+                staying bounded to the stable command families and current read models.
               </p>
             </div>
-            <label className="inline-select">
-              <span>Family</span>
-              <select
-                value={recentFamilyFilter}
-                onChange={(event) =>
-                  setRecentFamilyFilter(event.target.value as FamilyFilter)
-                }
-              >
-                <option value="all">All supported</option>
-                <option value="profile_capture">Profile capture</option>
-                <option value="relay_control">Relay control</option>
-                <option value="on_demand_read">On-demand read</option>
-              </select>
-            </label>
+            <span className="artifact-pill">
+              {recentFamilyFilter === "all"
+                ? "All supported families"
+                : `${formatCommandFamilyLabel(recentFamilyFilter)} filter`}
+            </span>
           </div>
 
-          {isLoadingRecentCommands ? (
-            <p className="muted">Loading recent commands...</p>
-          ) : null}
-
-          <div className="command-list">
-            {recentCommands.length === 0 ? (
-              <p className="muted">No supported recent commands available.</p>
-            ) : null}
-
-            {recentCommands.map((command) => (
-              <button
-                key={command.command_id}
-                className={
-                  selectedCommandId === command.command_id
-                    ? "command-list-item selected"
-                    : "command-list-item"
-                }
-                onClick={() => setSelectedCommandId(command.command_id)}
-                type="button"
-              >
-                <div className="command-list-item-header">
-                  <strong>{command.command_template_code}</strong>
-                  <span className="status-pill">{command.command_status}</span>
-                </div>
-                <div className="command-list-item-meta">
-                  <span>{command.command_family}</span>
-                  <span>Meter {command.meter_id}</span>
-                </div>
-                <div className="command-list-item-meta">
-                  <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
-                  <span>Updated {formatDateTime(command.latest_updated_at)}</span>
-                </div>
-              </button>
+          <div className="commands-overview-grid">
+            {overviewCards.map((card) => (
+              <div key={card.label} className="stat-card commands-overview-card">
+                <span className="stat-label">{card.label}</span>
+                <strong>{card.value}</strong>
+                <p className="muted">{card.note}</p>
+              </div>
             ))}
           </div>
         </section>
 
-        <section className="subpanel">
-          <div className="section-heading">
-            <div>
-              <h2>Command detail</h2>
-              <p className="muted">
-                Bounded detail projection for the selected recent command.
-              </p>
+        <div className="commands-module-layout">
+          <section className="subpanel">
+            <div className="section-heading">
+              <div>
+                <h2>Recent commands</h2>
+                <p className="muted">
+                  Global operational list for the stable command families only.
+                </p>
+              </div>
+              <label className="inline-select">
+                <span>Family</span>
+                <select
+                  value={recentFamilyFilter}
+                  onChange={(event) =>
+                    setRecentFamilyFilter(event.target.value as FamilyFilter)
+                  }
+                >
+                  <option value="all">All supported</option>
+                  <option value="profile_capture">Profile capture</option>
+                  <option value="relay_control">Relay control</option>
+                  <option value="on_demand_read">On-demand read</option>
+                </select>
+              </label>
             </div>
-          </div>
 
-          {isLoadingDetail ? <p className="muted">Loading command detail...</p> : null}
-          {detailError ? <p className="error-banner">{detailError}</p> : null}
+            {isLoadingRecentCommands ? (
+              <p className="muted">Loading recent commands...</p>
+            ) : null}
 
-          {selectedCommandDetail ? (
-            <div className="detail-stack">
-              <div className="detail-grid">
-                <div className="stat-card">
-                  <span className="stat-label">Meter ID</span>
-                  <strong>{selectedCommandDetail.meter_id}</strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Family</span>
-                  <strong>{selectedCommandDetail.command_family}</strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Category</span>
-                  <strong>{selectedCommandDetail.command_category}</strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Status</span>
-                  <strong>{selectedCommandDetail.command_status}</strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Latest attempt</span>
-                  <strong>
-                    {selectedCommandDetail.latest_command_execution_attempt_status ??
-                      "No attempt"}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Outcome summary</span>
-                  <strong>
-                    {formatFamilySummary(
-                      selectedCommandDetail.family_specific_outcome_summary,
-                    )}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Runtime execution record</span>
-                  <strong>
-                    {selectedCommandDetail.runtime_execution_record_id ??
-                      "Not recorded"}
-                  </strong>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Created</span>
-                  <strong>{formatDateTime(selectedCommandDetail.created_at)}</strong>
-                </div>
+            {!isLoadingRecentCommands && recentCommands.length > 0 ? (
+              <div className="commands-selection-summary">
+                <span className="muted">
+                  {recentCommands.length} commands loaded from the current operational
+                  view.
+                </span>
+                {selectedRecentCommand ? (
+                  <span className="artifact-pill">
+                    Selected: {selectedRecentCommand.command_template_code}
+                  </span>
+                ) : null}
               </div>
+            ) : null}
 
-              <div className="artifact-row">
-                <span className="artifact-pill">
-                  execute-now:{" "}
-                  {selectedCommandDetail.execute_now_artifact_present
-                    ? "present"
-                    : "absent"}
-                </span>
-                <span className="artifact-pill">
-                  orchestration:{" "}
-                  {selectedCommandDetail.orchestration_artifact_present
-                    ? "present"
-                    : "absent"}
-                </span>
-                <span className="artifact-pill">
-                  terminalization:{" "}
-                  {selectedCommandDetail.terminalization_artifact_present
-                    ? "present"
-                    : "absent"}
-                </span>
-              </div>
+            <div className="command-list">
+              {recentCommands.length === 0 ? (
+                <p className="muted">No supported recent commands available.</p>
+              ) : null}
 
-              <div className="json-panel">
-                <h3>Projection record</h3>
-                <pre>
-                  {JSON.stringify(selectedCommandDetail.projection_record, null, 2)}
-                </pre>
+              {recentCommands.map((command) => (
+                <button
+                  key={command.command_id}
+                  className={
+                    selectedCommandId === command.command_id
+                      ? "command-list-item selected"
+                      : "command-list-item"
+                  }
+                  onClick={() => setSelectedCommandId(command.command_id)}
+                  type="button"
+                >
+                  <div className="command-list-item-header">
+                    <strong>{command.command_template_code}</strong>
+                    <span className={`status-pill ${buildStatusTone(command.command_status)}`}>
+                      {formatStatusLabel(command.command_status)}
+                    </span>
+                  </div>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {formatCommandFamilyLabel(command.command_family)}
+                    </span>
+                    <span className="artifact-pill">
+                      {formatCommandCategoryLabel(command.command_category)}
+                    </span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>Meter {command.meter_id}</span>
+                    <span>
+                      Attempt {formatStatusLabel(command.latest_command_execution_attempt_status)}
+                    </span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
+                    <span>Updated {formatDateTime(command.latest_updated_at)}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="subpanel">
+            <div className="section-heading">
+              <div>
+                <h2>Command detail</h2>
+                <p className="muted">
+                  Bounded detail projection for the selected recent command.
+                </p>
               </div>
             </div>
-          ) : (
-            <p className="muted">Select a recent command to load bounded command detail.</p>
-          )}
-        </section>
+
+            {isLoadingDetail ? <p className="muted">Loading command detail...</p> : null}
+            {detailError ? <p className="error-banner">{detailError}</p> : null}
+
+            {selectedCommandDetail ? (
+              <div className="detail-stack">
+                <section className="commands-detail-hero">
+                  <div className="commands-detail-title-row">
+                    <div>
+                      <p className="eyebrow">Selected Command</p>
+                      <h3>{selectedCommandDetail.command_template_code}</h3>
+                      <p className="muted">
+                        {formatCommandFamilyLabel(selectedCommandDetail.command_family)} routed
+                        through the current{" "}
+                        {formatCommandCategoryLabel(selectedCommandDetail.command_category)}{" "}
+                        projection.
+                      </p>
+                    </div>
+                    <span
+                      className={`status-pill ${buildStatusTone(
+                        selectedCommandDetail.command_status,
+                      )}`}
+                    >
+                      {formatStatusLabel(selectedCommandDetail.command_status)}
+                    </span>
+                  </div>
+
+                  <div className="commands-detail-badges">
+                    <span className="artifact-pill">
+                      {formatCommandFamilyLabel(selectedCommandDetail.command_family)}
+                    </span>
+                    <span className="artifact-pill">
+                      {formatCommandCategoryLabel(selectedCommandDetail.command_category)}
+                    </span>
+                    <span className="artifact-pill">
+                      Outcome:{" "}
+                      {formatFamilySummary(
+                        selectedCommandDetail.family_specific_outcome_summary,
+                      )}
+                    </span>
+                  </div>
+                </section>
+
+                <div className="detail-grid">
+                  <div className="stat-card">
+                    <span className="stat-label">Meter ID</span>
+                    <strong>{selectedCommandDetail.meter_id}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Family</span>
+                    <strong>
+                      {formatCommandFamilyLabel(selectedCommandDetail.command_family)}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Category</span>
+                    <strong>
+                      {formatCommandCategoryLabel(selectedCommandDetail.command_category)}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Status</span>
+                    <strong>{formatStatusLabel(selectedCommandDetail.command_status)}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Latest attempt</span>
+                    <strong>
+                      {formatStatusLabel(
+                        selectedCommandDetail.latest_command_execution_attempt_status,
+                      )}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Outcome summary</span>
+                    <strong>
+                      {formatFamilySummary(
+                        selectedCommandDetail.family_specific_outcome_summary,
+                      )}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Runtime execution record</span>
+                    <strong>
+                      {selectedCommandDetail.runtime_execution_record_id ?? "Not recorded"}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Created</span>
+                    <strong>{formatDateTime(selectedCommandDetail.created_at)}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Last updated</span>
+                    <strong>{formatDateTime(selectedCommandDetail.latest_updated_at)}</strong>
+                  </div>
+                </div>
+
+                <section className="subpanel commands-detail-subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Outcome and artifacts</h3>
+                      <p className="muted">
+                        Family-specific outcome summary and orchestration artifact presence
+                        from the current stable commands read model.
+                      </p>
+                    </div>
+                  </div>
+
+                  {projectionEntries.length > 0 ? (
+                    <div className="detail-grid">
+                      {projectionEntries.map(([key, value]) => (
+                        <div key={key} className="stat-card">
+                          <span className="stat-label">{formatProjectionKey(key)}</span>
+                          <strong>{value}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted">
+                      No family-specific outcome fields are currently recorded.
+                    </p>
+                  )}
+
+                  <div className="artifact-row">
+                    <span className="artifact-pill">
+                      execute-now:{" "}
+                      {selectedCommandDetail.execute_now_artifact_present
+                        ? "present"
+                        : "absent"}
+                    </span>
+                    <span className="artifact-pill">
+                      orchestration:{" "}
+                      {selectedCommandDetail.orchestration_artifact_present
+                        ? "present"
+                        : "absent"}
+                    </span>
+                    <span className="artifact-pill">
+                      terminalization:{" "}
+                      {selectedCommandDetail.terminalization_artifact_present
+                        ? "present"
+                        : "absent"}
+                    </span>
+                  </div>
+                </section>
+
+                <div className="json-panel">
+                  <h3>Projection record</h3>
+                  <pre>
+                    {JSON.stringify(selectedCommandDetail.projection_record, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <p className="muted">Select a recent command to load bounded command detail.</p>
+            )}
+          </section>
+        </div>
       </div>
     </section>
   );
