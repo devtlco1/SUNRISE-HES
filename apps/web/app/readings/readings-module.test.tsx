@@ -241,6 +241,10 @@ describe("ReadingsModule", () => {
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
     expect(screen.getByText("Received at")).toBeInTheDocument();
     expect(screen.getByText("Latest batch Received")).toBeInTheDocument();
+    expect(screen.getAllByText("Billing-read context available")).not.toHaveLength(0);
+    expect(screen.getByText("Latest billing value")).toBeInTheDocument();
+    expect(screen.getAllByText("Total Import: 123.456")).not.toHaveLength(0);
+    expect(screen.getByText("Latest billing source")).toBeInTheDocument();
     expect(screen.getByText("Source Manual Read")).toBeInTheDocument();
     expect(screen.getByText("Total Import 123.456 • Reset Reason scheduled_cycle")).toBeInTheDocument();
   });
@@ -263,6 +267,9 @@ describe("ReadingsModule", () => {
     await waitFor(() => {
       expect(within(billingPanel as HTMLElement).getAllByText("SN-1002")).not.toHaveLength(0);
       expect(
+        within(billingPanel as HTMLElement).getAllByText("Billing-read context missing"),
+      ).not.toHaveLength(0);
+      expect(
         within(billingPanel as HTMLElement).getByText(
           "No billing reads available for the selected meter.",
         ),
@@ -270,6 +277,11 @@ describe("ReadingsModule", () => {
       expect(
         within(billingPanel as HTMLElement).getByText(
           "No recent reading values available for the selected meter.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText(
+          "No billing-read context recorded yet for the selected meter.",
         ),
       ).toBeInTheDocument();
     });
@@ -420,6 +432,7 @@ describe("ReadingsModule", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText("SN-1002")).not.toHaveLength(0);
+      expect(screen.getAllByText("Billing-read context available")).not.toHaveLength(0);
       expect(screen.getAllByText("Total Import: 456.789")).not.toHaveLength(0);
       expect(screen.getByText("Source Scheduled Read")).toBeInTheDocument();
       expect(
