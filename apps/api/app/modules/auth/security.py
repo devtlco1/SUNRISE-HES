@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from pwdlib import PasswordHash
 from app.core.config import settings
 from app.modules.auth.schemas import TokenPayload
 
+logger = logging.getLogger(__name__)
 password_hash = PasswordHash.recommended()
 
 
@@ -18,7 +20,11 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash_value: str) -> bool:
-    return password_hash.verify(password, password_hash_value)
+    try:
+        return password_hash.verify(password, password_hash_value)
+    except Exception:
+        logger.warning("Password verification failed because the stored hash is invalid.")
+        return False
 
 
 def create_access_token(*, subject: UUID, expires_delta: timedelta | None = None) -> str:
