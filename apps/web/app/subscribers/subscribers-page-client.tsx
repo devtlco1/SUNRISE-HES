@@ -8,7 +8,7 @@ export function SubscribersPageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="Subscribers / Consumers MVP"
-      description="Compact subscriber visibility slice for browsing consumer accounts and stepping into a bounded detail surface."
+      description="Subscriber visibility surface for browsing consumer linkage and stepping into a bounded detail route."
     >
       {({ authorizedFetch }) => (
         <SubscribersModule authorizedFetch={authorizedFetch} />

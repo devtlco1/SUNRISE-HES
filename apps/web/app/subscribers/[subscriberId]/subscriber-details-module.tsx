@@ -42,6 +42,37 @@ type SubscriberDetail = {
   linked_meters: SubscriberLinkedMeter[];
 };
 
+function formatStatusLabel(value: string): string {
+  return value
+    .split(/[_\s/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("active") ||
+    normalized.includes("register") ||
+    normalized.includes("assigned")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("inactive") ||
+    normalized.includes("closed") ||
+    normalized.includes("blocked") ||
+    normalized.includes("suspend")
+  ) {
+    return "danger";
+  }
+  if (normalized.includes("pending") || normalized.includes("review")) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 export function SubscriberDetailsModule({
   subscriberId,
   authorizedFetch,
@@ -85,28 +116,86 @@ export function SubscriberDetailsModule({
 
       {detail ? (
         <>
-          <div className="section-heading">
-            <div>
-              <h2>{detail.full_name}</h2>
-              <p className="muted">
-                {detail.consumer_type} subscriber with {detail.active_account_count} active
-                account(s) and {detail.linked_meter_count} linked meter(s).
-              </p>
+          <section className="subpanel subscriber-overview-panel">
+            <section className="subscriber-detail-hero">
+              <div className="subscriber-detail-title-row">
+                <div>
+                  <p className="eyebrow">Subscriber Detail</p>
+                  <h2>{detail.full_name}</h2>
+                  <p className="muted">
+                    {formatStatusLabel(detail.consumer_type)} subscriber with{" "}
+                    {detail.active_account_count} active account(s) and{" "}
+                    {detail.linked_meter_count} linked meter(s).
+                  </p>
+                </div>
+                <span
+                  className={`status-pill ${buildStatusTone(
+                    detail.account_status_summary,
+                  )}`}
+                >
+                  {formatStatusLabel(detail.account_status_summary ?? "unassigned")}
+                </span>
+              </div>
+
+              <div className="command-list-item-badges">
+                <span className="artifact-pill">Subscriber {detail.id}</span>
+                <span className="artifact-pill">
+                  {detail.external_ref ?? detail.national_id ?? "No external identifier"}
+                </span>
+                <span className="artifact-pill">
+                  {detail.phone_number ?? detail.email ?? "No contact summary"}
+                </span>
+              </div>
+            </section>
+
+            <div className="subscribers-overview-grid">
+              <div className="stat-card subscribers-overview-card">
+                <span className="stat-label">Consumer type</span>
+                <strong>{formatStatusLabel(detail.consumer_type)}</strong>
+              </div>
+              <div className="stat-card subscribers-overview-card">
+                <span className="stat-label">Active accounts</span>
+                <strong>{detail.active_account_count}</strong>
+              </div>
+              <div className="stat-card subscribers-overview-card">
+                <span className="stat-label">Linked meters</span>
+                <strong>{detail.linked_meter_count}</strong>
+              </div>
+              <div className="stat-card subscribers-overview-card">
+                <span className="stat-label">Current operational meter</span>
+                <strong>
+                  {detail.current_operational_meter?.serial_number ?? "Not available"}
+                </strong>
+              </div>
             </div>
-            <span className="status-pill">
-              {detail.account_status_summary ?? "unassigned"}
-            </span>
-          </div>
+          </section>
 
           <section className="subpanel">
-            <h3>Operational identifiers</h3>
-            <div className="command-list-item-meta">
-              <span>Consumer ID {detail.id}</span>
-              <span>{detail.external_ref ?? "No external reference"}</span>
+            <div className="section-heading">
+              <div>
+                <h3>Operational identifiers</h3>
+                <p className="muted">
+                  Compact identity and contact references for the selected subscriber.
+                </p>
+              </div>
             </div>
-            <div className="command-list-item-meta">
-              <span>{detail.national_id ?? "No national ID"}</span>
-              <span>{detail.phone_number ?? detail.email ?? "No contact summary"}</span>
+            <div className="detail-grid">
+              <div className="stat-card">
+                <span className="stat-label">Consumer ID</span>
+                <strong>{detail.id}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">External reference</span>
+                <strong>{detail.external_ref ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">National ID</span>
+                <strong>{detail.national_id ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Contact summary</span>
+                <strong>{detail.phone_number ?? detail.email ?? "Not available"}</strong>
+              </div>
             </div>
           </section>
 
@@ -139,7 +228,9 @@ export function SubscriberDetailsModule({
                   </div>
                   <div className="stat-card">
                     <span className="stat-label">Meter status</span>
-                    <strong>{detail.current_operational_meter.current_status}</strong>
+                    <strong>
+                      {formatStatusLabel(detail.current_operational_meter.current_status)}
+                    </strong>
                   </div>
                   <div className="stat-card">
                     <span className="stat-label">Account</span>
@@ -188,18 +279,22 @@ export function SubscriberDetailsModule({
                 <div key={account.id} className="meter-list-item">
                   <div className="command-list-item-header">
                     <strong>{account.account_number}</strong>
-                    <span className="status-pill">{account.status}</span>
+                    <span className={`status-pill ${buildStatusTone(account.status)}`}>
+                      {formatStatusLabel(account.status)}
+                    </span>
                   </div>
-                  <div className="command-list-item-meta">
-                    <span>Account ID {account.id}</span>
-                    <span>{account.billing_cycle ?? "No billing cycle"}</span>
-                  </div>
-                  <div className="command-list-item-meta">
-                    <span>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {account.billing_cycle ?? "No billing cycle"}
+                    </span>
+                    <span className="artifact-pill">
                       {account.service_point_code
                         ? `Service point ${account.service_point_code}`
                         : "No linked service point"}
                     </span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>Account ID {account.id}</span>
                     <span>{account.current_meter_count} current meter(s)</span>
                   </div>
                 </div>
@@ -225,18 +320,22 @@ export function SubscriberDetailsModule({
                 <Link key={meter.id} className="meter-list-item" href={`/meters/${meter.id}`}>
                   <div className="command-list-item-header">
                     <strong>{meter.serial_number}</strong>
-                    <span className="status-pill">{meter.current_status}</span>
+                    <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
+                      {formatStatusLabel(meter.current_status)}
+                    </span>
                   </div>
-                  <div className="command-list-item-meta">
-                    <span>Meter ID {meter.id}</span>
-                    <span>{meter.utility_meter_number ?? "No utility number"}</span>
-                  </div>
-                  <div className="command-list-item-meta">
-                    <span>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {meter.utility_meter_number ?? "No utility number"}
+                    </span>
+                    <span className="artifact-pill">
                       {meter.account_number
                         ? `Account ${meter.account_number}`
                         : "No linked account summary"}
                     </span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>Meter ID {meter.id}</span>
                     <span>
                       {meter.service_point_code
                         ? `Service point ${meter.service_point_code}`

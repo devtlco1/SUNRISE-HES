@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "../operational-shell";
@@ -111,24 +112,40 @@ describe("SubscribersModule", () => {
       await screen.findByRole("link", { name: "Subscribers" }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("link", { name: /Amina Al Balushi/i }),
-    ).toHaveAttribute("href", "/subscribers/consumer-1");
-    expect(screen.getByRole("link", { name: /Beacon Bakery LLC/i })).toHaveAttribute(
-      "href",
-      "/subscribers/consumer-2",
-    );
+      await screen.findByRole("heading", { name: "Subscriber operations center" }),
+    ).toBeInTheDocument();
+    expect(await screen.findAllByText("Amina Al Balushi")).not.toHaveLength(0);
+    expect(screen.getAllByText("Beacon Bakery LLC")).not.toHaveLength(0);
+    expect(
+      screen.getAllByRole("link", { name: "Open subscriber detail" }),
+    ).not.toHaveLength(0);
   });
 
   it("keeps the bounded navigation path into subscriber detail clear", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
 
     renderSubscribersModuleInShell();
 
-    const detailLink = await screen.findByRole("link", {
-      name: /Amina Al Balushi/i,
+    const inspectButtons = await screen.findAllByRole("button", {
+      name: "Inspect summary",
     });
-    expect(detailLink).toHaveAttribute("href", "/subscribers/consumer-1");
+    await user.click(inspectButtons[1]);
+
+    const summaryPanel = screen
+      .getByRole("heading", { name: "Selected subscriber summary" })
+      .closest("section");
+    expect(summaryPanel).not.toBeNull();
+
+    expect(
+      within(summaryPanel as HTMLElement).getByText("Beacon Bakery LLC"),
+    ).toBeInTheDocument();
+    expect(
+      within(summaryPanel as HTMLElement).getByRole("link", {
+        name: "Open subscriber detail",
+      }),
+    ).toHaveAttribute("href", "/subscribers/consumer-2");
   });
 
   it("renders an empty state when no subscribers are available", async () => {

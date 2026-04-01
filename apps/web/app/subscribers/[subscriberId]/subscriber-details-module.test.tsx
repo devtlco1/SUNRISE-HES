@@ -126,6 +126,7 @@ describe("SubscriberDetailsModule", () => {
     renderSubscriberDetailsModuleInShell();
 
     expect(await screen.findByText("Amina Al Balushi")).toBeInTheDocument();
+    expect(screen.getAllByText("Active")).not.toHaveLength(0);
     const currentMeterPanel = screen
       .getByRole("heading", { name: "Current operational meter" })
       .closest("section");
