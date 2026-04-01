@@ -55,6 +55,25 @@ type ConnectivityOverviewRow = {
   latestSession: ConnectivitySession | null;
 };
 
+type StatusTone = "positive" | "warning" | "danger" | "neutral";
+type ConnectivityIncidentState = "offline" | "stale" | "degraded";
+type ConnectivityIncidentSeverity = "critical" | "warning";
+
+type FreshnessContext = {
+  label: string;
+  tone: StatusTone;
+  sortWeight: number;
+};
+
+type ConnectivityIncident = {
+  state: ConnectivityIncidentState;
+  severity: ConnectivityIncidentSeverity;
+  summary: string;
+  sortWeight: number;
+};
+
+const STALE_SIGNAL_THRESHOLD_MS = 1000 * 60 * 60 * 24;
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return "Not available";
@@ -69,6 +88,22 @@ function formatDateTime(value: string | null): string {
 
 function formatFreshnessHint(lastSeenAt: string | null): string {
   return lastSeenAt ? "Recent signal recorded" : "No recent signal";
+}
+
+function formatDurationFromMs(durationMs: number): string {
+  const clampedDurationMs = Math.max(durationMs, 0);
+  const totalMinutes = Math.floor(clampedDurationMs / (1000 * 60));
+  if (totalMinutes < 60) {
+    return totalMinutes <= 1 ? "1 minute" : `${totalMinutes} minutes`;
+  }
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) {
+    return totalHours === 1 ? "1 hour" : `${totalHours} hours`;
+  }
+
+  const totalDays = Math.floor(totalHours / 24);
+  return totalDays === 1 ? "1 day" : `${totalDays} days`;
 }
 
 function formatLatestSessionSummary(session: ConnectivitySession | null): string {
@@ -86,7 +121,7 @@ function formatStatusLabel(value: string): string {
     .join(" ");
 }
 
-function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+function buildStatusTone(value: string | null): StatusTone {
   const normalized = value?.toLowerCase() ?? "";
   if (
     normalized.includes("succeed") ||
@@ -107,11 +142,92 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   if (
     normalized.includes("pending") ||
     normalized.includes("register") ||
-    normalized.includes("queued")
+    normalized.includes("queued") ||
+    normalized.includes("stale") ||
+    normalized.includes("degraded")
   ) {
     return "warning";
   }
   return "neutral";
+}
+
+function buildSeverityTone(value: ConnectivityIncidentSeverity): StatusTone {
+  return value === "critical" ? "danger" : "warning";
+}
+
+function getFreshnessContext(lastSeenAt: string | null): FreshnessContext {
+  if (!lastSeenAt) {
+    return {
+      label: "No recent signal",
+      tone: "danger",
+      sortWeight: 0,
+    };
+  }
+
+  const lastSeenDate = new Date(lastSeenAt);
+  if (Number.isNaN(lastSeenDate.getTime())) {
+    return {
+      label: "Signal freshness unavailable",
+      tone: "neutral",
+      sortWeight: 3,
+    };
+  }
+
+  const ageMs = Date.now() - lastSeenDate.getTime();
+  if (ageMs >= STALE_SIGNAL_THRESHOLD_MS) {
+    return {
+      label: `Signal stale for ${formatDurationFromMs(ageMs)}`,
+      tone: "warning",
+      sortWeight: 1,
+    };
+  }
+
+  return {
+    label: `Recent signal ${formatDurationFromMs(ageMs)} ago`,
+    tone: "positive",
+    sortWeight: 2,
+  };
+}
+
+function buildConnectivityIncident(
+  row: ConnectivityOverviewRow,
+  freshnessContext: FreshnessContext,
+): ConnectivityIncident | null {
+  if (row.meter.last_seen_at === null) {
+    return {
+      state: "offline",
+      severity: "critical",
+      summary: row.latestSession
+        ? `Latest session ${formatStatusLabel(row.latestSession.status)} with no recent signal recorded.`
+        : "No recent signal or connectivity session is currently recorded.",
+      sortWeight: 0,
+    };
+  }
+
+  const latestSessionStatus = row.latestSession?.status.toLowerCase() ?? "";
+  if (
+    latestSessionStatus === "failed" ||
+    latestSessionStatus === "timed_out" ||
+    latestSessionStatus === "cancelled"
+  ) {
+    return {
+      state: "degraded",
+      severity: "warning",
+      summary: `Latest session ${formatStatusLabel(row.latestSession?.status ?? "failed")} requires operator review.`,
+      sortWeight: 1,
+    };
+  }
+
+  if (freshnessContext.sortWeight === 1) {
+    return {
+      state: "stale",
+      severity: "warning",
+      summary: "Last signal is older than the current bounded operational freshness window.",
+      sortWeight: 2,
+    };
+  }
+
+  return null;
 }
 
 export function ConnectivityModule({
@@ -211,19 +327,68 @@ export function ConnectivityModule({
     const latestSucceeded = rows.filter(
       (row) => row.latestSession?.status === "succeeded",
     ).length;
-    const withoutRecentSession = rows.filter((row) => row.latestSession === null).length;
+    const incidentCount = rows.filter((row) => {
+      const freshnessContext = getFreshnessContext(row.meter.last_seen_at);
+      return buildConnectivityIncident(row, freshnessContext) !== null;
+    }).length;
 
     return {
       metersWithEndpoint,
       metersWithSignal,
       latestSucceeded,
-      withoutRecentSession,
+      incidentCount,
     };
   }, [rows]);
+
+  const incidentRows = useMemo(
+    () =>
+      rows
+        .map((row) => {
+          const freshnessContext = getFreshnessContext(row.meter.last_seen_at);
+          const incident = buildConnectivityIncident(row, freshnessContext);
+          return {
+            row,
+            freshnessContext,
+            incident,
+          };
+        })
+        .filter(
+          (
+            item,
+          ): item is {
+            row: ConnectivityOverviewRow;
+            freshnessContext: FreshnessContext;
+            incident: ConnectivityIncident;
+          } => item.incident !== null,
+        )
+        .sort((left, right) => {
+          if (left.incident.sortWeight !== right.incident.sortWeight) {
+            return left.incident.sortWeight - right.incident.sortWeight;
+          }
+
+          if (left.freshnessContext.sortWeight !== right.freshnessContext.sortWeight) {
+            return left.freshnessContext.sortWeight - right.freshnessContext.sortWeight;
+          }
+
+          return left.row.meter.serial_number.localeCompare(right.row.meter.serial_number);
+        }),
+    [rows],
+  );
 
   const selectedRow = useMemo(
     () => rows.find((row) => row.meter.id === selectedMeterId) ?? rows[0] ?? null,
     [rows, selectedMeterId],
+  );
+  const selectedRowFreshnessContext = useMemo(
+    () => (selectedRow ? getFreshnessContext(selectedRow.meter.last_seen_at) : null),
+    [selectedRow],
+  );
+  const selectedRowIncident = useMemo(
+    () =>
+      selectedRow && selectedRowFreshnessContext
+        ? buildConnectivityIncident(selectedRow, selectedRowFreshnessContext)
+        : null,
+    [selectedRow, selectedRowFreshnessContext],
   );
 
   const overviewCards = useMemo(
@@ -249,9 +414,9 @@ export function ConnectivityModule({
         note: "Most recent session closed successfully",
       },
       {
-        label: "Without recent session",
-        value: String(overviewStats.withoutRecentSession),
-        note: "No recent connectivity session recorded",
+        label: "Incident contexts",
+        value: String(overviewStats.incidentCount),
+        note: "Offline, stale, or degraded rows needing operator review",
       },
       {
         label: "Selected meter",
@@ -296,6 +461,101 @@ export function ConnectivityModule({
               ))}
             </div>
           ) : null}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Offline meters / connectivity incidents</h2>
+              <p className="muted">
+                Derived operational review queue for meters with no recent signal, stale
+                freshness, or a recent failed connectivity session.
+              </p>
+            </div>
+            <span className="artifact-pill">{incidentRows.length} incident contexts</span>
+          </div>
+
+          <div className="artifact-row">
+            <span className="artifact-pill">
+              Offline and stale contexts stay bounded to the current connectivity result set.
+            </span>
+            <span className="artifact-pill">
+              Inspect an incident here, then continue into existing meter detail when needed.
+            </span>
+          </div>
+
+          {isLoadingOverview ? (
+            <p className="muted">Loading offline meters and connectivity incidents...</p>
+          ) : null}
+
+          <div className="meter-list">
+            {!isLoadingOverview && incidentRows.length === 0 ? (
+              <p className="muted">
+                No offline meters or connectivity incidents match the current bounded scope.
+              </p>
+            ) : null}
+
+            {incidentRows.map(({ row, freshnessContext, incident }) => (
+              <article
+                key={`incident-${row.meter.id}`}
+                className={
+                  selectedMeterId === row.meter.id
+                    ? "meter-list-item connectivity-list-item selected"
+                    : "meter-list-item connectivity-list-item"
+                }
+              >
+                <div className="command-list-item-header">
+                  <strong>{row.meter.serial_number}</strong>
+                  <div className="artifact-row">
+                    <span className={`status-pill ${buildStatusTone(incident.state)}`}>
+                      {formatStatusLabel(incident.state)}
+                    </span>
+                    <span className={`status-pill ${buildSeverityTone(incident.severity)}`}>
+                      Severity {formatStatusLabel(incident.severity)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="connectivity-row-badges">
+                  <span className={`status-pill ${freshnessContext.tone}`}>
+                    {freshnessContext.label}
+                  </span>
+                  <span className={`status-pill ${buildStatusTone(row.latestSession?.status ?? null)}`}>
+                    {row.latestSession
+                      ? `Latest session ${formatStatusLabel(row.latestSession.status)}`
+                      : "No recent session"}
+                  </span>
+                  <span className="artifact-pill">
+                    {row.primaryEndpoint?.endpoint_display_name ??
+                      row.primaryEndpoint?.endpoint_code ??
+                      "No active endpoint"}
+                  </span>
+                </div>
+
+                <div className="command-list-item-meta">
+                  <span>Meter ID {row.meter.id}</span>
+                  <span>{incident.summary}</span>
+                </div>
+                <div className="command-list-item-meta">
+                  <span>{formatLatestSessionSummary(row.latestSession)}</span>
+                  <span>Last seen {formatDateTime(row.meter.last_seen_at)}</span>
+                </div>
+
+                <div className="connectivity-row-actions">
+                  <button
+                    className="secondary-button"
+                    onClick={() => setSelectedMeterId(row.meter.id)}
+                    type="button"
+                  >
+                    Inspect incident
+                  </button>
+                  <Link className="nav-link" href={`/meters/${row.meter.id}`}>
+                    Open meter detail
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
 
         <div className="connectivity-module-layout">
@@ -411,8 +671,21 @@ export function ConnectivityModule({
                   </div>
 
                   <div className="connectivity-row-badges">
+                    {selectedRowIncident ? (
+                      <>
+                        <span className={`status-pill ${buildStatusTone(selectedRowIncident.state)}`}>
+                          Incident {formatStatusLabel(selectedRowIncident.state)}
+                        </span>
+                        <span
+                          className={`status-pill ${buildSeverityTone(selectedRowIncident.severity)}`}
+                        >
+                          Severity {formatStatusLabel(selectedRowIncident.severity)}
+                        </span>
+                      </>
+                    ) : null}
                     <span className="artifact-pill">
-                      {formatFreshnessHint(selectedRow.meter.last_seen_at)}
+                      {selectedRowFreshnessContext?.label ??
+                        formatFreshnessHint(selectedRow.meter.last_seen_at)}
                     </span>
                     <span className="artifact-pill">
                       {selectedRow.primaryEndpoint?.assignment_status

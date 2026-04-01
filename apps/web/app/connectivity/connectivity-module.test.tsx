@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OperationalShell } from "../operational-shell";
 import { ConnectivityModule } from "./connectivity-module";
 
+function includesText(text: string) {
+  return (_content: string, element: Element | null) => element?.textContent?.includes(text) ?? false;
+}
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -23,7 +27,7 @@ function createMockApi({
       communication_profile_code: "dlms-primary",
       meter_profile_code: "residential-default",
       current_status: "commissioned",
-      last_seen_at: "2026-03-30T11:00:00.000Z",
+      last_seen_at: "2099-01-01T11:00:00.000Z",
       is_active: true,
     },
     {
@@ -178,7 +182,13 @@ describe("ConnectivityModule", () => {
 
     renderConnectivityModuleInShell();
 
-    const meterDetailLinks = await screen.findAllByRole("link", {
+    const connectivityListPanel = await screen.findByRole("heading", {
+      name: "Connectivity-focused meters",
+    });
+    const connectivityListSection = connectivityListPanel.closest("section");
+    expect(connectivityListSection).not.toBeNull();
+
+    const meterDetailLinks = await within(connectivityListSection as HTMLElement).findAllByRole("link", {
       name: "Open meter detail",
     });
     expect(meterDetailLinks[0]).toHaveAttribute("href", "/meters/meter-1");
@@ -188,6 +198,158 @@ describe("ConnectivityModule", () => {
     );
     expect(screen.getAllByText("TCP Primary")).not.toHaveLength(0);
     expect(screen.getAllByText("succeeded (connectivity_test)")).not.toHaveLength(0);
+  });
+
+  it("renders a bounded offline meters and connectivity incidents surface", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderConnectivityModuleInShell();
+
+    const incidentsSection = await screen.findByRole("heading", {
+      name: "Offline meters / connectivity incidents",
+    });
+    const incidentsPanel = incidentsSection.closest("section");
+    expect(incidentsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(incidentsPanel as HTMLElement).getAllByText(includesText("1 incident contexts")).length,
+      ).toBeGreaterThan(0);
+      expect(within(incidentsPanel as HTMLElement).getByText("Offline")).toBeInTheDocument();
+      expect(within(incidentsPanel as HTMLElement).getByText("Severity Critical")).toBeInTheDocument();
+      expect(within(incidentsPanel as HTMLElement).getByText("No recent signal")).toBeInTheDocument();
+    });
+
+    await user.click(
+      within(incidentsPanel as HTMLElement).getByRole("button", { name: "Inspect incident" }),
+    );
+
+    const detailPanel = screen.getByRole("heading", { name: "Connectivity detail" }).closest("section");
+    expect(detailPanel).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        within(detailPanel as HTMLElement).getAllByText("SN-1002"),
+      ).not.toHaveLength(0);
+      expect(
+        within(detailPanel as HTMLElement).getByText("Incident Offline"),
+      ).toBeInTheDocument();
+      expect(
+        within(detailPanel as HTMLElement).getByText("Severity Critical"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("shows stale and degraded incident states with visible severity and freshness cues", async () => {
+    const { fetchMock } = createMockApi({
+      meterItems: [
+        {
+          id: "meter-1",
+          serial_number: "SN-1001",
+          utility_meter_number: "UMN-1001",
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-1",
+          communication_profile_code: "dlms-primary",
+          meter_profile_code: "residential-default",
+          current_status: "commissioned",
+          last_seen_at: "2099-01-01T11:30:00.000Z",
+          is_active: true,
+        },
+        {
+          id: "meter-2",
+          serial_number: "SN-1002",
+          utility_meter_number: null,
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-2",
+          communication_profile_code: null,
+          meter_profile_code: "industrial-default",
+          current_status: "commissioned",
+          last_seen_at: "2020-01-01T00:00:00.000Z",
+          is_active: true,
+        },
+        {
+          id: "meter-3",
+          serial_number: "SN-1003",
+          utility_meter_number: "UMN-1003",
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-3",
+          communication_profile_code: "rf-mesh",
+          meter_profile_code: "commercial-default",
+          current_status: "active",
+          last_seen_at: "2099-01-01T11:45:00.000Z",
+          is_active: true,
+        },
+      ],
+      sessionsByMeter: {
+        "meter-1": [
+          {
+            id: "session-1",
+            started_at: "2026-03-31T11:40:00.000Z",
+            ended_at: "2026-03-31T11:41:00.000Z",
+            status: "succeeded",
+            session_purpose: "connectivity_test",
+          },
+        ],
+        "meter-2": [],
+        "meter-3": [
+          {
+            id: "session-3",
+            started_at: "2026-03-31T11:46:00.000Z",
+            ended_at: "2026-03-31T11:47:00.000Z",
+            status: "failed",
+            session_purpose: "connectivity_test",
+          },
+        ],
+      },
+      endpointAssignmentsByMeter: {
+        "meter-1": [
+          {
+            id: "assignment-1",
+            endpoint_code: "tcp-primary",
+            endpoint_display_name: "TCP Primary",
+            assignment_status: "active",
+            is_primary: true,
+          },
+        ],
+        "meter-2": [],
+        "meter-3": [
+          {
+            id: "assignment-3",
+            endpoint_code: "rf-backhaul",
+            endpoint_display_name: "RF Backhaul",
+            assignment_status: "active",
+            is_primary: true,
+          },
+        ],
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderConnectivityModuleInShell();
+
+    const incidentsSection = await screen.findByRole("heading", {
+      name: "Offline meters / connectivity incidents",
+    });
+    const incidentsPanel = incidentsSection.closest("section");
+    expect(incidentsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(incidentsPanel as HTMLElement).getAllByText(includesText("2 incident contexts")).length,
+      ).toBeGreaterThan(0);
+      expect(within(incidentsPanel as HTMLElement).getByText("Stale")).toBeInTheDocument();
+      expect(within(incidentsPanel as HTMLElement).getByText("Degraded")).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getAllByText("Severity Warning"),
+      ).not.toHaveLength(0);
+      expect(
+        within(incidentsPanel as HTMLElement).getByText(/Signal stale for/i),
+      ).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getByText("Latest session Failed"),
+      ).toBeInTheDocument();
+    });
   });
 
   it("renders bounded connectivity detail when a meter summary is selected", async () => {
@@ -239,6 +401,59 @@ describe("ConnectivityModule", () => {
     await waitFor(() => {
       expect(
         screen.getByText("No connectivity overview items available."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("No offline meters or connectivity incidents match the current bounded scope."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("renders an empty offline incidents state when every meter has healthy recent connectivity", async () => {
+    const { fetchMock } = createMockApi({
+      meterItems: [
+        {
+          id: "meter-1",
+          serial_number: "SN-1001",
+          utility_meter_number: "UMN-1001",
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-1",
+          communication_profile_code: "dlms-primary",
+          meter_profile_code: "residential-default",
+          current_status: "commissioned",
+          last_seen_at: "2099-01-01T11:30:00.000Z",
+          is_active: true,
+        },
+      ],
+      sessionsByMeter: {
+        "meter-1": [
+          {
+            id: "session-1",
+            started_at: "2026-03-31T11:40:00.000Z",
+            ended_at: "2026-03-31T11:41:00.000Z",
+            status: "succeeded",
+            session_purpose: "connectivity_test",
+          },
+        ],
+      },
+      endpointAssignmentsByMeter: {
+        "meter-1": [
+          {
+            id: "assignment-1",
+            endpoint_code: "tcp-primary",
+            endpoint_display_name: "TCP Primary",
+            assignment_status: "active",
+            is_primary: true,
+          },
+        ],
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderConnectivityModuleInShell();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("No offline meters or connectivity incidents match the current bounded scope."),
       ).toBeInTheDocument();
     });
   });
