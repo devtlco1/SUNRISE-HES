@@ -710,6 +710,9 @@ export function CommandsModule({
     isSelectFilteredConfirmationVisible,
     shouldConfirmSelectFilteredReplacement,
   ]);
+  const keepCurrentWizardSelection = useCallback(() => {
+    setIsSelectFilteredConfirmationVisible(false);
+  }, []);
 
   const restoreHandedOffWizardMeters = useCallback(() => {
     setSelectedWizardMeterIds(handedOffWizardMeters.map((meter) => meter.id));
@@ -1122,7 +1125,18 @@ export function CommandsModule({
                 </div>
 
                 {isSelectFilteredConfirmationVisible && selectFilteredConfirmationSummary ? (
-                  <p className="muted">{selectFilteredConfirmationSummary}</p>
+                  <div className="detail-stack">
+                    <p className="muted">{selectFilteredConfirmationSummary}</p>
+                    <div className="artifact-row">
+                      <button
+                        className="secondary-button"
+                        onClick={keepCurrentWizardSelection}
+                        type="button"
+                      >
+                        Keep current selection
+                      </button>
+                    </div>
+                  </div>
                 ) : null}
 
                 <p className="muted">

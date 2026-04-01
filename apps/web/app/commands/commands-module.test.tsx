@@ -678,7 +678,7 @@ describe("CommandsModule", () => {
     });
   });
 
-  it("shows a replacement confirmation before select filtered replaces a non-empty selection", async () => {
+  it("shows a keep-current action beside the replacement confirmation for non-empty selection changes", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -706,6 +706,9 @@ describe("CommandsModule", () => {
     expect(
       screen.getByRole("button", { name: "Confirm replace with filtered" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Keep current selection" }),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(
@@ -724,6 +727,67 @@ describe("CommandsModule", () => {
           name: "Remove SN-1003",
         }),
       ).toBeInTheDocument();
+    });
+  });
+
+  it("keeps the current selection when the pending replacement is dismissed", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell({
+      initialMeterIds: ["meter-2", "meter-3"],
+      initialMeterScopeSource: "visible_filtered_result_set",
+    });
+
+    const getSelectedTargetReview = () =>
+      screen.getByRole("heading", { name: "Selected target review" }).closest(".detail-stack") as HTMLElement;
+
+    expect(await screen.findByText("2 handed-off targets loaded")).toBeInTheDocument();
+    await screen.findByText("SN-1001");
+    await user.click(screen.getByRole("button", { name: "Restore handed-off targets" }));
+    await user.type(screen.getByRole("searchbox", { name: "Bulk target filter" }), "SN-1001");
+    await user.click(screen.getByRole("button", { name: "Select filtered" }));
+
+    expect(
+      screen.getByRole("button", { name: "Keep current selection" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Keep current selection" }));
+
+    expect(
+      screen.queryByText(/Select filtered will replace the current/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Confirm replace with filtered" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Keep current selection" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Select filtered" })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        within(getSelectedTargetReview()).getAllByText("2 handed-off targets").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(getSelectedTargetReview()).getAllByText("0 manually added targets").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(getSelectedTargetReview()).getByRole("button", {
+          name: "Remove SN-1002",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(getSelectedTargetReview()).getByRole("button", {
+          name: "Remove SN-1003",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        within(getSelectedTargetReview()).queryByRole("button", {
+          name: "Remove SN-1001",
+        }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -846,6 +910,9 @@ describe("CommandsModule", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Confirm replace with filtered" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Keep current selection" }),
     ).not.toBeInTheDocument();
 
     await waitFor(() => {
