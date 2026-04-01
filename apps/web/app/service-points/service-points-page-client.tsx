@@ -8,7 +8,7 @@ export function ServicePointsPageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="Service Points / Premises MVP"
-      description="Compact service-point and premise visibility built from current meter, subscriber, and location read surfaces."
+      description="Service-point and premise visibility built from current meter, subscriber, and location read surfaces."
     >
       {({ authorizedFetch }) => (
         <ServicePointsModule authorizedFetch={authorizedFetch} />

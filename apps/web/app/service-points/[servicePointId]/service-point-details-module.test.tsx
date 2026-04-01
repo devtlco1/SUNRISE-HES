@@ -112,8 +112,9 @@ describe("ServicePointDetailsModule", () => {
 
     renderServicePointDetailsModuleInShell();
 
-    expect(await screen.findByText("SP-1001")).toBeInTheDocument();
-    expect(screen.getByText("Muttrah Waterfront")).toBeInTheDocument();
+    expect(await screen.findAllByText("SP-1001")).not.toHaveLength(0);
+    expect(screen.getAllByText("Active")).not.toHaveLength(0);
+    expect(screen.getAllByText("Muttrah Waterfront")).not.toHaveLength(0);
     expect(screen.getByRole("link", { name: /SN-1001/i })).toHaveAttribute(
       "href",
       "/meters/meter-1",

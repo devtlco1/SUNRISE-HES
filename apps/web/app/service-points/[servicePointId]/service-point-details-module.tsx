@@ -38,6 +38,37 @@ type ServicePointDetail = {
   linked_subscribers: ServicePointLinkedSubscriber[];
 };
 
+function formatStatusLabel(value: string): string {
+  return value
+    .split(/[_\s/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("active") ||
+    normalized.includes("commercial") ||
+    normalized.includes("residential") ||
+    normalized.includes("registered")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("inactive") ||
+    normalized.includes("closed") ||
+    normalized.includes("disconnected")
+  ) {
+    return "danger";
+  }
+  if (normalized.includes("pending") || normalized.includes("review")) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 export function ServicePointDetailsModule({
   servicePointId,
   authorizedFetch,
@@ -81,19 +112,60 @@ export function ServicePointDetailsModule({
 
       {detail ? (
         <>
-          <div className="section-heading">
-            <div>
-              <h2>{detail.service_point_code}</h2>
-              <p className="muted">
-                {detail.premises_type ?? "premise"} with {detail.linked_meter_count} linked
-                meter(s), {detail.linked_subscriber_count} linked subscriber(s), and{" "}
-                {detail.linked_account_count} linked account(s).
-              </p>
+          <section className="subpanel service-points-overview-panel">
+            <section className="service-point-detail-hero">
+              <div className="service-point-detail-title-row">
+                <div>
+                  <p className="eyebrow">Service Point Detail</p>
+                  <h2>{detail.service_point_code}</h2>
+                  <p className="muted">
+                    {formatStatusLabel(detail.premises_type ?? "premise")} with{" "}
+                    {detail.linked_meter_count} linked meter(s),{" "}
+                    {detail.linked_subscriber_count} linked subscriber(s), and{" "}
+                    {detail.linked_account_count} linked account(s).
+                  </p>
+                </div>
+                <span
+                  className={`status-pill ${buildStatusTone(
+                    detail.is_active ? "active" : "inactive",
+                  )}`}
+                >
+                  {detail.is_active ? "Active" : "Inactive"}
+                </span>
+              </div>
+
+              <div className="command-list-item-badges">
+                <span className="artifact-pill">Service point {detail.id}</span>
+                <span className="artifact-pill">
+                  {detail.address_line ?? "No address summary"}
+                </span>
+                <span className="artifact-pill">
+                  {detail.latitude !== null && detail.longitude !== null
+                    ? `${detail.latitude}, ${detail.longitude}`
+                    : "No coordinate summary"}
+                </span>
+              </div>
+            </section>
+
+            <div className="service-points-overview-grid">
+              <div className="stat-card service-points-overview-card">
+                <span className="stat-label">Premises type</span>
+                <strong>{formatStatusLabel(detail.premises_type ?? "premise")}</strong>
+              </div>
+              <div className="stat-card service-points-overview-card">
+                <span className="stat-label">Linked meters</span>
+                <strong>{detail.linked_meter_count}</strong>
+              </div>
+              <div className="stat-card service-points-overview-card">
+                <span className="stat-label">Linked subscribers</span>
+                <strong>{detail.linked_subscriber_count}</strong>
+              </div>
+              <div className="stat-card service-points-overview-card">
+                <span className="stat-label">Linked accounts</span>
+                <strong>{detail.linked_account_count}</strong>
+              </div>
             </div>
-            <span className="status-pill">
-              {detail.is_active ? "active" : "inactive"}
-            </span>
-          </div>
+          </section>
 
           <section className="subpanel">
             <div className="section-heading">
@@ -115,7 +187,7 @@ export function ServicePointDetailsModule({
               </div>
               <div className="stat-card">
                 <span className="stat-label">Premises type</span>
-                <strong>{detail.premises_type ?? "Not available"}</strong>
+                <strong>{formatStatusLabel(detail.premises_type ?? "Not available")}</strong>
               </div>
               <div className="stat-card">
                 <span className="stat-label">Latitude</span>
@@ -150,18 +222,22 @@ export function ServicePointDetailsModule({
                 <Link key={meter.id} className="meter-list-item" href={`/meters/${meter.id}`}>
                   <div className="command-list-item-header">
                     <strong>{meter.serial_number}</strong>
-                    <span className="status-pill">{meter.current_status}</span>
+                    <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
+                      {formatStatusLabel(meter.current_status)}
+                    </span>
                   </div>
-                  <div className="command-list-item-meta">
-                    <span>Meter ID {meter.id}</span>
-                    <span>{meter.utility_meter_number ?? "No utility number"}</span>
-                  </div>
-                  <div className="command-list-item-meta">
-                    <span>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {meter.utility_meter_number ?? "No utility number"}
+                    </span>
+                    <span className="artifact-pill">
                       {meter.account_number
                         ? `Account ${meter.account_number}`
                         : "No linked account summary"}
                     </span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>Meter ID {meter.id}</span>
                     <span>Open existing meter detail</span>
                   </div>
                 </Link>
@@ -193,20 +269,28 @@ export function ServicePointDetailsModule({
                 >
                   <div className="command-list-item-header">
                     <strong>{subscriber.full_name}</strong>
-                    <span className="status-pill">
-                      {subscriber.account_status ?? subscriber.consumer_type}
+                    <span
+                      className={`status-pill ${buildStatusTone(
+                        subscriber.account_status ?? subscriber.consumer_type,
+                      )}`}
+                    >
+                      {formatStatusLabel(
+                        subscriber.account_status ?? subscriber.consumer_type,
+                      )}
                     </span>
                   </div>
-                  <div className="command-list-item-meta">
-                    <span>Subscriber ID {subscriber.id}</span>
-                    <span>{subscriber.consumer_type}</span>
-                  </div>
-                  <div className="command-list-item-meta">
-                    <span>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">
+                      {formatStatusLabel(subscriber.consumer_type)}
+                    </span>
+                    <span className="artifact-pill">
                       {subscriber.account_number
                         ? `Account ${subscriber.account_number}`
                         : "No linked account summary"}
                     </span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>Subscriber ID {subscriber.id}</span>
                     <span>Open existing subscriber detail</span>
                   </div>
                 </Link>

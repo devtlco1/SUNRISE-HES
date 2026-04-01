@@ -12,7 +12,7 @@ export function ServicePointDetailsPageClient({
     <OperationalShell
       eyebrow="Operational Pages"
       title={`Service Point ${servicePointId}`}
-      description="Bounded service-point detail surface showing compact linked meter and subscriber context without expanding into billing or hierarchy redesign."
+      description="Bounded service-point detail surface showing linked meter and subscriber context without expanding into billing or hierarchy redesign."
     >
       {({ authorizedFetch }) => (
         <ServicePointDetailsModule
