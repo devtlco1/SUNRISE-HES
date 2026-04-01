@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "../operational-shell";
@@ -123,12 +124,42 @@ describe("GisLiteModule", () => {
     renderGisLiteModuleInShell();
 
     expect(await screen.findByRole("link", { name: "GIS Lite" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Spatial overview" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "GIS operations center" }),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("With coordinates")).toBeInTheDocument();
       expect(screen.getByText("With linked subscriber")).toBeInTheDocument();
+      expect(screen.getByText("With linked account")).toBeInTheDocument();
       expect(screen.getByText("GIS-linked entities")).toBeInTheDocument();
+    });
+  });
+
+  it("renders a bounded selected GIS entity summary from existing list data", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderGisLiteModuleInShell();
+
+    const inspectButtons = await screen.findAllByRole("button", {
+      name: "Inspect summary",
+    });
+    await user.click(inspectButtons[1]);
+
+    const summaryPanel = screen
+      .getByRole("heading", { name: "Selected spatial entity" })
+      .closest("section");
+    expect(summaryPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(within(summaryPanel as HTMLElement).getByText("SN-1002")).toBeInTheDocument();
+      expect(
+        within(summaryPanel as HTMLElement).getByRole("link", {
+          name: "Open meter detail",
+        }),
+      ).toHaveAttribute("href", "/meters/meter-2");
     });
   });
 

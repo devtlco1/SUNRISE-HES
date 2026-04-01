@@ -29,6 +29,38 @@ type GisLiteEntityListResponse = {
   items: GisLiteEntity[];
 };
 
+function formatStatusLabel(value: string): string {
+  return value
+    .split(/[_\s/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("commissioned") ||
+    normalized.includes("registered") ||
+    normalized.includes("active") ||
+    normalized.includes("coordinates")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("inactive") ||
+    normalized.includes("disconnected") ||
+    normalized.includes("error") ||
+    normalized.includes("unlinked")
+  ) {
+    return "danger";
+  }
+  if (normalized.includes("service point only") || normalized.includes("pending")) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return "Not available";
@@ -71,6 +103,7 @@ export function GisLiteModule({
   authorizedFetch: AuthorizedFetch;
 }) {
   const [items, setItems] = useState<GisLiteEntity[]>([]);
+  const [selectedMeterId, setSelectedMeterId] = useState<string | null>(null);
   const [totalItems, setTotalItems] = useState(0);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isLoadingEntities, setIsLoadingEntities] = useState(false);
@@ -125,10 +158,24 @@ export function GisLiteModule({
     () => ({
       withCoordinates: items.filter((item) => item.has_coordinates).length,
       withSubscribers: items.filter((item) => item.subscriber_id !== null).length,
-      locationGaps: items.filter((item) => item.location_presence !== "coordinates_available")
-        .length,
+      linkedAccounts: items.filter((item) => item.account_id !== null).length,
+      locationGaps: items.filter((item) => item.location_presence !== "coordinates_available").length,
     }),
     [items],
+  );
+
+  useEffect(() => {
+    setSelectedMeterId((currentSelectedMeterId) => {
+      if (currentSelectedMeterId && items.some((item) => item.meter_id === currentSelectedMeterId)) {
+        return currentSelectedMeterId;
+      }
+      return items[0]?.meter_id ?? null;
+    });
+  }, [items]);
+
+  const selectedEntity = useMemo(
+    () => items.find((item) => item.meter_id === selectedMeterId) ?? items[0] ?? null,
+    [items, selectedMeterId],
   );
 
   return (
@@ -136,10 +183,10 @@ export function GisLiteModule({
       {pageError ? <p className="error-banner">{pageError}</p> : null}
 
       <div className="detail-stack">
-        <section className="subpanel">
+        <section className="subpanel gis-overview-panel">
           <div className="section-heading">
             <div>
-              <h2>Spatial overview</h2>
+              <h2>GIS operations center</h2>
               <p className="muted">
                 Bounded GIS-lite visibility over existing meter and subscriber-linked
                 service-point context.
@@ -151,20 +198,24 @@ export function GisLiteModule({
           {isLoadingEntities ? (
             <p className="muted">Loading GIS Lite overview...</p>
           ) : (
-            <div className="meter-summary-grid">
-              <div className="stat-card">
+            <div className="gis-overview-grid">
+              <div className="stat-card gis-overview-card">
                 <span className="stat-label">Items loaded</span>
                 <strong>{items.length}</strong>
               </div>
-              <div className="stat-card">
+              <div className="stat-card gis-overview-card">
                 <span className="stat-label">With coordinates</span>
                 <strong>{overview.withCoordinates}</strong>
               </div>
-              <div className="stat-card">
+              <div className="stat-card gis-overview-card">
                 <span className="stat-label">With linked subscriber</span>
                 <strong>{overview.withSubscribers}</strong>
               </div>
-              <div className="stat-card">
+              <div className="stat-card gis-overview-card">
+                <span className="stat-label">With linked account</span>
+                <strong>{overview.linkedAccounts}</strong>
+              </div>
+              <div className="stat-card gis-overview-card">
                 <span className="stat-label">Location gaps</span>
                 <strong>{overview.locationGaps}</strong>
               </div>
@@ -172,6 +223,7 @@ export function GisLiteModule({
           )}
         </section>
 
+        <div className="gis-module-layout">
         <section className="subpanel">
           <div className="section-heading">
             <div>
@@ -195,46 +247,132 @@ export function GisLiteModule({
           ) : null}
 
           {!isLoadingEntities && mapBounds ? (
-            <div
-              style={{
-                position: "relative",
-                minHeight: "18rem",
-                border: "1px solid rgba(148, 163, 184, 0.35)",
-                borderRadius: "0.75rem",
-                background:
-                  "linear-gradient(180deg, rgba(15, 23, 42, 0.05), rgba(30, 41, 59, 0.12))",
-                overflow: "hidden",
-              }}
-            >
-              {itemsWithCoordinates.map((item) => (
-                <Link
-                  key={item.meter_id}
-                  aria-label={`Open ${item.meter_serial_number}`}
-                  className="secondary-button"
-                  href={`/meters/${item.meter_id}`}
-                  style={{
-                    position: "absolute",
-                    left: normalizeCoordinate(
-                      item.longitude,
-                      mapBounds.minLongitude,
-                      mapBounds.maxLongitude,
-                    ),
-                    top: normalizeCoordinate(
-                      item.latitude,
-                      mapBounds.minLatitude,
-                      mapBounds.maxLatitude,
-                      true,
-                    ),
-                    transform: "translate(-50%, -50%)",
-                    padding: "0.3rem 0.5rem",
-                    minWidth: "auto",
-                  }}
-                >
-                  {item.meter_serial_number}
-                </Link>
-              ))}
+            <div className="detail-stack">
+              <div className="gis-map-legend">
+                <span className="artifact-pill">{itemsWithCoordinates.length} mapped meter(s)</span>
+                <span className="artifact-pill">{overview.locationGaps} location gap(s)</span>
+                <span className="artifact-pill">Existing meter routes preserved</span>
+              </div>
+              <div className="gis-map-shell">
+                {itemsWithCoordinates.map((item) => (
+                  <button
+                    key={item.meter_id}
+                    aria-label={`Inspect ${item.meter_serial_number}`}
+                    className={`secondary-button gis-map-marker${
+                      selectedEntity?.meter_id === item.meter_id ? " selected" : ""
+                    }`}
+                    onClick={() => setSelectedMeterId(item.meter_id)}
+                    style={{
+                      left: normalizeCoordinate(
+                        item.longitude,
+                        mapBounds.minLongitude,
+                        mapBounds.maxLongitude,
+                      ),
+                      top: normalizeCoordinate(
+                        item.latitude,
+                        mapBounds.minLatitude,
+                        mapBounds.maxLatitude,
+                        true,
+                      ),
+                    }}
+                    type="button"
+                  >
+                    {item.meter_serial_number}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Selected spatial entity</h2>
+              <p className="muted">
+                Bounded inline summary for the currently selected GIS-linked entity before
+                drilling into the existing operational detail routes.
+              </p>
+            </div>
+          </div>
+
+          {isLoadingEntities ? (
+            <p className="muted">Loading selected GIS entity...</p>
+          ) : selectedEntity ? (
+            <div className="detail-stack">
+              <section className="gis-detail-hero">
+                <div className="gis-detail-title-row">
+                  <div>
+                    <p className="eyebrow">Selected Entity</p>
+                    <h3>{selectedEntity.meter_serial_number}</h3>
+                    <p className="muted">
+                      {formatStatusLabel(selectedEntity.meter_status)} meter in{" "}
+                      {formatLocationPresence(selectedEntity.location_presence).toLowerCase()} mode
+                      with service-point and subscriber linkage preserved.
+                    </p>
+                  </div>
+                  <span className={`status-pill ${buildStatusTone(selectedEntity.meter_status)}`}>
+                    {formatStatusLabel(selectedEntity.meter_status)}
+                  </span>
+                </div>
+
+                <div className="command-list-item-badges">
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      formatLocationPresence(selectedEntity.location_presence),
+                    )}`}
+                  >
+                    {formatLocationPresence(selectedEntity.location_presence)}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedEntity.service_point_code ?? "No service point"}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedEntity.account_number ?? "No account"}
+                  </span>
+                </div>
+              </section>
+
+              <div className="detail-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Meter ID</span>
+                  <strong>{selectedEntity.meter_id}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Subscriber</span>
+                  <strong>{selectedEntity.subscriber_display_name ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Coordinates</span>
+                  <strong>
+                    {selectedEntity.has_coordinates
+                      ? `${selectedEntity.latitude}, ${selectedEntity.longitude}`
+                      : "Not available"}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Last seen</span>
+                  <strong>{formatDateTime(selectedEntity.meter_last_seen_at)}</strong>
+                </div>
+              </div>
+
+              <div className="artifact-row">
+                <Link className="secondary-button" href={`/meters/${selectedEntity.meter_id}`}>
+                  Open meter detail
+                </Link>
+                {selectedEntity.subscriber_id ? (
+                  <Link
+                    className="secondary-button"
+                    href={`/subscribers/${selectedEntity.subscriber_id}`}
+                  >
+                    Open subscriber detail
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <p className="muted">No GIS entity selected for bounded summary review.</p>
+          )}
         </section>
 
         <section className="subpanel">
@@ -258,14 +396,36 @@ export function GisLiteModule({
             ) : null}
 
             {items.map((item) => (
-              <div key={item.meter_id} className="meter-list-item">
+              <div
+                key={item.meter_id}
+                className={`meter-list-item gis-entity-item${
+                  selectedEntity?.meter_id === item.meter_id ? " selected" : ""
+                }`}
+              >
                 <div className="command-list-item-header">
                   <strong>{item.meter_serial_number}</strong>
-                  <span className="status-pill">{item.meter_status}</span>
+                  <span className={`status-pill ${buildStatusTone(item.meter_status)}`}>
+                    {formatStatusLabel(item.meter_status)}
+                  </span>
+                </div>
+                <div className="command-list-item-badges">
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      formatLocationPresence(item.location_presence),
+                    )}`}
+                  >
+                    {formatLocationPresence(item.location_presence)}
+                  </span>
+                  <span className="artifact-pill">
+                    {item.service_point_code ?? "No service point"}
+                  </span>
+                  <span className="artifact-pill">
+                    {item.account_number ?? "No account"}
+                  </span>
                 </div>
                 <div className="command-list-item-meta">
                   <span>Meter ID {item.meter_id}</span>
-                  <span>{formatLocationPresence(item.location_presence)}</span>
+                  <span>Last seen {formatDateTime(item.meter_last_seen_at)}</span>
                 </div>
                 <div className="command-list-item-meta">
                   <span>
@@ -282,9 +442,16 @@ export function GisLiteModule({
                       ? `${item.latitude}, ${item.longitude}`
                       : "Coordinates not available"}
                   </span>
-                  <span>Last seen {formatDateTime(item.meter_last_seen_at)}</span>
+                  <span>{item.subscriber_type ? formatStatusLabel(item.subscriber_type) : "No subscriber type"}</span>
                 </div>
                 <div className="artifact-row">
+                  <button
+                    className="secondary-button"
+                    onClick={() => setSelectedMeterId(item.meter_id)}
+                    type="button"
+                  >
+                    Inspect summary
+                  </button>
                   <Link className="secondary-button" href={`/meters/${item.meter_id}`}>
                     Open meter detail
                   </Link>
@@ -301,6 +468,7 @@ export function GisLiteModule({
             ))}
           </div>
         </section>
+        </div>
       </div>
     </section>
   );

@@ -8,7 +8,7 @@ export function GisLitePageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="GIS Lite MVP"
-      description="Compact spatial visibility over existing platform entities using current meter, subscriber, and service-point context."
+      description="Spatial visibility over existing platform entities using current meter, subscriber, and service-point context."
     >
       {({ authorizedFetch }) => <GisLiteModule authorizedFetch={authorizedFetch} />}
     </OperationalShell>
