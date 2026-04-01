@@ -481,6 +481,12 @@ a {
   grid-template-columns: 1.1fr 1fr;
 }
 
+.jobs-activity-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1.2fr 1fr;
+}
+
 .commands-overview-panel {
   background:
     linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(15, 23, 42, 0.16)),
@@ -490,6 +496,12 @@ a {
 .connectivity-overview-panel {
   background:
     linear-gradient(180deg, rgba(14, 165, 233, 0.08), rgba(15, 23, 42, 0.16)),
+    rgba(2, 6, 23, 0.24);
+}
+
+.jobs-overview-panel {
+  background:
+    linear-gradient(180deg, rgba(244, 114, 182, 0.08), rgba(15, 23, 42, 0.16)),
     rgba(2, 6, 23, 0.24);
 }
 
@@ -505,6 +517,12 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+.jobs-overview-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 .commands-overview-card p {
   margin: 0.55rem 0 0;
   font-size: 0.9rem;
@@ -512,6 +530,12 @@ a {
 }
 
 .connectivity-overview-card p {
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.jobs-overview-card p {
   margin: 0.55rem 0 0;
   font-size: 0.9rem;
   line-height: 1.5;
@@ -736,6 +760,13 @@ a {
   border: 1px solid rgba(14, 165, 233, 0.18);
 }
 
+.jobs-activity-hero {
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(244, 114, 182, 0.18);
+}
+
 .commands-detail-title-row {
   display: flex;
   justify-content: space-between;
@@ -744,6 +775,13 @@ a {
 }
 
 .connectivity-detail-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.jobs-activity-hero-row {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -762,11 +800,21 @@ a {
   letter-spacing: -0.03em;
 }
 
+.jobs-activity-hero-row h3 {
+  margin: 0;
+  font-size: 1.55rem;
+  letter-spacing: -0.03em;
+}
+
 .commands-detail-title-row .muted {
   margin: 0.55rem 0 0;
 }
 
 .connectivity-detail-title-row .muted {
+  margin: 0.55rem 0 0;
+}
+
+.jobs-activity-hero-row .muted {
   margin: 0.55rem 0 0;
 }
 
@@ -856,7 +904,8 @@ a {
 @media (max-width: 1180px) {
   .commands-tab-layout,
   .commands-module-layout,
-  .connectivity-module-layout {
+  .connectivity-module-layout,
+  .jobs-activity-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -874,6 +923,7 @@ a {
   .commands-selection-summary,
   .commands-detail-title-row,
   .connectivity-detail-title-row,
+  .jobs-activity-hero-row,
   .connectivity-row-actions,
   .auth-form-footer {
     flex-direction: column;

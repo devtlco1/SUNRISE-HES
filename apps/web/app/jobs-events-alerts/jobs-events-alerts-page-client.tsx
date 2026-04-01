@@ -8,7 +8,7 @@ export function JobsEventsAlertsPageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="Jobs / Events / Alerts MVP"
-      description="Compact operational monitoring surface built from the current bounded job, command, and event read APIs."
+      description="Operational monitoring surface built from the current bounded job, command, and event read APIs."
     >
       {({ authorizedFetch }) => (
         <JobsEventsAlertsModule authorizedFetch={authorizedFetch} />

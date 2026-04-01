@@ -186,8 +186,8 @@ describe("ActivityDetailModule", () => {
     expect(await screen.findByRole("heading", { name: "Activity detail" })).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText("profile-capture-template")).toBeInTheDocument();
-      expect(screen.getByText("profile_capture")).toBeInTheDocument();
+      expect(screen.getAllByText("profile-capture-template")).not.toHaveLength(0);
+      expect(screen.getByText("Profile Capture")).toBeInTheDocument();
       expect(screen.getByText("Projection record")).toBeInTheDocument();
     });
 
@@ -214,6 +214,7 @@ describe("ActivityDetailModule", () => {
     expect(screen.getByText("job-run-1")).toBeInTheDocument();
     expect(screen.getByText("command-1")).toBeInTheDocument();
     expect(screen.getByText("Result summary")).toBeInTheDocument();
+    expect(screen.getAllByText("Failed")).not.toHaveLength(0);
   });
 
   it("renders bounded event activity detail with meter linkage when available", async () => {
@@ -228,6 +229,7 @@ describe("ActivityDetailModule", () => {
     expect(await screen.findByText("tamper_open")).toBeInTheDocument();
     expect(screen.getByText("critical / open")).toBeInTheDocument();
     expect(screen.getByText("Normalized payload")).toBeInTheDocument();
+    expect(screen.getAllByText("Critical Open")).not.toHaveLength(0);
     expect(screen.getByRole("link", { name: "Open meter detail" })).toHaveAttribute(
       "href",
       "/meters/meter-2",

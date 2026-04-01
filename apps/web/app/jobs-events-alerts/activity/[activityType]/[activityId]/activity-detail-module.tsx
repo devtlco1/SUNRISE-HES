@@ -95,6 +95,44 @@ function renderJson(value: Record<string, unknown> | null): string {
   return JSON.stringify(value, null, 2);
 }
 
+function formatStatusLabel(value: string): string {
+  return value
+    .split(/[_\s/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("succeed") ||
+    normalized.includes("complete") ||
+    normalized.includes("closed") ||
+    normalized.includes("active")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("fail") ||
+    normalized.includes("error") ||
+    normalized.includes("critical") ||
+    normalized.includes("cancel") ||
+    normalized.includes("open")
+  ) {
+    return "danger";
+  }
+  if (
+    normalized.includes("warning") ||
+    normalized.includes("queued") ||
+    normalized.includes("pending") ||
+    normalized.includes("running")
+  ) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 export function ActivityDetailModule({
   activityType,
   activityId,
@@ -209,6 +247,21 @@ export function ActivityDetailModule({
 
           {!isLoadingDetail && detail?.type === "job_run" ? (
             <div className="detail-stack">
+              <section className="jobs-activity-hero">
+                <div className="jobs-activity-hero-row">
+                  <div>
+                    <p className="eyebrow">Selected Activity</p>
+                    <h3>{detail.record.related_command?.command_template_code ?? detail.record.id}</h3>
+                    <p className="muted">
+                      Job run visibility over the current scheduling and execution summary.
+                    </p>
+                  </div>
+                  <span className={`status-pill ${buildStatusTone(detail.record.status)}`}>
+                    {formatStatusLabel(detail.record.status)}
+                  </span>
+                </div>
+              </section>
+
               <div className="meter-summary-grid">
                 <div className="stat-card">
                   <span className="stat-label">Activity type</span>
@@ -220,7 +273,7 @@ export function ActivityDetailModule({
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Status</span>
-                  <strong>{detail.record.status}</strong>
+                  <strong>{formatStatusLabel(detail.record.status)}</strong>
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Job definition</span>
@@ -247,8 +300,14 @@ export function ActivityDetailModule({
               <div className="command-list-item">
                 <div className="command-list-item-header">
                   <strong>Outcome summary</strong>
-                  <span className="status-pill">
-                    {detail.record.related_command?.current_status ?? detail.record.status}
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      detail.record.related_command?.current_status ?? detail.record.status,
+                    )}`}
+                  >
+                    {formatStatusLabel(
+                      detail.record.related_command?.current_status ?? detail.record.status,
+                    )}
                   </span>
                 </div>
                 <div className="command-list-item-meta">
@@ -267,6 +326,21 @@ export function ActivityDetailModule({
 
           {!isLoadingDetail && detail?.type === "command" ? (
             <div className="detail-stack">
+              <section className="jobs-activity-hero">
+                <div className="jobs-activity-hero-row">
+                  <div>
+                    <p className="eyebrow">Selected Activity</p>
+                    <h3>{detail.record.command_template_code}</h3>
+                    <p className="muted">
+                      Command visibility over the current operational projection and attempt state.
+                    </p>
+                  </div>
+                  <span className={`status-pill ${buildStatusTone(detail.record.command_status)}`}>
+                    {formatStatusLabel(detail.record.command_status)}
+                  </span>
+                </div>
+              </section>
+
               <div className="meter-summary-grid">
                 <div className="stat-card">
                   <span className="stat-label">Activity type</span>
@@ -278,11 +352,11 @@ export function ActivityDetailModule({
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Family</span>
-                  <strong>{detail.record.command_family}</strong>
+                  <strong>{formatStatusLabel(detail.record.command_family)}</strong>
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Status</span>
-                  <strong>{detail.record.command_status}</strong>
+                  <strong>{formatStatusLabel(detail.record.command_status)}</strong>
                 </div>
                 <div className="stat-card">
                   <span className="stat-label">Meter ID</span>
@@ -305,8 +379,14 @@ export function ActivityDetailModule({
               <div className="command-list-item">
                 <div className="command-list-item-header">
                   <strong>Outcome summary</strong>
-                  <span className="status-pill">
-                    {detail.record.latest_command_execution_attempt_status ?? "No attempt"}
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      detail.record.latest_command_execution_attempt_status,
+                    )}`}
+                  >
+                    {formatStatusLabel(
+                      detail.record.latest_command_execution_attempt_status ?? "No attempt",
+                    )}
                   </span>
                 </div>
                 <div className="command-list-item-meta">
@@ -323,6 +403,25 @@ export function ActivityDetailModule({
 
           {!isLoadingDetail && detail?.type === "event" ? (
             <div className="detail-stack">
+              <section className="jobs-activity-hero">
+                <div className="jobs-activity-hero-row">
+                  <div>
+                    <p className="eyebrow">Selected Activity</p>
+                    <h3>{detail.record.event_name ?? detail.record.event_code}</h3>
+                    <p className="muted">
+                      Event visibility over the current operational severity, state, and payload context.
+                    </p>
+                  </div>
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      `${detail.record.severity} ${detail.record.event_state}`,
+                    )}`}
+                  >
+                    {formatStatusLabel(`${detail.record.severity} ${detail.record.event_state}`)}
+                  </span>
+                </div>
+              </section>
+
               <div className="meter-summary-grid">
                 <div className="stat-card">
                   <span className="stat-label">Activity type</span>
@@ -363,7 +462,13 @@ export function ActivityDetailModule({
               <div className="command-list-item">
                 <div className="command-list-item-header">
                   <strong>Event summary</strong>
-                  <span className="status-pill">{detail.record.event_name ?? "No name"}</span>
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      `${detail.record.severity} ${detail.record.event_state}`,
+                    )}`}
+                  >
+                    {detail.record.event_name ?? "No name"}
+                  </span>
                 </div>
                 <div className="command-list-item-meta">
                   <span>Correlation {detail.record.correlation_id ?? "Not available"}</span>

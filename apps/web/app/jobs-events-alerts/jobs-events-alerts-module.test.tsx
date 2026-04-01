@@ -1,4 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "../operational-shell";
@@ -173,7 +174,9 @@ describe("JobsEventsAlertsModule", () => {
     expect(
       await screen.findByRole("link", { name: "Jobs / Events / Alerts" }),
     ).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Monitoring overview" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Operations monitoring center" }),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Recent job runs loaded")).toBeInTheDocument();
@@ -215,6 +218,38 @@ describe("JobsEventsAlertsModule", () => {
           name: "Open meter detail",
         })[0],
       ).toHaveAttribute("href", "/meters/meter-2");
+    });
+  });
+
+  it("renders a bounded selected activity summary using existing activity data", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const inspectButtons = await screen.findAllByRole("button", {
+      name: "Inspect summary",
+    });
+    await user.click(inspectButtons[1]);
+
+    const summaryPanel = screen
+      .getByRole("heading", { name: "Selected activity summary" })
+      .closest("section");
+    expect(summaryPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(summaryPanel as HTMLElement).getByText("profile-capture-template"),
+      ).toBeInTheDocument();
+      expect(
+        within(summaryPanel as HTMLElement).getByText("Command"),
+      ).toBeInTheDocument();
+      expect(
+        within(summaryPanel as HTMLElement).getByRole("link", {
+          name: "Open activity detail",
+        }),
+      ).toHaveAttribute("href", "/jobs-events-alerts/activity/command/command-1");
     });
   });
 

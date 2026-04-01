@@ -87,6 +87,7 @@ type AlertItem = {
   reason: string;
   severity: string;
   timestamp: string;
+  status: string;
   targetHref: string | null;
 };
 
@@ -107,6 +108,44 @@ function sortByTimestampDesc<T extends { timestamp: string }>(items: T[]): T[] {
   );
 }
 
+function formatStatusLabel(value: string): string {
+  return value
+    .split(/[_\s/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("succeed") ||
+    normalized.includes("complete") ||
+    normalized.includes("closed") ||
+    normalized.includes("ready")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("fail") ||
+    normalized.includes("error") ||
+    normalized.includes("critical") ||
+    normalized.includes("cancel") ||
+    normalized.includes("open")
+  ) {
+    return "danger";
+  }
+  if (
+    normalized.includes("warning") ||
+    normalized.includes("queued") ||
+    normalized.includes("pending") ||
+    normalized.includes("running")
+  ) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 export function JobsEventsAlertsModule({
   authorizedFetch,
 }: {
@@ -117,6 +156,7 @@ export function JobsEventsAlertsModule({
     null,
   );
   const [recentEvents, setRecentEvents] = useState<RecentEventItem[] | null>(null);
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isLoadingActivity, setIsLoadingActivity] = useState(false);
 
@@ -243,6 +283,7 @@ export function JobsEventsAlertsModule({
         reason: jobRun.latest_error_message ?? `Job run ${jobRun.status}`,
         severity: "job",
         timestamp: buildJobRunTimestamp(jobRun),
+        status: jobRun.status,
         targetHref: jobRun.target_meter_id
           ? `/meters/${jobRun.target_meter_id}`
           : jobRun.related_command_id
@@ -261,6 +302,7 @@ export function JobsEventsAlertsModule({
         reason: `${command.command_family} ${command.command_status}`,
         severity: "command",
         timestamp: command.latest_updated_at,
+        status: command.command_status,
         targetHref: `/meters/${command.meter_id}`,
       });
     }
@@ -278,6 +320,7 @@ export function JobsEventsAlertsModule({
         reason: `${event.severity} ${event.event_state}`,
         severity: "event",
         timestamp: event.occurred_at,
+        status: `${event.severity} ${event.event_state}`,
         targetHref: event.meter_id ? `/meters/${event.meter_id}` : null,
       });
     }
@@ -307,6 +350,23 @@ export function JobsEventsAlertsModule({
     [alertItems.length, jobRuns, recentCommands, recentEvents],
   );
 
+  useEffect(() => {
+    setSelectedActivityId((currentSelectedActivityId) => {
+      if (
+        currentSelectedActivityId &&
+        activityItems.some((item) => item.id === currentSelectedActivityId)
+      ) {
+        return currentSelectedActivityId;
+      }
+      return activityItems[0]?.id ?? null;
+    });
+  }, [activityItems]);
+
+  const selectedActivity = useMemo(
+    () => activityItems.find((item) => item.id === selectedActivityId) ?? activityItems[0] ?? null,
+    [activityItems, selectedActivityId],
+  );
+
   const activityStatus = useMemo(() => {
     if (isLoadingActivity) {
       return "Loading activity";
@@ -322,10 +382,10 @@ export function JobsEventsAlertsModule({
       {pageError ? <p className="error-banner">{pageError}</p> : null}
 
       <div className="detail-stack">
-        <section className="subpanel">
+        <section className="subpanel jobs-overview-panel">
           <div className="section-heading">
             <div>
-              <h2>Monitoring overview</h2>
+              <h2>Operations monitoring center</h2>
               <p className="muted">
                 Bounded operational visibility across the existing job, command,
                 and event read surfaces.
@@ -337,9 +397,9 @@ export function JobsEventsAlertsModule({
           {isLoadingActivity ? (
             <p className="muted">Loading jobs, events, and alerts overview...</p>
           ) : (
-            <div className="meter-summary-grid">
+            <div className="jobs-overview-grid">
               {overviewCards.map((card) => (
-                <div key={card.label} className="stat-card">
+                <div key={card.label} className="stat-card jobs-overview-card">
                   <span className="stat-label">{card.label}</span>
                   <strong>{card.value}</strong>
                 </div>
@@ -378,7 +438,14 @@ export function JobsEventsAlertsModule({
                   >
                     <div className="command-list-item-header">
                       <strong>{alert.label}</strong>
-                      <span className="status-pill">{alert.severity}</span>
+                      <span className={`status-pill ${buildStatusTone(alert.status)}`}>
+                        {formatStatusLabel(alert.severity)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-badges">
+                      <span className={`status-pill ${buildStatusTone(alert.status)}`}>
+                        {formatStatusLabel(alert.status)}
+                      </span>
                     </div>
                     <div className="command-list-item-meta">
                       <span>{alert.reason}</span>
@@ -389,7 +456,14 @@ export function JobsEventsAlertsModule({
                   <div key={alert.id} className="command-list-item">
                     <div className="command-list-item-header">
                       <strong>{alert.label}</strong>
-                      <span className="status-pill">{alert.severity}</span>
+                      <span className={`status-pill ${buildStatusTone(alert.status)}`}>
+                        {formatStatusLabel(alert.severity)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-badges">
+                      <span className={`status-pill ${buildStatusTone(alert.status)}`}>
+                        {formatStatusLabel(alert.status)}
+                      </span>
                     </div>
                     <div className="command-list-item-meta">
                       <span>{alert.reason}</span>
@@ -402,6 +476,7 @@ export function JobsEventsAlertsModule({
           )}
         </section>
 
+        <div className="jobs-activity-layout">
         <section className="subpanel">
           <div className="section-heading">
             <div>
@@ -425,19 +500,30 @@ export function JobsEventsAlertsModule({
                 <div key={item.id} className="command-list-item">
                   <div className="command-list-item-header">
                     <strong>{item.title}</strong>
-                    <span className="status-pill">{item.status}</span>
+                    <span className={`status-pill ${buildStatusTone(item.status)}`}>
+                      {formatStatusLabel(item.status)}
+                    </span>
+                  </div>
+                  <div className="command-list-item-badges">
+                    <span className="artifact-pill">{formatStatusLabel(item.type)}</span>
+                    <span className="artifact-pill">{formatStatusLabel(item.category)}</span>
                   </div>
                   <div className="command-list-item-meta">
-                    <span>
-                      {item.type} / {item.category}
-                    </span>
                     <span>{item.meterId ? `Meter ${item.meterId}` : "No meter target"}</span>
+                    <span>{formatDateTime(item.timestamp)}</span>
                   </div>
                   <div className="command-list-item-meta">
                     <span>{item.summary}</span>
                     <span>Updated {formatDateTime(item.timestamp)}</span>
                   </div>
                   <div className="artifact-row">
+                    <button
+                      className="secondary-button"
+                      onClick={() => setSelectedActivityId(item.id)}
+                      type="button"
+                    >
+                      Inspect summary
+                    </button>
                     <Link className="secondary-button" href={item.detailHref}>
                       Open activity detail
                     </Link>
@@ -452,6 +538,87 @@ export function JobsEventsAlertsModule({
             </div>
           )}
         </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Selected activity summary</h2>
+              <p className="muted">
+                Bounded inline summary for the selected operational item before drilling
+                into the existing activity detail route.
+              </p>
+            </div>
+          </div>
+
+          {isLoadingActivity ? (
+            <p className="muted">Loading selected activity summary...</p>
+          ) : selectedActivity ? (
+            <div className="detail-stack">
+              <section className="jobs-activity-hero">
+                <div className="jobs-activity-hero-row">
+                  <div>
+                    <p className="eyebrow">Selected Activity</p>
+                    <h3>{selectedActivity.title}</h3>
+                    <p className="muted">
+                      {formatStatusLabel(selectedActivity.type)} activity in the{" "}
+                      {formatStatusLabel(selectedActivity.category)} operational lane.
+                    </p>
+                  </div>
+                  <span className={`status-pill ${buildStatusTone(selectedActivity.status)}`}>
+                    {formatStatusLabel(selectedActivity.status)}
+                  </span>
+                </div>
+
+                <div className="command-list-item-badges">
+                  <span className="artifact-pill">{formatStatusLabel(selectedActivity.type)}</span>
+                  <span className="artifact-pill">
+                    {formatStatusLabel(selectedActivity.category)}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedActivity.meterId
+                      ? `Meter ${selectedActivity.meterId}`
+                      : "No meter target"}
+                  </span>
+                </div>
+              </section>
+
+              <div className="detail-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Current status</span>
+                  <strong>{formatStatusLabel(selectedActivity.status)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Activity timestamp</span>
+                  <strong>{formatDateTime(selectedActivity.timestamp)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Related meter</span>
+                  <strong>
+                    {selectedActivity.meterId ? selectedActivity.meterId : "Not available"}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Summary</span>
+                  <strong>{selectedActivity.summary}</strong>
+                </div>
+              </div>
+
+              <div className="artifact-row">
+                <Link className="secondary-button" href={selectedActivity.detailHref}>
+                  Open activity detail
+                </Link>
+                {selectedActivity.relatedHref && selectedActivity.relatedLabel ? (
+                  <Link className="secondary-button" href={selectedActivity.relatedHref}>
+                    {selectedActivity.relatedLabel}
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <p className="muted">No activity selected for bounded summary review.</p>
+          )}
+        </section>
+        </div>
       </div>
     </section>
   );
