@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -36,30 +36,39 @@ describe("LoginModule", () => {
 
   it("renders and submits the bounded login flow", async () => {
     const onLoginSuccess = vi.fn();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = input.toString();
-        if (url.endsWith("/api/v1/auth/login")) {
-          return jsonResponse({
-            access_token: "token-1",
-            token_type: "bearer",
-            expires_in: 1800,
-            user: {
-              id: "user-1",
-              username: "ops.user",
-              email: "ops@example.com",
-              full_name: "Ops User",
-              status: "active",
-              is_superuser: true,
-            },
-          });
-        }
-        throw new Error(`Unhandled request: ${url}`);
-      }),
-    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.endsWith("/api/v1/platform/health")) {
+        return jsonResponse({ status: "ok" });
+      }
+      if (url.endsWith("/api/v1/auth/login")) {
+        return jsonResponse({
+          access_token: "token-1",
+          token_type: "bearer",
+          expires_in: 1800,
+          user: {
+            id: "user-1",
+            username: "ops.user",
+            email: "ops@example.com",
+            full_name: "Ops User",
+            status: "active",
+            is_superuser: true,
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     renderLoginModule(onLoginSuccess);
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          input.toString().endsWith("/api/v1/platform/health"),
+        ),
+      ).toHaveLength(1);
+    });
 
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Username or email"), "ops.user");
@@ -78,6 +87,9 @@ describe("LoginModule", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = input.toString();
+        if (url.endsWith("/api/v1/platform/health")) {
+          return jsonResponse({ status: "ok" });
+        }
         if (url.endsWith("/api/v1/auth/login")) {
           return jsonResponse(
             { detail: "Invalid username/email or password." },
@@ -101,5 +113,40 @@ describe("LoginModule", () => {
     expect(
       await screen.findByText("Invalid username/email or password."),
     ).toBeInTheDocument();
+  });
+
+  it("shows a clear bounded error when the backend API is unreachable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = input.toString();
+        if (
+          url.endsWith("/api/v1/platform/health") ||
+          url.endsWith("/api/v1/auth/login")
+        ) {
+          throw new TypeError("Failed to fetch");
+        }
+        throw new Error(`Unhandled request: ${url}`);
+      }),
+    );
+
+    renderLoginModule();
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Username or email"), "ops.user");
+    await user.type(
+      screen.getByLabelText("Password"),
+      "ChangeThisPassword123!",
+    );
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findAllByText(
+        "Cannot reach API at http://localhost:8000. Start the backend server or update API base URL.",
+      ),
+    ).not.toHaveLength(0);
+    expect(
+      screen.queryByText("Invalid username/email or password."),
+    ).not.toBeInTheDocument();
   });
 });

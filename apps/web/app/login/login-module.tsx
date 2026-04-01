@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useSession } from "../session-provider";
 
@@ -10,12 +10,27 @@ export function LoginModule({
 }: {
   onLoginSuccess?: () => void;
 }) {
-  const { apiBaseUrl, setApiBaseUrl, login } = useSession();
+  const {
+    apiBaseUrl,
+    setApiBaseUrl,
+    login,
+    apiConnectivity,
+    probeApiConnectivity,
+  } = useSession();
   const [usernameOrEmail, setUsernameOrEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const lastProbedApiBaseUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (lastProbedApiBaseUrlRef.current === apiBaseUrl) {
+      return;
+    }
+    lastProbedApiBaseUrlRef.current = apiBaseUrl;
+    void probeApiConnectivity(apiBaseUrl);
+  }, [apiBaseUrl, probeApiConnectivity]);
 
   return (
     <form
@@ -56,6 +71,20 @@ export function LoginModule({
           placeholder="http://localhost:8000"
         />
       </label>
+
+      <div className="auth-connectivity-hint">
+        <span className="stat-label">Current local-dev API target</span>
+        <strong>{apiBaseUrl}</strong>
+        {apiConnectivity.status === "checking" ? (
+          <p className="muted">Checking API connectivity...</p>
+        ) : null}
+        {apiConnectivity.status === "unreachable" && apiConnectivity.message ? (
+          <p className="error-banner">{apiConnectivity.message}</p>
+        ) : null}
+        {apiConnectivity.status === "reachable" ? (
+          <p className="muted">API connectivity confirmed for local development.</p>
+        ) : null}
+      </div>
 
       <label className="field">
         <span>Username or email</span>

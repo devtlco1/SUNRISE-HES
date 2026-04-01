@@ -241,6 +241,18 @@ a {
   gap: 1rem;
 }
 
+.auth-connectivity-hint {
+  border-radius: 14px;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.auth-connectivity-hint strong {
+  display: block;
+  margin-top: 0.35rem;
+}
+
 .auth-form-footer {
   display: flex;
   justify-content: space-between;

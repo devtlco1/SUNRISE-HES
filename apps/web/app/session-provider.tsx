@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useRef,
   useCallback,
   useContext,
   useEffect,
@@ -37,6 +38,14 @@ type ForgotPasswordResponse = {
   message: string;
 };
 
+type ApiConnectivityStatus = "unknown" | "checking" | "reachable" | "unreachable";
+
+type ApiConnectivity = {
+  status: ApiConnectivityStatus;
+  message: string | null;
+  checkedBaseUrl: string | null;
+};
+
 type SessionContextValue = {
   apiBaseUrl: string;
   setApiBaseUrl: (value: string) => void;
@@ -44,6 +53,7 @@ type SessionContextValue = {
   currentUser: CurrentUser | null;
   isCheckingSession: boolean;
   sessionError: string | null;
+  apiConnectivity: ApiConnectivity;
   authorizedFetch: AuthorizedFetch;
   login: (payload: {
     usernameOrEmail: string;
@@ -52,6 +62,7 @@ type SessionContextValue = {
   requestPasswordReset: (payload: {
     usernameOrEmail: string;
   }) => Promise<ForgotPasswordResponse>;
+  probeApiConnectivity: (apiBaseUrlOverride?: string) => Promise<boolean>;
   logout: () => void;
 };
 
@@ -62,16 +73,131 @@ const DEFAULT_API_BASE_URL =
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
+function normalizeApiBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  const fallback = trimmed || DEFAULT_API_BASE_URL;
+  return fallback.replace(/\/+$/, "");
+}
+
 function buildApiUrl(apiBaseUrl: string, path: string): string {
-  return `${apiBaseUrl.replace(/\/$/, "")}${path}`;
+  return `${normalizeApiBaseUrl(apiBaseUrl)}${path}`;
+}
+
+function buildApiUnreachableMessage(apiBaseUrl: string): string {
+  const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
+  return `Cannot reach API at ${normalizedApiBaseUrl}. Start the backend server or update API base URL.`;
+}
+
+function isLikelyNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    error.name === "TypeError" ||
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("load failed")
+  );
 }
 
 export function SessionProvider({ children }: PropsWithChildren) {
-  const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_API_BASE_URL);
+  const [apiBaseUrlState, setApiBaseUrlState] = useState(
+    normalizeApiBaseUrl(DEFAULT_API_BASE_URL),
+  );
   const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [apiConnectivity, setApiConnectivity] = useState<ApiConnectivity>({
+    status: "unknown",
+    message: null,
+    checkedBaseUrl: null,
+  });
+  const apiConnectivityRef = useRef<ApiConnectivity>({
+    status: "unknown",
+    message: null,
+    checkedBaseUrl: null,
+  });
+  const lastConnectivityProbeRef = useRef<string | null>(null);
+
+  const apiBaseUrl = normalizeApiBaseUrl(apiBaseUrlState);
+
+  const setApiBaseUrl = useCallback((value: string) => {
+    setApiBaseUrlState(normalizeApiBaseUrl(value));
+  }, []);
+
+  const setApiConnectivityIfChanged = useCallback((next: ApiConnectivity) => {
+    setApiConnectivity((current) => {
+      if (
+        current.status === next.status &&
+        current.message === next.message &&
+        current.checkedBaseUrl === next.checkedBaseUrl
+      ) {
+        return current;
+      }
+      apiConnectivityRef.current = next;
+      return next;
+    });
+    if (
+      apiConnectivityRef.current.status === next.status &&
+      apiConnectivityRef.current.message === next.message &&
+      apiConnectivityRef.current.checkedBaseUrl === next.checkedBaseUrl
+    ) {
+      return;
+    }
+    apiConnectivityRef.current = next;
+  }, []);
+
+  const probeApiConnectivity = useCallback(
+    async (apiBaseUrlOverride?: string) => {
+      const resolvedApiBaseUrl = normalizeApiBaseUrl(
+        apiBaseUrlOverride ?? apiBaseUrl,
+      );
+      if (lastConnectivityProbeRef.current === resolvedApiBaseUrl) {
+        return apiConnectivityRef.current.status === "reachable";
+      }
+      lastConnectivityProbeRef.current = resolvedApiBaseUrl;
+
+      setApiConnectivityIfChanged({
+        status: "checking",
+        message: null,
+        checkedBaseUrl: resolvedApiBaseUrl,
+      });
+      try {
+        const response = await fetch(
+          buildApiUrl(resolvedApiBaseUrl, "/api/v1/platform/health"),
+          {
+            cache: "no-store",
+          },
+        );
+        if (!response.ok) {
+          throw new Error(
+            `API health probe failed with status ${response.status}.`,
+          );
+        }
+        setApiConnectivityIfChanged({
+          status: "reachable",
+          message: null,
+          checkedBaseUrl: resolvedApiBaseUrl,
+        });
+        return true;
+      } catch (error) {
+        const message = isLikelyNetworkError(error)
+          ? buildApiUnreachableMessage(resolvedApiBaseUrl)
+          : error instanceof Error
+            ? error.message
+            : buildApiUnreachableMessage(resolvedApiBaseUrl);
+        setApiConnectivityIfChanged({
+          status: "unreachable",
+          message,
+          checkedBaseUrl: resolvedApiBaseUrl,
+        });
+        return false;
+      }
+    },
+    [apiBaseUrl, setApiConnectivityIfChanged],
+  );
 
   const authorizedFetch = useCallback<AuthorizedFetch>(
     async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -83,11 +209,19 @@ export function SessionProvider({ children }: PropsWithChildren) {
         headers.set("Authorization", `Bearer ${accessToken}`);
       }
 
-      const response = await fetch(buildApiUrl(apiBaseUrl, path), {
-        ...init,
-        headers,
-        cache: "no-store",
-      });
+      let response: Response;
+      try {
+        response = await fetch(buildApiUrl(apiBaseUrl, path), {
+          ...init,
+          headers,
+          cache: "no-store",
+        });
+      } catch (error) {
+        if (isLikelyNetworkError(error)) {
+          throw new Error(buildApiUnreachableMessage(apiBaseUrl));
+        }
+        throw error;
+      }
 
       if (!response.ok) {
         let errorMessage = `Request failed with status ${response.status}.`;
@@ -140,9 +274,11 @@ export function SessionProvider({ children }: PropsWithChildren) {
         setCurrentUser(null);
         setAccessToken("");
         setSessionError(
-          error instanceof Error
-            ? error.message
-            : "Session is missing or no longer valid.",
+          isLikelyNetworkError(error)
+            ? buildApiUnreachableMessage(resolvedApiBaseUrl)
+            : error instanceof Error
+              ? error.message
+              : "Session is missing or no longer valid.",
         );
       } finally {
         setIsCheckingSession(false);
@@ -158,10 +294,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
     const storedApiBaseUrl = window.localStorage.getItem(API_BASE_URL_STORAGE_KEY);
     const storedAccessToken = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-    const resolvedApiBaseUrl = storedApiBaseUrl ?? DEFAULT_API_BASE_URL;
+    const resolvedApiBaseUrl = normalizeApiBaseUrl(
+      storedApiBaseUrl ?? DEFAULT_API_BASE_URL,
+    );
 
     if (storedApiBaseUrl) {
-      setApiBaseUrl(resolvedApiBaseUrl);
+      setApiBaseUrlState(resolvedApiBaseUrl);
+      lastConnectivityProbeRef.current = null;
     }
 
     if (storedAccessToken) {
@@ -178,7 +317,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, apiBaseUrl);
+    window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, normalizeApiBaseUrl(apiBaseUrl));
   }, [apiBaseUrl]);
 
   useEffect(() => {
@@ -200,14 +339,29 @@ export function SessionProvider({ children }: PropsWithChildren) {
       usernameOrEmail: string;
       password: string;
     }) => {
-      const response = await fetch(buildApiUrl(apiBaseUrl, "/api/v1/auth/login"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username_or_email: usernameOrEmail,
-          password,
-        }),
-      });
+      let response: Response;
+      try {
+        response = await fetch(buildApiUrl(apiBaseUrl, "/api/v1/auth/login"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username_or_email: usernameOrEmail,
+            password,
+          }),
+        });
+      } catch (error) {
+        if (isLikelyNetworkError(error)) {
+          const message = buildApiUnreachableMessage(apiBaseUrl);
+          setApiConnectivityIfChanged({
+            status: "unreachable",
+            message,
+            checkedBaseUrl: apiBaseUrl,
+          });
+          lastConnectivityProbeRef.current = apiBaseUrl;
+          throw new Error(message);
+        }
+        throw error;
+      }
 
       if (!response.ok) {
         const errorPayload = (await response.json()) as { detail?: string };
@@ -218,23 +372,37 @@ export function SessionProvider({ children }: PropsWithChildren) {
       setAccessToken(payload.access_token);
       setCurrentUser(payload.user);
       setSessionError(null);
+      setApiConnectivityIfChanged({
+        status: "reachable",
+        message: null,
+        checkedBaseUrl: apiBaseUrl,
+      });
+      lastConnectivityProbeRef.current = apiBaseUrl;
       return payload;
     },
-    [apiBaseUrl],
+    [apiBaseUrl, setApiConnectivityIfChanged],
   );
 
   const requestPasswordReset = useCallback(
     async ({ usernameOrEmail }: { usernameOrEmail: string }) => {
-      const response = await fetch(
-        buildApiUrl(apiBaseUrl, "/api/v1/auth/forgot-password"),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username_or_email: usernameOrEmail,
-          }),
-        },
-      );
+      let response: Response;
+      try {
+        response = await fetch(
+          buildApiUrl(apiBaseUrl, "/api/v1/auth/forgot-password"),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username_or_email: usernameOrEmail,
+            }),
+          },
+        );
+      } catch (error) {
+        if (isLikelyNetworkError(error)) {
+          throw new Error(buildApiUnreachableMessage(apiBaseUrl));
+        }
+        throw error;
+      }
 
       if (!response.ok) {
         const errorPayload = (await response.json()) as { detail?: string };
@@ -262,9 +430,11 @@ export function SessionProvider({ children }: PropsWithChildren) {
       currentUser,
       isCheckingSession,
       sessionError,
+      apiConnectivity,
       authorizedFetch,
       login,
       requestPasswordReset,
+      probeApiConnectivity,
       logout,
     }),
     [
@@ -275,6 +445,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
       isCheckingSession,
       login,
       logout,
+      apiConnectivity,
+      probeApiConnectivity,
       requestPasswordReset,
       sessionError,
     ],
