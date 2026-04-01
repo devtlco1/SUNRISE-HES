@@ -194,6 +194,7 @@ export function ReadingsModule({
   initialMeterId?: string | null;
 }) {
   const [meters, setMeters] = useState<MeterItem[]>([]);
+  const [meterSearchQuery, setMeterSearchQuery] = useState("");
   const [selectedMeterId, setSelectedMeterId] = useState<string | null>(null);
   const [totalMeters, setTotalMeters] = useState(0);
   const [meterReadings, setMeterReadings] = useState<MeterReadingItem[]>([]);
@@ -322,8 +323,50 @@ export function ReadingsModule({
     void loadSelectedMeterContext(selectedMeterId);
   }, [loadSelectedMeterContext, selectedMeterId]);
 
+  const filteredMeters = useMemo(() => {
+    const normalizedQuery = meterSearchQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return meters;
+    }
+
+    return meters.filter((meter) =>
+      [
+        meter.serial_number,
+        meter.utility_meter_number,
+        meter.manufacturer_code,
+        meter.meter_model_code,
+        meter.communication_profile_code,
+        meter.meter_profile_code,
+        meter.id,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
+    );
+  }, [meterSearchQuery, meters]);
+
+  useEffect(() => {
+    setSelectedMeterId((currentSelectedMeterId) => {
+      if (filteredMeters.length === 0) {
+        return null;
+      }
+      if (
+        currentSelectedMeterId &&
+        filteredMeters.some((meter) => meter.id === currentSelectedMeterId)
+      ) {
+        return currentSelectedMeterId;
+      }
+      if (
+        handedOffMeterId &&
+        filteredMeters.some((meter) => meter.id === handedOffMeterId)
+      ) {
+        return handedOffMeterId;
+      }
+      return filteredMeters[0]?.id ?? null;
+    });
+  }, [filteredMeters, handedOffMeterId]);
+
   const selectedMeter = useMemo(
-    () => meters.find((meter) => meter.id === selectedMeterId) ?? meters[0] ?? null,
+    () => meters.find((meter) => meter.id === selectedMeterId) ?? null,
     [meters, selectedMeterId],
   );
 
@@ -334,18 +377,25 @@ export function ReadingsModule({
 
   const latestBillingSnapshot = billingSnapshots[0] ?? null;
   const latestReading = meterReadings[0] ?? null;
+  const latestBillingBatch = latestBillingSnapshot
+    ? batchById.get(latestBillingSnapshot.related_batch_id) ?? null
+    : null;
 
   const overviewCards = useMemo(
     () => [
       {
         label: "Meters in current result set",
-        value: String(meters.length),
-        note: `${totalMeters} meters currently in scope`,
+        value: String(filteredMeters.length),
+        note: meterSearchQuery.trim()
+          ? `${filteredMeters.length} of ${totalMeters} meters match the current filter`
+          : `${totalMeters} meters currently in scope`,
       },
       {
         label: "Meters with recent signal",
-        value: String(meters.filter((meter) => meter.last_seen_at !== null).length),
-        note: "Based on the current bounded meter list",
+        value: String(filteredMeters.filter((meter) => meter.last_seen_at !== null).length),
+        note: meterSearchQuery.trim()
+          ? "Based on the current filtered meter list"
+          : "Based on the current bounded meter list",
       },
       {
         label: "Selected meter",
@@ -357,7 +407,9 @@ export function ReadingsModule({
       {
         label: "Billing reads loaded",
         value: String(billingSnapshots.length),
-        note: "Billing register snapshots for the selected meter",
+        note: selectedMeter
+          ? `Billing register snapshots for ${selectedMeter.serial_number}`
+          : "No selected meter billing context",
       },
       {
         label: "Latest billing read",
@@ -376,7 +428,16 @@ export function ReadingsModule({
           : "No recent reading value recorded",
       },
     ],
-    [billingSnapshots.length, latestBillingSnapshot, latestReading, meters, selectedMeter, totalMeters, meterReadings.length],
+    [
+      billingSnapshots.length,
+      filteredMeters,
+      latestBillingSnapshot,
+      latestReading,
+      meterReadings.length,
+      meterSearchQuery,
+      selectedMeter,
+      totalMeters,
+    ],
   );
 
   return (
@@ -430,6 +491,19 @@ export function ReadingsModule({
               </div>
             </div>
 
+            <div className="inline-form">
+              <label className="field">
+                <span>Meter filter</span>
+                <input
+                  aria-label="Meter filter"
+                  onChange={(event) => setMeterSearchQuery(event.target.value)}
+                  placeholder="Search serial, utility number, profile, or meter ID"
+                  type="search"
+                  value={meterSearchQuery}
+                />
+              </label>
+            </div>
+
             {isLoadingOverview ? <p className="muted">Loading readings-focused meters...</p> : null}
 
             <div className="meter-list">
@@ -437,7 +511,14 @@ export function ReadingsModule({
                 <p className="muted">No readings overview items available.</p>
               ) : null}
 
-              {meters.map((meter) => (
+              {!isLoadingOverview && meters.length > 0 && filteredMeters.length === 0 ? (
+                <p className="muted">
+                  No meters match the current filter. Clear the search to inspect billing
+                  reads.
+                </p>
+              ) : null}
+
+              {filteredMeters.map((meter) => (
                 <article
                   key={meter.id}
                   className={
@@ -526,6 +607,11 @@ export function ReadingsModule({
                     <span className="artifact-pill">
                       {billingSnapshots.length} billing reads
                     </span>
+                    <span className={`status-pill ${buildStatusTone(latestBillingBatch?.status ?? null)}`}>
+                      {billingSnapshots.length > 0
+                        ? `Latest batch ${formatStatusLabel(latestBillingBatch?.status ?? null)}`
+                        : "No billing batch yet"}
+                    </span>
                     <span className="artifact-pill">
                       {meterReadings.length} recent raw readings
                     </span>
@@ -600,8 +686,9 @@ export function ReadingsModule({
                       <table className="readings-table">
                         <thead>
                           <tr>
-                            <th scope="col">Captured</th>
+                            <th scope="col">Captured at</th>
                             <th scope="col">Batch status</th>
+                            <th scope="col">Received at</th>
                             <th scope="col">Primary value</th>
                             <th scope="col">Summary</th>
                           </tr>
@@ -611,7 +698,10 @@ export function ReadingsModule({
                             const relatedBatch = batchById.get(snapshot.related_batch_id) ?? null;
                             return (
                               <tr key={snapshot.id}>
-                                <td>{formatDateTime(snapshot.captured_at)}</td>
+                                <td>
+                                  <strong>{formatDateTime(snapshot.captured_at)}</strong>
+                                  <div className="muted">Billing snapshot</div>
+                                </td>
                                 <td>
                                   <div className="detail-stack">
                                     <span
@@ -623,11 +713,12 @@ export function ReadingsModule({
                                     </span>
                                     <span className="muted">
                                       {relatedBatch
-                                        ? formatStatusLabel(relatedBatch.source_type)
+                                        ? `Source ${formatStatusLabel(relatedBatch.source_type)}`
                                         : "No batch context"}
                                     </span>
                                   </div>
                                 </td>
+                                <td>{formatDateTime(relatedBatch?.received_at ?? null)}</td>
                                 <td>{formatBillingPrimaryValue(snapshot.payload)}</td>
                                 <td>
                                   <strong>{formatBillingSummary(snapshot.payload)}</strong>
@@ -684,7 +775,11 @@ export function ReadingsModule({
                 </section>
               </div>
             ) : (
-              <p className="muted">Select a meter to inspect its readings overview and billing reads.</p>
+              <p className="muted">
+                {meters.length > 0 && filteredMeters.length === 0
+                  ? "Adjust or clear the meter filter to restore a selected meter."
+                  : "Select a meter to inspect its readings overview and billing reads."}
+              </p>
             )}
           </section>
         </div>

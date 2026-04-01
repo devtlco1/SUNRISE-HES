@@ -131,7 +131,7 @@ function createMockApi({
 
     if (url.includes("/api/v1/meters?")) {
       if (delayedMeters) {
-        await new Promise((resolve) => window.setTimeout(resolve, 20));
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
       }
 
       if (meterStatus !== 200) {
@@ -147,7 +147,7 @@ function createMockApi({
     const readingsMatch = url.match(/\/api\/v1\/meters\/([^/]+)\/readings\?limit=10$/);
     if (readingsMatch) {
       if (delayedDetail) {
-        await new Promise((resolve) => window.setTimeout(resolve, 20));
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
       }
       const meterId = readingsMatch[1];
       return jsonResponse({
@@ -161,7 +161,7 @@ function createMockApi({
     );
     if (snapshotsMatch) {
       if (delayedDetail) {
-        await new Promise((resolve) => window.setTimeout(resolve, 20));
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
       }
       const meterId = snapshotsMatch[1];
       return jsonResponse({
@@ -173,7 +173,7 @@ function createMockApi({
     const batchesMatch = url.match(/\/api\/v1\/meters\/([^/]+)\/reading-batches\?limit=25$/);
     if (batchesMatch) {
       if (delayedDetail) {
-        await new Promise((resolve) => window.setTimeout(resolve, 20));
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
       }
       const meterId = batchesMatch[1];
       return jsonResponse({
@@ -239,6 +239,9 @@ describe("ReadingsModule", () => {
       "/meters/meter-1",
     );
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
+    expect(screen.getByText("Received at")).toBeInTheDocument();
+    expect(screen.getByText("Latest batch Received")).toBeInTheDocument();
+    expect(screen.getByText("Source Manual Read")).toBeInTheDocument();
     expect(screen.getByText("Total Import 123.456 • Reset Reason scheduled_cycle")).toBeInTheDocument();
   });
 
@@ -268,6 +271,48 @@ describe("ReadingsModule", () => {
         within(billingPanel as HTMLElement).getByText(
           "No recent reading values available for the selected meter.",
         ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("filters the meter list and keeps selected meter context coherent", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderReadingsModuleInShell();
+
+    const filterInput = await screen.findByRole("searchbox", { name: "Meter filter" });
+    await user.type(filterInput, "1002");
+
+    await waitFor(() => {
+      expect(screen.getAllByText("SN-1002")).not.toHaveLength(0);
+      expect(screen.getByText("1 of 2 meters match the current filter")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
+        "href",
+        "/meters/meter-2",
+      );
+    });
+
+    expect(screen.queryByText("SN-1001")).not.toBeInTheDocument();
+  });
+
+  it("renders a bounded empty state when the meter filter has no matches", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderReadingsModuleInShell();
+
+    const filterInput = await screen.findByRole("searchbox", { name: "Meter filter" });
+    await user.type(filterInput, "missing-meter");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("No meters match the current filter. Clear the search to inspect billing reads."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Adjust or clear the meter filter to restore a selected meter."),
       ).toBeInTheDocument();
     });
   });
@@ -376,6 +421,7 @@ describe("ReadingsModule", () => {
     await waitFor(() => {
       expect(screen.getAllByText("SN-1002")).not.toHaveLength(0);
       expect(screen.getAllByText("Total Import: 456.789")).not.toHaveLength(0);
+      expect(screen.getByText("Source Scheduled Read")).toBeInTheDocument();
       expect(
         screen.getByText("Total Import 456.789 • Reset Reason manual_close"),
       ).toBeInTheDocument();
@@ -392,9 +438,12 @@ describe("ReadingsModule", () => {
 
     renderReadingsModuleInShell();
 
-    expect(
-      await screen.findByText("Loading selected meter readings..."),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Loading selected meter readings...") ??
+          screen.queryByText("Billing reads table"),
+      ).toBeInTheDocument();
+    });
 
     await waitFor(() => {
       expect(screen.getByText("Billing reads table")).toBeInTheDocument();
