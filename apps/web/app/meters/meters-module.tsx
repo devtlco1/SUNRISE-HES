@@ -44,6 +44,7 @@ export function MetersModule({
   const [appliedSearch, setAppliedSearch] = useState("");
   const [meters, setMeters] = useState<MeterItem[]>([]);
   const [totalMeters, setTotalMeters] = useState(0);
+  const [selectedMeterIds, setSelectedMeterIds] = useState<string[]>([]);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isLoadingMeters, setIsLoadingMeters] = useState(false);
 
@@ -65,9 +66,15 @@ export function MetersModule({
       );
       setMeters(response.items);
       setTotalMeters(response.total);
+      setSelectedMeterIds((currentSelectedMeterIds) =>
+        currentSelectedMeterIds.filter((meterId) =>
+          response.items.some((item) => item.id === meterId),
+        ),
+      );
     } catch (error) {
       setMeters([]);
       setTotalMeters(0);
+      setSelectedMeterIds([]);
       setPageError(
         error instanceof Error ? error.message : "Unable to load meters.",
       );
@@ -86,6 +93,22 @@ export function MetersModule({
     }
     return `${totalMeters} recent meters`;
   }, [appliedSearch, totalMeters]);
+
+  const selectedMeters = useMemo(
+    () => meters.filter((meter) => selectedMeterIds.includes(meter.id)),
+    [meters, selectedMeterIds],
+  );
+
+  const selectedMetersCommandsHref = useMemo(() => {
+    if (selectedMeterIds.length === 0) {
+      return "/commands";
+    }
+
+    const params = new URLSearchParams({
+      meterIds: selectedMeterIds.join(","),
+    });
+    return `/commands?${params.toString()}`;
+  }, [selectedMeterIds]);
 
   const registryCards = useMemo(
     () => [
@@ -110,6 +133,18 @@ export function MetersModule({
     ],
     [meters, totalMeters],
   );
+
+  const toggleMeterSelection = useCallback((meterId: string) => {
+    setSelectedMeterIds((currentSelectedMeterIds) =>
+      currentSelectedMeterIds.includes(meterId)
+        ? currentSelectedMeterIds.filter((item) => item !== meterId)
+        : [...currentSelectedMeterIds, meterId],
+    );
+  }, []);
+
+  const selectVisibleMeters = useCallback(() => {
+    setSelectedMeterIds(meters.map((meter) => meter.id));
+  }, [meters]);
 
   return (
     <section className="panel">
@@ -175,6 +210,58 @@ export function MetersModule({
           </button>
         </form>
 
+        <div className="commands-selection-summary">
+          <span className="artifact-pill">
+            {selectedMeterIds.length} selected meter
+            {selectedMeterIds.length === 1 ? "" : "s"}
+          </span>
+          <span className="artifact-pill">
+            {meters.length} visible meter
+            {meters.length === 1 ? "" : "s"}
+          </span>
+          <span className="artifact-pill">
+            Bulk handoff stays bounded to the current visible meter result set
+          </span>
+        </div>
+
+        <div className="artifact-row">
+          <button
+            className="secondary-button"
+            disabled={meters.length === 0}
+            onClick={selectVisibleMeters}
+            type="button"
+          >
+            Select visible
+          </button>
+          <button
+            className="secondary-button"
+            disabled={selectedMeterIds.length === 0}
+            onClick={() => setSelectedMeterIds([])}
+            type="button"
+          >
+            Clear selection
+          </button>
+          {selectedMeterIds.length > 0 ? (
+            <Link className="primary-button" href={selectedMetersCommandsHref}>
+              Open bulk commands
+            </Link>
+          ) : (
+            <button className="primary-button" disabled type="button">
+              Open bulk commands
+            </button>
+          )}
+        </div>
+
+        {selectedMeters.length > 0 ? (
+          <div className="artifact-row">
+            {selectedMeters.map((meter) => (
+              <span key={meter.id} className="artifact-pill">
+                {meter.serial_number}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
         {isLoadingMeters ? <p className="muted">Loading meters...</p> : null}
 
         <div className="meter-list">
@@ -182,13 +269,14 @@ export function MetersModule({
             <p className="muted">No meters available for the current query.</p>
           ) : null}
 
-          {meters.map((meter) => (
-            <Link
-              key={meter.id}
-              className="meter-list-item meter-registry-item"
-              href={`/meters/${meter.id}`}
-            >
-              <div className="meter-registry-row">
+          {meters.map((meter) => {
+            const isSelected = selectedMeterIds.includes(meter.id);
+            return (
+              <article
+                key={meter.id}
+                className={`meter-list-item meter-registry-item${isSelected ? " selected" : ""}`}
+              >
+                <div className="meter-registry-row">
                 <div className="meter-registry-primary">
                   <div className="command-list-item-header">
                     <strong>{meter.serial_number}</strong>
@@ -234,9 +322,24 @@ export function MetersModule({
                     <strong>{formatDateTime(meter.last_seen_at)}</strong>
                   </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+                </div>
+
+                <div className="artifact-row">
+                  <Link className="secondary-button" href={`/meters/${meter.id}`}>
+                    Open meter detail
+                  </Link>
+                  <label className="checkbox-option">
+                    <input
+                      checked={isSelected}
+                      onChange={() => toggleMeterSelection(meter.id)}
+                      type="checkbox"
+                    />
+                    Include in bulk target scope
+                  </label>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
     </section>

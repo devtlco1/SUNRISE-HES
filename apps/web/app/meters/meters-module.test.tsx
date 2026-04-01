@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MetersModule } from "./meters-module";
@@ -108,14 +109,9 @@ describe("MetersModule", () => {
     expect(await screen.findByRole("link", { name: "Meters" })).toBeInTheDocument();
     expect(screen.getByText("Meters in current result")).toBeInTheDocument();
     expect(screen.getByText("Active inventory items")).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /SN-1001/i })).toHaveAttribute(
-      "href",
-      "/meters/meter-1",
-    );
-    expect(screen.getByRole("link", { name: /SN-1002/i })).toHaveAttribute(
-      "href",
-      "/meters/meter-2",
-    );
+    expect(await screen.findByText("SN-1001")).toBeInTheDocument();
+    expect(screen.getByText("SN-1002")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open bulk commands" })).toBeDisabled();
   });
 
   it("keeps the navigation path into the existing meter details page clear", async () => {
@@ -124,8 +120,79 @@ describe("MetersModule", () => {
 
     renderMetersModuleInShell();
 
-    const meterLink = await screen.findByRole("link", { name: /SN-1001/i });
-    expect(meterLink).toHaveAttribute("href", "/meters/meter-1");
+    const meterRows = await screen.findAllByText(/SN-100/i);
+    expect(meterRows).toHaveLength(2);
+    const firstMeterCard = meterRows[0]?.closest("article");
+    expect(firstMeterCard).not.toBeNull();
+    expect(
+      within(firstMeterCard as HTMLElement).getByRole("link", { name: "Open meter detail" }),
+    ).toHaveAttribute("href", "/meters/meter-1");
+  });
+
+  it("supports bounded multi-meter selection and hands it off into bulk commands", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMetersModuleInShell();
+
+    expect(await screen.findByText("SN-1001")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Select visible" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("2 selected meters")).toBeInTheDocument();
+      expect(screen.getAllByText("SN-1001").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("SN-1002").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
+      "href",
+      "/commands?meterIds=meter-1%2Cmeter-2",
+    );
+  });
+
+  it("lets operators remove one meter from the bounded bulk handoff scope", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMetersModuleInShell();
+
+    const meterRows = await screen.findAllByText(/SN-100/i);
+    const firstMeterCard = meterRows[0]?.closest("article");
+    const secondMeterCard = meterRows[1]?.closest("article");
+    expect(firstMeterCard).not.toBeNull();
+    expect(secondMeterCard).not.toBeNull();
+
+    await user.click(
+      within(firstMeterCard as HTMLElement).getByRole("checkbox", {
+        name: "Include in bulk target scope",
+      }),
+    );
+    await user.click(
+      within(secondMeterCard as HTMLElement).getByRole("checkbox", {
+        name: "Include in bulk target scope",
+      }),
+    );
+
+    expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
+      "href",
+      "/commands?meterIds=meter-1%2Cmeter-2",
+    );
+
+    await user.click(
+      within(firstMeterCard as HTMLElement).getByRole("checkbox", {
+        name: "Include in bulk target scope",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("1 selected meter")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("link", { name: "Open bulk commands" })).toHaveAttribute(
+      "href",
+      "/commands?meterIds=meter-2",
+    );
   });
 
   it("renders an empty state when no meters are available", async () => {
