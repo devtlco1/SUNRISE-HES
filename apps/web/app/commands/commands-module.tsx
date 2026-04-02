@@ -275,14 +275,29 @@ function formatRetryRemediationSource(value: RetryRemediationHandoff["source"]):
   }
 }
 
+function resolveRetryOriginActivityType(
+  value: RetryRemediationHandoff | null,
+): "job_run" | "command" | null {
+  if (!value) {
+    return null;
+  }
+
+  return value.originActivityType ?? value.itemType;
+}
+
 function buildRetryRemediationSummary(value: RetryRemediationHandoff | null): string | null {
   if (!value) {
     return null;
   }
 
+  const retryOriginActivityType = resolveRetryOriginActivityType(value);
+
   return [
     "Retry remediation opened from the jobs retry queue.",
     ensureSentence(`Queue item ${formatStatusLabel(value.itemType)}`),
+    retryOriginActivityType
+      ? ensureSentence(`Originating retry activity ${formatStatusLabel(retryOriginActivityType)}`)
+      : null,
     ensureSentence(value.reason),
     value.context ? ensureSentence(`Context ${value.context}`) : null,
   ]
@@ -725,6 +740,10 @@ export function CommandsModule({
     () => buildRetryRemediationSummary(initialRetryRemediation),
     [initialRetryRemediation],
   );
+  const retryOriginActivityTypeLabel = useMemo(() => {
+    const retryOriginActivityType = resolveRetryOriginActivityType(initialRetryRemediation);
+    return retryOriginActivityType ? formatStatusLabel(retryOriginActivityType) : null;
+  }, [initialRetryRemediation]);
   const retryRemediationReturnHref = useMemo(
     () => buildRetryRemediationReturnHref(initialRetryRemediation),
     [initialRetryRemediation],
@@ -1900,6 +1919,11 @@ export function CommandsModule({
                       <span className="artifact-pill">
                         {formatStatusLabel(initialRetryRemediation?.itemType ?? "command")}
                       </span>
+                      {retryOriginActivityTypeLabel ? (
+                        <span className="artifact-pill">
+                          Origin: {retryOriginActivityTypeLabel}
+                        </span>
+                      ) : null}
                       {retryRemediationReturnHref ? (
                         <Link className="secondary-button" href={retryRemediationReturnHref}>
                           Back to retry activity detail

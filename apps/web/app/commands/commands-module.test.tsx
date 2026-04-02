@@ -727,11 +727,12 @@ describe("CommandsModule", () => {
     expect(await screen.findByText("Retry remediation preselected")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Retry remediation opened from the jobs retry queue. Queue item Job Run. Association rejected. Context Meter meter-2. Retries 1/3.",
+        "Retry remediation opened from the jobs retry queue. Queue item Job Run. Originating retry activity Job Run. Association rejected. Context Meter meter-2. Retries 1/3.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("Retry remediation handoff")).toBeInTheDocument();
     expect(screen.getByText("Jobs retry queue")).toBeInTheDocument();
+    expect(screen.getByText("Origin: Job Run")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to retry activity detail" })).toHaveAttribute(
       "href",
       "/jobs-events-alerts/activity/job_run/job-run-1?returnSource=commands_remediation",
@@ -747,6 +748,44 @@ describe("CommandsModule", () => {
       expect(within(detailPanel as HTMLElement).getByText("meter-2")).toBeInTheDocument();
       expect(within(detailPanel as HTMLElement).getAllByText("Cancelled").length).toBeGreaterThan(0);
     });
+  });
+
+  it("names a command retry origin on the remediation landing when command-origin context exists", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderCommandsModuleInShell({
+      initialSelectedCommandId: "cmd-rejected-1",
+      initialRetryRemediation: {
+        source: "jobs_retry_queue",
+        itemType: "command",
+        reason: "Rejected",
+        context: "Meter meter-2. Latest attempt Failed.",
+        originActivityType: "command",
+        originActivityId: "cmd-rejected-1",
+      },
+    });
+
+    expect(await screen.findByText("Retry remediation preselected")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Retry remediation opened from the jobs retry queue. Queue item Command. Originating retry activity Command. Rejected. Context Meter meter-2. Latest attempt Failed.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Origin: Command")).toBeInTheDocument();
+  });
+
+  it("does not show retry-origin type cues during direct commands entry", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderCommandsModuleInShell({
+      initialSelectedCommandId: "cmd-rejected-1",
+    });
+
+    await screen.findByText("Recent commands");
+    expect(screen.queryByText("Retry remediation preselected")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Origin:/)).not.toBeInTheDocument();
   });
 
   it("renders profile capture, relay control, and on-demand summaries correctly", async () => {
