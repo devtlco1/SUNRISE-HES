@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     bootstrap_super_admin_full_name: str = "Platform Super Admin"
     bootstrap_super_admin_password: str | None = Field(default=None, min_length=12)
     enable_runtime_relay_control_gurux_mapper: bool = True
+    runtime_tcp_meter_ingress_enabled: bool = False
+    runtime_tcp_meter_ingress_host: str = "0.0.0.0"
+    runtime_tcp_meter_ingress_port: int = 8766
+    runtime_tcp_meter_ingress_socket_timeout_seconds: float = 2.5
+    runtime_tcp_meter_ingress_before_first_iec_send_delay_ms: int = 0
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -88,6 +93,42 @@ class Settings(BaseSettings):
     def validate_internal_api_token(cls, value: str) -> str:
         if len(value) < 16:
             raise ValueError("Internal API token must be at least 16 characters.")
+        return value
+
+    @field_validator("runtime_tcp_meter_ingress_host")
+    @classmethod
+    def validate_runtime_tcp_meter_ingress_host(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("runtime_tcp_meter_ingress_host must not be empty.")
+        return normalized
+
+    @field_validator("runtime_tcp_meter_ingress_port")
+    @classmethod
+    def validate_runtime_tcp_meter_ingress_port(cls, value: int) -> int:
+        if value <= 0 or value > 65535:
+            raise ValueError("runtime_tcp_meter_ingress_port must be between 1 and 65535.")
+        return value
+
+    @field_validator("runtime_tcp_meter_ingress_socket_timeout_seconds")
+    @classmethod
+    def validate_runtime_tcp_meter_ingress_socket_timeout_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError(
+                "runtime_tcp_meter_ingress_socket_timeout_seconds must be greater than zero."
+            )
+        return value
+
+    @field_validator("runtime_tcp_meter_ingress_before_first_iec_send_delay_ms")
+    @classmethod
+    def validate_runtime_tcp_meter_ingress_before_first_iec_send_delay_ms(
+        cls,
+        value: int,
+    ) -> int:
+        if value < 0:
+            raise ValueError(
+                "runtime_tcp_meter_ingress_before_first_iec_send_delay_ms must not be negative."
+            )
         return value
 
     @field_validator("queue_backend")

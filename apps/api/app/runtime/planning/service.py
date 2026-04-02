@@ -157,6 +157,14 @@ def resolve_protocol_execution_plan(
         communication_profile_id=communication_profile.id if communication_profile is not None else None,
         communication_profile_code=communication_profile.code if communication_profile is not None else None,
         protocol_profile_code=protocol_profile.code,
+        iec62056_21_enabled=protocol_profile.iec62056_21_enabled,
+        iec_device_address=protocol_profile.iec_device_address,
+        iec_baud_rate=protocol_profile.iec_baud_rate,
+        client_address=protocol_profile.client_address,
+        server_address=protocol_profile.server_address,
+        server_address_size=int(
+            (protocol_profile.profile_settings or {}).get("server_address_size", 1)
+        ),
         protocol_settings=protocol_profile.profile_settings,
         protocol_defaults=meter.meter_profile.protocol_defaults if meter.meter_profile is not None else None,
         session_purpose=session_purpose,

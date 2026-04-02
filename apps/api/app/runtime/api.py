@@ -89,6 +89,9 @@ from app.runtime.schemas import (
     RuntimeDispatchEnvelopeBridgeResponse,
     RuntimeOnDemandReadExecutionRequest,
     RuntimeOnDemandReadExecutionResponse,
+    RuntimeTcpMeterIngressBindRequest,
+    RuntimeTcpMeterIngressBindResponse,
+    RuntimeTcpMeterIngressStatusResponse,
     RuntimeProfileReadExecutionRequest,
     RuntimeProfileReadExecutionResponse,
     RuntimeRelayControlExecutionRequest,
@@ -125,6 +128,7 @@ from app.runtime.services import (
     execute_runtime_profile_read_adapter,
     execute_runtime_relay_control_adapter,
     bootstrap_redis_consumer_group,
+    bind_runtime_tcp_meter_ingress_connection,
     bridge_runtime_execution_outcome_to_attempt_disposition,
     build_runtime_plan_for_command,
     consume_derived_work_job_run,
@@ -141,6 +145,7 @@ from app.runtime.services import (
     get_platform_readiness_comparison,
     get_platform_readiness_history,
     get_platform_startup_readiness,
+    get_runtime_tcp_meter_ingress_status,
     get_redis_transport_status,
     handle_derived_work_job_run,
     handoff_claimed_redis_dispatch_message_to_runtime,
@@ -159,6 +164,7 @@ from app.runtime.services import (
     reset_redis_consumer_group,
     heartbeat_runtime_execution_session,
     start_runtime_execution_session,
+    unbind_runtime_tcp_meter_ingress_connection,
 )
 
 internal_runtime_router = APIRouter(prefix="/internal/commands", tags=["internal-runtime"])
@@ -774,6 +780,32 @@ def get_transport_readiness_endpoint() -> RedisTransportReadinessResponse:
     )
 
 
+def _serialize_runtime_tcp_meter_ingress_status() -> RuntimeTcpMeterIngressStatusResponse:
+    snapshot = get_runtime_tcp_meter_ingress_status()
+    return RuntimeTcpMeterIngressStatusResponse(
+        result={
+            "listener_enabled": snapshot.listener_enabled,
+            "listen_host": snapshot.listen_host,
+            "listen_port": snapshot.listen_port,
+            "listening": snapshot.listening,
+            "connected": snapshot.connected,
+            "active_connection_id": snapshot.active_connection_id,
+            "remote_addr": snapshot.remote_addr,
+            "remote_port": snapshot.remote_port,
+            "connected_at": snapshot.connected_at.isoformat()
+            if snapshot.connected_at is not None
+            else None,
+            "bound_meter_id": snapshot.bound_meter_id,
+            "bound_endpoint_id": snapshot.bound_endpoint_id,
+            "bound_protocol_association_profile_id": (
+                snapshot.bound_protocol_association_profile_id
+            ),
+            "bound_at": snapshot.bound_at.isoformat() if snapshot.bound_at is not None else None,
+            "connection_in_use": snapshot.connection_in_use,
+        }
+    )
+
+
 @internal_runtime_platform_router.get(
     "/database-readiness",
     response_model=DatabaseReadinessDetailResponse,
@@ -866,6 +898,41 @@ def get_platform_startup_readiness_endpoint(
     request: Request,
 ) -> PlatformStartupReadinessResponse:
     return PlatformStartupReadinessResponse(result=get_platform_startup_readiness(request.app))
+
+
+@internal_runtime_platform_router.get(
+    "/tcp-meter-ingress/status",
+    response_model=RuntimeTcpMeterIngressStatusResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def get_runtime_tcp_meter_ingress_status_endpoint() -> RuntimeTcpMeterIngressStatusResponse:
+    return _serialize_runtime_tcp_meter_ingress_status()
+
+
+@internal_runtime_platform_router.post(
+    "/tcp-meter-ingress/bind-active-connection",
+    response_model=RuntimeTcpMeterIngressBindResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def bind_runtime_tcp_meter_ingress_connection_endpoint(
+    payload: RuntimeTcpMeterIngressBindRequest,
+) -> RuntimeTcpMeterIngressBindResponse:
+    bind_runtime_tcp_meter_ingress_connection(
+        meter_id=payload.meter_id,
+        endpoint_id=payload.endpoint_id,
+        protocol_association_profile_id=payload.protocol_association_profile_id,
+    )
+    return RuntimeTcpMeterIngressBindResponse(result=_serialize_runtime_tcp_meter_ingress_status().result)
+
+
+@internal_runtime_platform_router.post(
+    "/tcp-meter-ingress/unbind-active-connection",
+    response_model=RuntimeTcpMeterIngressBindResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def unbind_runtime_tcp_meter_ingress_connection_endpoint() -> RuntimeTcpMeterIngressBindResponse:
+    unbind_runtime_tcp_meter_ingress_connection()
+    return RuntimeTcpMeterIngressBindResponse(result=_serialize_runtime_tcp_meter_ingress_status().result)
 
 
 @internal_runtime_queue_router.post(

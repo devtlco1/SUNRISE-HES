@@ -124,6 +124,13 @@ from app.runtime.services.runtime_attempt_disposition import (
     bridge_runtime_execution_outcome_to_attempt_disposition,
 )
 from app.runtime.services.runtime_plan_builder import build_runtime_plan_for_command
+from app.runtime.services.tcp_meter_ingress import (
+    bind_runtime_tcp_meter_ingress_connection,
+    get_runtime_tcp_meter_ingress_status,
+    start_runtime_tcp_meter_ingress_listener,
+    stop_runtime_tcp_meter_ingress_listener,
+    unbind_runtime_tcp_meter_ingress_connection,
+)
 
 __all__ = [
     "build_runtime_plan_for_command",
@@ -174,6 +181,7 @@ __all__ = [
     "record_platform_current_readiness_event",
     "record_platform_readiness_comparison_event",
     "record_platform_startup_readiness_event",
+    "get_runtime_tcp_meter_ingress_status",
     "ack_redis_dispatch_message",
     "bootstrap_redis_consumer_group",
     "enqueue_dispatch_request_for_job_run",
@@ -188,6 +196,10 @@ __all__ = [
     "inspect_pending_redis_dispatch_messages",
     "recover_stale_redis_dispatch_message",
     "get_redis_transport_status",
+    "bind_runtime_tcp_meter_ingress_connection",
     "start_runtime_execution_session",
+    "start_runtime_tcp_meter_ingress_listener",
+    "stop_runtime_tcp_meter_ingress_listener",
+    "unbind_runtime_tcp_meter_ingress_connection",
     "build_queue_enqueue_payload",
 ]

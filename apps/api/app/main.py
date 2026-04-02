@@ -19,6 +19,8 @@ from app.runtime.services import (
     get_platform_startup_readiness,
     initialize_platform_readiness_history,
     record_platform_startup_readiness_event,
+    start_runtime_tcp_meter_ingress_listener,
+    stop_runtime_tcp_meter_ingress_listener,
 )
 
 configure_logging(settings.log_level)
@@ -62,7 +64,11 @@ async def lifespan(app: FastAPI):
     )
     app.state.database_startup_readiness = get_database_readiness_detail()
     record_platform_startup_readiness_event(app, get_platform_startup_readiness(app))
-    yield
+    start_runtime_tcp_meter_ingress_listener()
+    try:
+        yield
+    finally:
+        stop_runtime_tcp_meter_ingress_listener()
 
 
 app = FastAPI(

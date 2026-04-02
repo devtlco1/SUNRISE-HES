@@ -5,10 +5,19 @@ from datetime import UTC, datetime
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.modules.connectivity.enums import ConnectivitySessionStatus, ProtocolFamily
+from app.modules.connectivity.enums import (
+    ConnectivitySessionStatus,
+    ConnectivityTransportType,
+    ProtocolFamily,
+)
 from app.modules.events.enums import EventSeverity, EventState
 from app.modules.readings.enums import ReadingBatchStatus, ReadingSourceType, ReadingType, SnapshotType
 from app.runtime.adapters.base import BaseRuntimeAdapter
+from app.runtime.adapters.gurux_tcp_ingress import (
+    LiveTcpDlmsSessionConfig,
+    LiveTcpOnDemandReadExecution,
+    execute_billing_snapshot_over_tcp_ingress,
+)
 from app.runtime.contracts import (
     ProtocolExecutionPlan,
     RuntimeOnDemandReadAdapterAcknowledgmentState,
@@ -40,6 +49,11 @@ from app.runtime.contracts import (
     RuntimeReadingPayload,
     RuntimeRegisterSnapshotPayload,
     RuntimeSessionResult,
+)
+from app.runtime.services.runtime_secret_refs import resolve_runtime_secret_ref
+from app.runtime.services.tcp_meter_ingress import (
+    borrow_runtime_tcp_meter_ingress_connection,
+    mark_runtime_tcp_meter_ingress_connection_dead,
 )
 
 
@@ -344,6 +358,97 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
     ) -> RuntimeOnDemandReadExecutionResult:
         now = datetime.now(UTC)
         payload = request.normalized_payload or request.request_payload or {}
+        live_execution = _execute_live_tcp_on_demand_read_if_available(request)
+        if live_execution is not None:
+            register_snapshot = RuntimeRegisterSnapshotPayload(
+                snapshot_type=SnapshotType.BILLING,
+                captured_at=now,
+                payload=live_execution.register_snapshot_payload,
+            )
+            trace_references = request.trace_references
+            return RuntimeOnDemandReadExecutionResult(
+                status=RuntimeOnDemandReadExecutionStatus.COMPLETED,
+                on_demand_read_execution_record_id=(
+                    "runtime-on-demand-read:"
+                    f"{request.execution_context.command_attempt_id}:{request.execution_context.request_id or request.execution_context.command_id}"
+                ),
+                session_identifier=str(trace_references["session_identifier"]),
+                dispatch_envelope_record_id=request.dispatch_envelope_record_id,
+                delivery_contract_record_id=str(trace_references["delivery_contract_record_id"]),
+                envelope_record_id=str(trace_references["envelope_record_id"]),
+                publication_contract_record_id=str(
+                    trace_references["publication_contract_record_id"]
+                ),
+                attestation_record_id=str(trace_references["attestation_record_id"]),
+                settlement_record_id=str(trace_references["settlement_record_id"]),
+                reconciliation_record_id=str(trace_references["reconciliation_record_id"]),
+                interpretation_record_id=str(trace_references["interpretation_record_id"]),
+                observation_record_id=str(trace_references["observation_record_id"]),
+                invocation_result_record_id=str(trace_references["invocation_result_record_id"]),
+                dispatch_request_record_id=str(trace_references["dispatch_request_record_id"]),
+                selection_record_id=str(trace_references["selection_record_id"]),
+                intent_record_id=str(trace_references["intent_record_id"]),
+                closure_record_id=str(trace_references["closure_record_id"]),
+                materialization_record_id=str(trace_references["materialization_record_id"]),
+                post_processing_record_id=str(trace_references["post_processing_record_id"]),
+                disposition_record_id=str(trace_references["disposition_record_id"]),
+                outcome_record_id=str(trace_references["outcome_record_id"]),
+                executor_identifier=str(request.execution_context.worker_identifier),
+                job_run_id=str(request.execution_context.job_run_id),
+                related_command_id=str(request.execution_context.command_id),
+                command_attempt_id=str(request.execution_context.command_attempt_id),
+                adapter_key=self.adapter_key,
+                protocol_family=request.protocol_family,
+                on_demand_read_operation=request.operation,
+                snapshot_type=SnapshotType.BILLING,
+                command_category=request.command_category,
+                adapter_acknowledgment_state=(
+                    RuntimeOnDemandReadAdapterAcknowledgmentState.ACCEPTED
+                ),
+                protocol_stage_outcome=(
+                    RuntimeOnDemandReadProtocolStageOutcome.BILLING_SNAPSHOT_COMPLETED
+                ),
+                execution_outcome=RuntimeCommandOutcome.SUCCEEDED,
+                correlation_id=request.execution_context.correlation_id,
+                request_id=request.execution_context.request_id,
+                execution_started_at=now.isoformat(),
+                execution_finished_at=now.isoformat(),
+                register_snapshot=register_snapshot,
+                adapter_result_summary={
+                    "adapter_key": self.adapter_key,
+                    "operation": request.operation.value,
+                    "protocol_family": request.protocol_family.value,
+                    "vertical_slice": "on_demand_read",
+                    "snapshot_type": SnapshotType.BILLING.value,
+                    "register_snapshot_present": True,
+                    "live_tcp_ingress": True,
+                    "bytes_sent": live_execution.bytes_sent,
+                    "bytes_received": live_execution.bytes_received,
+                    "protocol_trace": live_execution.protocol_trace,
+                },
+                adapter_response_snapshot={
+                    "adapter": self.adapter_key,
+                    "operation": request.operation.value,
+                    "target_meter_id": str(request.target.meter_id),
+                    "endpoint_id": str(request.target.endpoint_id),
+                    "protocol_profile_id": str(request.target.protocol_association_profile_id),
+                    "snapshot_type": SnapshotType.BILLING.value,
+                    "register_snapshot": register_snapshot.model_dump(mode="json"),
+                    "raw_frames": live_execution.raw_frames,
+                },
+                error_category=None,
+                error_detail=None,
+                on_demand_read_recorded_by_executor_identifier=str(
+                    request.execution_context.worker_identifier
+                ),
+                already_recorded=False,
+                summary=(
+                    "ON_DEMAND_READ billing snapshot completed through the live TCP ingress "
+                    "adapter path."
+                ),
+                lineage=request.lineage,
+            )
+
         mock_execution = payload.get("mock_execution", {}) if isinstance(payload, dict) else {}
         requested_outcome = RuntimeCommandOutcome(
             mock_execution.get("outcome", RuntimeCommandOutcome.SUCCEEDED.value)
@@ -589,6 +694,120 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
             summary=interpreted_result.interpreter_summary,
             lineage=request.lineage,
         )
+
+
+def _execute_live_tcp_on_demand_read_if_available(
+    request: RuntimeOnDemandReadAdapterRequest,
+) -> LiveTcpOnDemandReadExecution | None:
+    if request.transport.endpoint_transport_type != ConnectivityTransportType.TCP_IP:
+        return None
+
+    with borrow_runtime_tcp_meter_ingress_connection(
+        meter_id=request.target.meter_id,
+        endpoint_id=request.target.endpoint_id,
+    ) as borrowed_connection:
+        if borrowed_connection is None:
+            return None
+
+        config = _build_live_tcp_dlms_session_config(request)
+        obis_codes = _resolve_on_demand_read_obis_codes(request)
+        try:
+            return execute_billing_snapshot_over_tcp_ingress(
+                sock=borrowed_connection.socket,
+                config=config,
+                obis_codes=obis_codes,
+            )
+        except Exception:
+            mark_runtime_tcp_meter_ingress_connection_dead(borrowed_connection.connection_id)
+            raise
+
+
+def _build_live_tcp_dlms_session_config(
+    request: RuntimeOnDemandReadAdapterRequest,
+) -> LiveTcpDlmsSessionConfig:
+    protocol_settings = request.protocol_settings or {}
+    start_protocol = _resolve_live_tcp_start_protocol(request)
+    password = resolve_runtime_secret_ref(request.security.password_secret_ref)
+    if request.security.authentication_mode.value == "low" and password is None:
+        raise RuntimeError(
+            "Live TCP ingress requires a resolvable password secret for LOW authentication."
+        )
+
+    def _int_setting(key: str, default: int) -> int:
+        return int(protocol_settings.get(key, default))
+
+    def _float_setting(key: str, default: float) -> float:
+        return float(protocol_settings.get(key, default))
+
+    def _bool_setting(key: str, default: bool) -> bool:
+        value = protocol_settings.get(key, default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return bool(value)
+
+    ack_candidates_raw = protocol_settings.get("iec_ack_hex_candidates")
+    ack_candidates = (
+        [str(item) for item in ack_candidates_raw if str(item).strip()]
+        if isinstance(ack_candidates_raw, list)
+        else ["063235320D0A", "06B235B28D0A"]
+    )
+
+    return LiveTcpDlmsSessionConfig(
+        start_protocol=start_protocol,  # type: ignore[arg-type]
+        client_address=request.client_address,
+        server_address=request.server_address,
+        server_address_size=request.server_address_size,
+        authentication_mode=request.security.authentication_mode.value,
+        password=password,
+        iec_ack_hex_candidates=ack_candidates,
+        use_broadcast_snrm_first=_bool_setting("use_broadcast_snrm_first", True),
+        broadcast_snrm_hex=str(
+            protocol_settings.get("broadcast_snrm_hex", "7EA00AFEFEFEFF0393C9837E")
+        ),
+        after_iec_sleep_ms=_int_setting("after_iec_sleep_ms", 1200),
+        dlms_read_timeout_seconds=_float_setting("dlms_read_timeout_seconds", 2.5),
+        iec_serial_timeout_seconds=_float_setting("iec_serial_timeout_seconds", 5.0),
+        iec_wake_zero_bytes=_int_setting("iec_wake_zero_bytes", 0),
+        iec_wake_post_delay_ms=_int_setting("iec_wake_post_delay_ms", 0),
+        iec_ident_retries=_int_setting("iec_ident_retries", 4),
+        iec_ident_retry_delay_ms=_int_setting("iec_ident_retry_delay_ms", 350),
+        before_first_iec_send_delay_ms=settings.runtime_tcp_meter_ingress_before_first_iec_send_delay_ms,
+        ua_swap_addresses=_bool_setting("ua_swap_addresses", False),
+        send_hdlc_disc_before_close=_bool_setting("send_hdlc_disc_before_close", True),
+        disc_drain_timeout_seconds=_float_setting("disc_drain_timeout_seconds", 0.4),
+    )
+
+
+def _resolve_live_tcp_start_protocol(
+    request: RuntimeOnDemandReadAdapterRequest,
+) -> str:
+    protocol_settings = request.protocol_settings or {}
+    configured = protocol_settings.get("tcp_start_protocol")
+    if isinstance(configured, str):
+        normalized = configured.strip().lower()
+        if normalized in {"iec", "iec62056_21", "iec62056-21"}:
+            return "iec62056_21"
+        if normalized in {"dlms", "hdlc", "snrm"}:
+            return "dlms"
+    return "iec62056_21" if request.iec62056_21_enabled else "dlms"
+
+
+def _resolve_on_demand_read_obis_codes(
+    request: RuntimeOnDemandReadAdapterRequest,
+) -> list[str]:
+    payload = request.normalized_payload or request.request_payload or {}
+    explicit_obis = payload.get("obis") if isinstance(payload, dict) else None
+    if isinstance(explicit_obis, list):
+        normalized = [str(item).strip() for item in explicit_obis if str(item).strip()]
+        if normalized:
+            return normalized
+    return ["1.0.1.8.0.255", "1.0.2.8.0.255"]
 
 
 class GuruxProfileReadOperationDefinition(BaseModel):

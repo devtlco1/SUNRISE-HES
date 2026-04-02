@@ -595,6 +595,37 @@ class PlatformReadinessHistoryResponse(BaseModel):
     result: PlatformReadinessHistoryResult
 
 
+class RuntimeTcpMeterIngressStatusResult(BaseModel):
+    listener_enabled: bool
+    listen_host: str | None = None
+    listen_port: int | None = None
+    listening: bool
+    connected: bool
+    active_connection_id: str | None = None
+    remote_addr: str | None = None
+    remote_port: int | None = None
+    connected_at: str | None = None
+    bound_meter_id: UUID | None = None
+    bound_endpoint_id: UUID | None = None
+    bound_protocol_association_profile_id: UUID | None = None
+    bound_at: str | None = None
+    connection_in_use: bool
+
+
+class RuntimeTcpMeterIngressStatusResponse(BaseModel):
+    result: RuntimeTcpMeterIngressStatusResult
+
+
+class RuntimeTcpMeterIngressBindRequest(BaseModel):
+    meter_id: UUID
+    endpoint_id: UUID
+    protocol_association_profile_id: UUID | None = None
+
+
+class RuntimeTcpMeterIngressBindResponse(BaseModel):
+    result: RuntimeTcpMeterIngressStatusResult
+
+
 class RedisConsumerGroupBootstrapRequest(BaseModel):
     pass
 

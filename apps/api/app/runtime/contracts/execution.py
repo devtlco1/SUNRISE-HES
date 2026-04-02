@@ -117,6 +117,12 @@ class ProtocolExecutionPlan(BaseModel):
     communication_profile_id: UUID | None = None
     communication_profile_code: str | None = None
     protocol_profile_code: str
+    iec62056_21_enabled: bool = False
+    iec_device_address: str | None = None
+    iec_baud_rate: int | None = None
+    client_address: int
+    server_address: int
+    server_address_size: int = 1
     protocol_settings: dict[str, object] | None = None
     protocol_defaults: dict[str, object] | None = None
     session_purpose: ConnectivitySessionPurpose

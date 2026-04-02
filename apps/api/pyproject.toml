@@ -13,6 +13,7 @@ dependencies = [
   "email-validator",
   "fastapi",
   "geoalchemy2",
+  "gurux-dlms",
   "pwdlib[argon2]",
   "PyJWT",
   "pydantic-settings",
