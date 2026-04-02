@@ -115,6 +115,13 @@ type ReadingsSummary = {
   evaluatedMeters: number;
 };
 
+type AttentionQueueItem = {
+  id: string;
+  label: string;
+  count: number;
+  summary: string;
+};
+
 const STALE_SIGNAL_THRESHOLD_MS = 1000 * 60 * 60 * 24;
 
 function formatDateTime(value: string | null): string {
@@ -598,6 +605,68 @@ export function OperationalHomeModule({
     ],
     [connectivitySummary, meterOverview, pendingApprovalsCount, readingsSummary, recentCommands],
   );
+  const problematicRecentCommandCount = useMemo(
+    () =>
+      recentCommands?.filter((command) =>
+        ["failed", "timed_out", "cancelled"].includes(command.command_status),
+      ).length ?? null,
+    [recentCommands],
+  );
+  const attentionQueueItems = useMemo(() => {
+    const items: AttentionQueueItem[] = [];
+
+    if ((pendingApprovalsCount ?? 0) > 0) {
+      items.push({
+        id: "pending-approvals",
+        label: "Pending approvals",
+        count: pendingApprovalsCount ?? 0,
+        summary: "Bulk command requests are waiting in the stable approvals queue.",
+      });
+    }
+
+    if ((connectivitySummary?.incidentCount ?? 0) > 0) {
+      items.push({
+        id: "connectivity-incidents",
+        label: "Connectivity incidents",
+        count: connectivitySummary?.incidentCount ?? 0,
+        summary: `${connectivitySummary?.offlineCount ?? 0} offline, ${connectivitySummary?.staleCount ?? 0} stale, and ${connectivitySummary?.degradedCount ?? 0} degraded contexts need review.`,
+      });
+    }
+
+    if ((readingsSummary?.validationIssueCount ?? 0) > 0) {
+      items.push({
+        id: "validation-issues",
+        label: "Validation issues",
+        count: readingsSummary?.validationIssueCount ?? 0,
+        summary: `${readingsSummary?.metersWithValidationIssues ?? 0} meters currently carry validation-derived issues in the bounded readings scope.`,
+      });
+    }
+
+    if ((readingsSummary?.missingReadsIssueCount ?? 0) > 0) {
+      items.push({
+        id: "recovery-issues",
+        label: "Recovery issues",
+        count: readingsSummary?.missingReadsIssueCount ?? 0,
+        summary: `${readingsSummary?.metersWithRecoveryIssues ?? 0} meters currently carry missing-reads or stale-window recovery issues.`,
+      });
+    }
+
+    if ((problematicRecentCommandCount ?? 0) > 0) {
+      items.push({
+        id: "problematic-commands",
+        label: "Problem command activity",
+        count: problematicRecentCommandCount ?? 0,
+        summary: "Recent command activity includes failed, timed-out, or cancelled outcomes.",
+      });
+    }
+
+    return items;
+  }, [
+    connectivitySummary,
+    pendingApprovalsCount,
+    problematicRecentCommandCount,
+    readingsSummary,
+  ]);
 
   return (
     <section className="panel">
@@ -628,6 +697,62 @@ export function OperationalHomeModule({
                 </div>
               ))}
             </div>
+          ) : null}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Needs operator attention</h2>
+              <p className="muted">
+                Compact handoff queue derived from existing dashboard signals before drilling into
+                the stable Jobs / Events / Alerts surface.
+              </p>
+            </div>
+            <span className="artifact-pill">
+              {attentionQueueItems.length} attention item
+              {attentionQueueItems.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {isLoadingOverview ? <p className="muted">Loading operator attention handoff...</p> : null}
+
+          {!isLoadingOverview ? (
+            <>
+              {attentionQueueItems.length === 0 ? (
+                <p className="muted">
+                  No bounded operator attention items are currently derived from the stable
+                  dashboard signals.
+                </p>
+              ) : (
+                <div className="command-list">
+                  {attentionQueueItems.map((item) => (
+                    <article key={item.id} className="command-list-item">
+                      <div className="command-list-item-header">
+                        <strong>{item.label}</strong>
+                        <span className="status-pill warning">{item.count} attention</span>
+                      </div>
+                      <div className="command-list-item-meta">
+                        <span>
+                          {formatCountLabel(item.count, "derived context", "derived contexts")}
+                        </span>
+                        <span>Home dashboard handoff</span>
+                      </div>
+                      <p className="muted">{item.summary}</p>
+                    </article>
+                  ))}
+                </div>
+              )}
+
+              <div className="artifact-row">
+                <Link className="secondary-button" href="/jobs-events-alerts">
+                  Open jobs / events / alerts
+                </Link>
+                <span className="muted">
+                  Use the monitoring center for the bounded activity list and alert-oriented review.
+                </span>
+              </div>
+            </>
           ) : null}
         </section>
 

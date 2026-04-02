@@ -71,7 +71,7 @@ function createMockApi({
     {
       command_id: "command-3",
       command_family: "on_demand_read",
-      command_status: "submitted_for_approval",
+      command_status: "failed",
       meter_id: "meter-4",
       command_template_code: "on-demand-read-template",
       family_specific_outcome_summary: {
@@ -410,10 +410,11 @@ describe("OperationalHomeModule", () => {
     ).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText("Pending approvals")).toBeInTheDocument();
+      expect(screen.getAllByText("Pending approvals").length).toBeGreaterThan(0);
       expect(screen.getAllByText("Connectivity incidents").length).toBeGreaterThan(0);
       expect(screen.getByText("Open validation issues")).toBeInTheDocument();
       expect(screen.getByText("Open recovery issues")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Needs operator attention" })).toBeInTheDocument();
     });
   });
 
@@ -438,6 +439,10 @@ describe("OperationalHomeModule", () => {
     expect(screen.getByRole("link", { name: "Open connectivity" })).toHaveAttribute(
       "href",
       "/connectivity",
+    );
+    expect(await screen.findByRole("link", { name: "Open jobs / events / alerts" })).toHaveAttribute(
+      "href",
+      "/jobs-events-alerts",
     );
     expect(screen.getByRole("link", { name: "Open import wizard" })).toHaveAttribute(
       "href",
@@ -469,6 +474,12 @@ describe("OperationalHomeModule", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("6 validation issues")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open readings" })).toHaveAttribute("href", "/readings");
+    expect(screen.getAllByText("Pending approvals").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Connectivity incidents").length).toBeGreaterThan(0);
+    expect(screen.getByText("Validation issues")).toBeInTheDocument();
+    expect(screen.getByText("Recovery issues")).toBeInTheDocument();
+    expect(screen.getByText("Problem command activity")).toBeInTheDocument();
+    expect(screen.getByText("1 attention")).toBeInTheDocument();
     expect(screen.getByText("disconnect (pending)")).toBeInTheDocument();
     expect(screen.getByText("read_billing_snapshot billing (pending)")).toBeInTheDocument();
   });
@@ -480,6 +491,7 @@ describe("OperationalHomeModule", () => {
     renderOperationalHomeInShell();
 
     expect(await screen.findByText("Loading operations dashboard...")).toBeInTheDocument();
+    expect(screen.getByText("Loading operator attention handoff...")).toBeInTheDocument();
     expect(screen.getByText("Loading recent command activity...")).toBeInTheDocument();
   });
 
@@ -499,6 +511,11 @@ describe("OperationalHomeModule", () => {
     renderOperationalHomeInShell();
 
     expect(await screen.findByText("No recent command activity available.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No bounded operator attention items are currently derived from the stable dashboard signals.",
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         "No recent command activity is currently visible, but the stable drill-down surfaces remain available from the summary panels above.",
