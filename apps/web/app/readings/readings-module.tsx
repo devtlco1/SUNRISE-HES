@@ -105,6 +105,21 @@ type LoadProfileIntervalListResponse = {
   items: LoadProfileIntervalItem[];
 };
 
+type ValidationIssueSeverity = "critical" | "warning";
+
+type ValidationIssue = {
+  id: string;
+  issue_type: string;
+  severity: ValidationIssueSeverity;
+  state: "open";
+  reason: string;
+  observed_at: string | null;
+  related_context: string;
+  related_source: string;
+  related_section_href: string;
+  related_action_label: string;
+};
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return "Not available";
@@ -144,7 +159,9 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
     normalized.includes("fail") ||
     normalized.includes("error") ||
     normalized.includes("invalid") ||
-    normalized.includes("inactive")
+    normalized.includes("inactive") ||
+    normalized.includes("suspect") ||
+    normalized.includes("missing")
   ) {
     return "danger";
   }
@@ -152,7 +169,10 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
     normalized.includes("pending") ||
     normalized.includes("queued") ||
     normalized.includes("running") ||
-    normalized.includes("review")
+    normalized.includes("review") ||
+    normalized.includes("estimated") ||
+    normalized.includes("stale") ||
+    normalized.includes("gap")
   ) {
     return "warning";
   }
@@ -234,6 +254,30 @@ function formatIntervalValue(
 
 function formatIntervalWindow(interval: LoadProfileIntervalItem): string {
   return `${formatDateTime(interval.interval_start)} to ${formatDateTime(interval.interval_end)}`;
+}
+
+function formatDurationFromMs(durationMs: number): string {
+  if (durationMs < 60_000) {
+    return `${Math.round(durationMs / 1000)} sec`;
+  }
+  if (durationMs < 3_600_000) {
+    return `${Math.round(durationMs / 60_000)} min`;
+  }
+  return `${Math.round(durationMs / 3_600_000)} hr`;
+}
+
+function buildValidationSeverityTone(
+  severity: ValidationIssueSeverity,
+): "danger" | "warning" {
+  return severity === "critical" ? "danger" : "warning";
+}
+
+function formatValidationIssueType(issueType: string): string {
+  return issueType
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 export function ReadingsModule({
@@ -531,6 +575,135 @@ export function ReadingsModule({
     loadProfileChannels.length > 0
       ? formatCountLabel(loadProfileChannels.length, "channel", "channels")
       : "No interval channels";
+  const validationIssues = useMemo(() => {
+    if (!selectedMeter) {
+      return [] as ValidationIssue[];
+    }
+
+    const nextIssues: ValidationIssue[] = [];
+
+    if (billingSnapshots.length === 0) {
+      nextIssues.push({
+        id: `billing-context-missing-${selectedMeter.id}`,
+        issue_type: "billing_context_missing",
+        severity: "warning",
+        state: "open",
+        reason:
+          "No billing read is available for the selected meter in the current bounded readings scope.",
+        observed_at: null,
+        related_context: selectedMeter.serial_number,
+        related_source: "Billing reads section",
+        related_section_href: "#billing-reads-section",
+        related_action_label: "Review billing reads",
+      });
+    }
+
+    loadProfileIntervals.forEach((interval) => {
+      const channel = loadProfileChannelById.get(interval.channel_id) ?? null;
+      const relatedBatch = interval.source_batch_id
+        ? batchById.get(interval.source_batch_id) ?? null
+        : null;
+      const relatedContext = channel
+        ? `${channel.channel_code} • ${formatIntervalWindow(interval)}`
+        : formatIntervalWindow(interval);
+      const relatedSource = relatedBatch
+        ? `Source ${formatStatusLabel(relatedBatch.source_type)}`
+        : "Source batch unavailable";
+
+      if (interval.value_numeric === null) {
+        nextIssues.push({
+          id: `interval-value-missing-${interval.id}`,
+          issue_type: "interval_value_missing",
+          severity: "critical",
+          state: "open",
+          reason: "Interval value is missing for the recorded load profile window.",
+          observed_at: interval.interval_end,
+          related_context: relatedContext,
+          related_source: relatedSource,
+          related_section_href: "#interval-reads-section",
+          related_action_label: "Review interval reads",
+        });
+      }
+
+      if (interval.quality === "suspect" || interval.quality === "estimated" || interval.quality === "missing") {
+        nextIssues.push({
+          id: `interval-quality-${interval.id}`,
+          issue_type: "interval_quality_flagged",
+          severity:
+            interval.quality === "estimated" ? "warning" : "critical",
+          state: "open",
+          reason: `Interval quality is marked ${formatStatusLabel(interval.quality)}.`,
+          observed_at: interval.interval_end,
+          related_context: relatedContext,
+          related_source: relatedSource,
+          related_section_href: "#interval-reads-section",
+          related_action_label: "Review interval reads",
+        });
+      }
+    });
+
+    const intervalsByChannel = new Map<string, LoadProfileIntervalItem[]>();
+    loadProfileIntervals.forEach((interval) => {
+      const items = intervalsByChannel.get(interval.channel_id) ?? [];
+      items.push(interval);
+      intervalsByChannel.set(interval.channel_id, items);
+    });
+
+    intervalsByChannel.forEach((intervals, channelId) => {
+      const sortedIntervals = [...intervals].sort(
+        (left, right) =>
+          new Date(right.interval_start).getTime() -
+          new Date(left.interval_start).getTime(),
+      );
+      const channel = loadProfileChannelById.get(channelId) ?? null;
+
+      for (let index = 0; index < sortedIntervals.length - 1; index += 1) {
+        const newerInterval = sortedIntervals[index];
+        const olderInterval = sortedIntervals[index + 1];
+        const gapMs =
+          new Date(newerInterval.interval_start).getTime() -
+          new Date(olderInterval.interval_end).getTime();
+
+        if (gapMs > 0) {
+          nextIssues.push({
+            id: `interval-gap-${channelId}-${newerInterval.id}-${olderInterval.id}`,
+            issue_type: "interval_gap_detected",
+            severity: "warning",
+            state: "open",
+            reason: `Gap of ${formatDurationFromMs(gapMs)} detected between consecutive interval windows.`,
+            observed_at: newerInterval.interval_start,
+            related_context: channel
+              ? `${channel.channel_code} • ${formatDateTime(newerInterval.interval_start)}`
+              : formatDateTime(newerInterval.interval_start),
+            related_source: channel
+              ? `${channel.interval_seconds} second interval cadence`
+              : "Channel cadence unavailable",
+            related_section_href: "#interval-reads-section",
+            related_action_label: "Review interval reads",
+          });
+        }
+      }
+    });
+
+    return nextIssues.sort((left, right) => {
+      const severityWeight =
+        (left.severity === "critical" ? 0 : 1) -
+        (right.severity === "critical" ? 0 : 1);
+      if (severityWeight !== 0) {
+        return severityWeight;
+      }
+
+      const rightTime = right.observed_at ? new Date(right.observed_at).getTime() : 0;
+      const leftTime = left.observed_at ? new Date(left.observed_at).getTime() : 0;
+      return rightTime - leftTime;
+    });
+  }, [
+    batchById,
+    billingSnapshots.length,
+    loadProfileChannelById,
+    loadProfileIntervals,
+    selectedMeter,
+  ]);
 
   const overviewCards = useMemo(
     () => [
@@ -598,6 +771,15 @@ export function ReadingsModule({
           ? `${latestIntervalChannel?.channel_code ?? latestInterval.channel_id} • ${latestIntervalValueLabel}`
           : "No interval reads recorded for the current selection",
       },
+      {
+        label: "Validation issues in focus",
+        value: String(validationIssues.length),
+        note: selectedMeter
+          ? validationIssues.length > 0
+            ? `${formatCountLabel(validationIssues.length, "issue", "issues")} derived for ${selectedMeter.serial_number}`
+            : `No validation issues derived for ${selectedMeter.serial_number}`
+          : "No selected meter validation context",
+      },
     ],
     [
       billingSnapshots.length,
@@ -617,6 +799,7 @@ export function ReadingsModule({
       selectedMeterSignalLabel,
       selectedMeterStatusLabel,
       totalMeters,
+      validationIssues.length,
     ],
   );
 
@@ -826,6 +1009,9 @@ export function ReadingsModule({
                       {loadProfileIntervals.length} interval reads
                     </span>
                     <span className="artifact-pill">
+                      {validationIssues.length} validation issues
+                    </span>
+                    <span className="artifact-pill">
                       {meterReadings.length} recent raw readings
                     </span>
                     <span className="artifact-pill">
@@ -897,7 +1083,7 @@ export function ReadingsModule({
                   </div>
                 </section>
 
-                <section className="subpanel">
+                <section className="subpanel" id="interval-reads-section">
                   <div className="section-heading">
                     <div>
                       <h3>Interval reads</h3>
@@ -1057,6 +1243,76 @@ export function ReadingsModule({
                   )}
                 </section>
 
+                <section className="subpanel" id="validation-center-section">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Validation center</h3>
+                      <p className="muted">
+                        Derived validation queue for the selected meter using current
+                        billing and interval-read context only.
+                      </p>
+                    </div>
+                    <span className="artifact-pill">
+                      {validationIssues.length} open validation issues
+                    </span>
+                  </div>
+
+                  {validationIssues.length === 0 ? (
+                    <p className="muted">
+                      No validation issues match the current bounded selected-meter scope.
+                    </p>
+                  ) : (
+                    <div className="readings-table-shell">
+                      <table className="readings-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Issue</th>
+                            <th scope="col">Severity</th>
+                            <th scope="col">State</th>
+                            <th scope="col">Observed</th>
+                            <th scope="col">Context</th>
+                            <th scope="col">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {validationIssues.map((issue) => (
+                            <tr key={issue.id}>
+                              <td>
+                                <strong>{formatValidationIssueType(issue.issue_type)}</strong>
+                                <div className="muted">{issue.reason}</div>
+                              </td>
+                              <td>
+                                <span
+                                  className={`status-pill ${buildValidationSeverityTone(
+                                    issue.severity,
+                                  )}`}
+                                >
+                                  {formatStatusLabel(issue.severity)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className="status-pill warning">
+                                  {formatStatusLabel(issue.state)}
+                                </span>
+                              </td>
+                              <td>{formatDateTime(issue.observed_at)}</td>
+                              <td>
+                                <strong>{issue.related_context}</strong>
+                                <div className="muted">{issue.related_source}</div>
+                              </td>
+                              <td>
+                                <Link className="secondary-button" href={issue.related_section_href}>
+                                  {issue.related_action_label}
+                                </Link>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
                 <div className="detail-grid">
                   <div className="stat-card">
                     <span className="stat-label">Meter ID</span>
@@ -1096,7 +1352,7 @@ export function ReadingsModule({
                   </Link>
                 </div>
 
-                <section className="subpanel">
+                <section className="subpanel" id="billing-reads-section">
                   <div className="section-heading">
                     <div>
                       <h3>Billing reads table</h3>

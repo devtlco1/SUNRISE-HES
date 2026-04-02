@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OperationalShell } from "../operational-shell";
 import { ReadingsModule } from "./readings-module";
 
+function includesText(text: string) {
+  return (_content: string, element: Element | null) => element?.textContent?.includes(text) ?? false;
+}
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -312,15 +316,26 @@ describe("ReadingsModule", () => {
     expect(screen.getByText(/Latest billing snapshot captured/)).toBeInTheDocument();
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
     expect(screen.getByText("Newest first")).toBeInTheDocument();
-      expect(screen.getByText("Interval reads")).toBeInTheDocument();
-      expect(screen.getByText("Newest interval first")).toBeInTheDocument();
-      expect(screen.getAllByText("Latest interval").length).toBeGreaterThan(0);
-      expect(screen.getByText("Recent interval reads loaded")).toBeInTheDocument();
-      expect(screen.getAllByText("Latest quality Good")).not.toHaveLength(0);
-      expect(screen.getAllByText("Latest value 1.250 kWh")).not.toHaveLength(0);
-      expect(screen.getAllByText("lp_import • 1.0.99.1.0.255")).not.toHaveLength(0);
-      expect(screen.getByText("Interval window")).toBeInTheDocument();
-      expect(screen.getByText("Quality")).toBeInTheDocument();
+    expect(screen.getByText("Interval reads")).toBeInTheDocument();
+    expect(screen.getByText("Newest interval first")).toBeInTheDocument();
+    expect(screen.getAllByText("Latest interval").length).toBeGreaterThan(0);
+    expect(screen.getByText("Recent interval reads loaded")).toBeInTheDocument();
+    expect(screen.getAllByText("Latest quality Good")).not.toHaveLength(0);
+    expect(screen.getAllByText("Latest value 1.250 kWh")).not.toHaveLength(0);
+    expect(screen.getAllByText("lp_import • 1.0.99.1.0.255")).not.toHaveLength(0);
+    expect(screen.getByText("Interval window")).toBeInTheDocument();
+    expect(screen.getByText("Quality")).toBeInTheDocument();
+    expect(screen.getByText("Validation center")).toBeInTheDocument();
+    expect(screen.getByText("1 open validation issues")).toBeInTheDocument();
+    expect(screen.getByText("Validation issues in focus")).toBeInTheDocument();
+    expect(screen.getByText("Interval Quality Flagged")).toBeInTheDocument();
+    expect(screen.getAllByText("Warning")).not.toHaveLength(0);
+    expect(screen.getByText("Open")).toBeInTheDocument();
+    expect(screen.getByText("Interval quality is marked Estimated.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review interval reads" })).toHaveAttribute(
+      "href",
+      "#interval-reads-section",
+    );
     expect(screen.getAllByText("Latest billing read")).not.toHaveLength(0);
     expect(screen.getByText("Received at")).toBeInTheDocument();
     expect(screen.getAllByText("Latest batch Received")).not.toHaveLength(0);
@@ -360,6 +375,25 @@ describe("ReadingsModule", () => {
       expect(
         within(billingPanel as HTMLElement).getAllByText("Billing-read context missing"),
       ).not.toHaveLength(0);
+      expect(
+        within(billingPanel as HTMLElement).getByText("Validation center"),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText("1 open validation issues"),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText("Billing Context Missing"),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText(
+          "No billing read is available for the selected meter in the current bounded readings scope.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByRole("link", {
+          name: "Review billing reads",
+        }),
+      ).toHaveAttribute("href", "#billing-reads-section");
       expect(
         within(billingPanel as HTMLElement).getByText(
           "No billing reads available for the selected meter yet. The selected meter summary above reflects the current missing billing-read context.",
@@ -615,6 +649,37 @@ describe("ReadingsModule", () => {
       "href",
       "/meters/meter-2",
     );
+  });
+
+  it("renders a bounded empty validation state when no issues are derived", async () => {
+    const { fetchMock } = createMockApi({
+      loadProfileIntervalsByMeter: {
+        "meter-1": [
+          {
+            id: "interval-clean-1",
+            meter_id: "meter-1",
+            channel_id: "channel-1",
+            interval_start: "2026-04-02T10:45:00.000Z",
+            interval_end: "2026-04-02T11:00:00.000Z",
+            value_numeric: "1.250",
+            quality: "good",
+            source_batch_id: "batch-billing-1",
+          },
+        ],
+        "meter-2": [],
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderReadingsModuleInShell();
+
+    expect(await screen.findByText("Validation center")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText(includesText("0 open validation issues")).length).toBeGreaterThan(0);
+      expect(
+        screen.getByText("No validation issues match the current bounded selected-meter scope."),
+      ).toBeInTheDocument();
+    });
   });
 
   it("renders a bounded loading state while selected meter readings are bootstrapping", async () => {
