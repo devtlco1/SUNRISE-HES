@@ -84,6 +84,10 @@ type ActivityDetail =
   | { type: "command"; record: CommandOperationalDetail }
   | { type: "event"; record: EventDetail };
 
+type ActivityDetailReturnContext = {
+  source: "commands_remediation";
+} | null;
+
 function isActivityType(value: string): value is ActivityType {
   return value === "job_run" || value === "command" || value === "event";
 }
@@ -182,10 +186,12 @@ export function ActivityDetailModule({
   activityType,
   activityId,
   authorizedFetch,
+  initialReturnContext = null,
 }: {
   activityType: string;
   activityId: string;
   authorizedFetch: AuthorizedFetch;
+  initialReturnContext?: ActivityDetailReturnContext;
 }) {
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -316,6 +322,20 @@ export function ActivityDetailModule({
       {pageError ? <p className="error-banner">{pageError}</p> : null}
 
       <div className="detail-stack">
+        {initialReturnContext ? (
+          <section className="subpanel">
+            <div className="detail-stack">
+              <p className="muted">
+                Returned from the commands remediation context for this retry-worthy activity.
+              </p>
+              <div className="artifact-row">
+                <span className="artifact-pill">Retry-origin return</span>
+                <span className="artifact-pill">Commands remediation</span>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         <section className="subpanel">
           <div className="section-heading">
             <div>

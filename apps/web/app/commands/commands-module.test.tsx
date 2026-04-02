@@ -734,7 +734,7 @@ describe("CommandsModule", () => {
     expect(screen.getByText("Jobs retry queue")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to retry activity detail" })).toHaveAttribute(
       "href",
-      "/jobs-events-alerts/activity/job_run/job-run-1",
+      "/jobs-events-alerts/activity/job_run/job-run-1?returnSource=commands_remediation",
     );
 
     const detailPanel = screen.getAllByRole("heading", { name: "Command detail" })[0].closest(

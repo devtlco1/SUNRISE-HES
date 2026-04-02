@@ -295,7 +295,11 @@ function buildRetryRemediationReturnHref(value: RetryRemediationHandoff | null):
     return null;
   }
 
-  return buildActivityDetailHref(value.originActivityType, value.originActivityId);
+  const searchParams = new URLSearchParams({
+    returnSource: "commands_remediation",
+  });
+
+  return `${buildActivityDetailHref(value.originActivityType, value.originActivityId)}?${searchParams.toString()}`;
 }
 
 function buildTemplateCategory(

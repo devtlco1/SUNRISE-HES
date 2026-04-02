@@ -142,9 +142,13 @@ function createMockApi({
 function renderActivityDetailModuleInShell({
   activityType,
   activityId,
+  initialReturnContext = null,
 }: {
   activityType: string;
   activityId: string;
+  initialReturnContext?: {
+    source: "commands_remediation";
+  } | null;
 }) {
   render(
     <OperationalShell
@@ -157,6 +161,7 @@ function renderActivityDetailModuleInShell({
           activityType={activityType}
           activityId={activityId}
           authorizedFetch={authorizedFetch}
+          initialReturnContext={initialReturnContext}
         />
       )}
     </OperationalShell>,
@@ -223,6 +228,44 @@ describe("ActivityDetailModule", () => {
       "href",
       "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=job_run&retryReason=Association+rejected&retryContext=Meter+meter-1.+Retries+1%2F3.&retryOriginActivityType=job_run&retryOriginActivityId=job-run-1",
     );
+  });
+
+  it("shows a retry-origin banner when activity detail is reopened from commands remediation", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderActivityDetailModuleInShell({
+      activityType: "job_run",
+      activityId: "job-run-1",
+      initialReturnContext: {
+        source: "commands_remediation",
+      },
+    });
+
+    expect(
+      await screen.findByText(
+        "Returned from the commands remediation context for this retry-worthy activity.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Retry-origin return")).toBeInTheDocument();
+    expect(screen.getByText("Commands remediation")).toBeInTheDocument();
+  });
+
+  it("does not show a retry-origin banner during direct activity detail entry", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderActivityDetailModuleInShell({
+      activityType: "job_run",
+      activityId: "job-run-1",
+    });
+
+    await screen.findByText("job-run-1");
+    expect(
+      screen.queryByText(
+        "Returned from the commands remediation context for this retry-worthy activity.",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("renders bounded event activity detail with meter linkage when available", async () => {
