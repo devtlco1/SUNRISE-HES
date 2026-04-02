@@ -8,10 +8,18 @@ type AttentionLandingContext = {
   filter: "attention";
 } | null;
 
+type RetryQueueRoundTripContext = {
+  source: "activity_detail_roundtrip";
+  activityType: "job_run" | "command";
+  activityId: string;
+} | null;
+
 export function JobsEventsAlertsPageClient({
   initialAttentionContext = null,
+  initialRetryQueueRoundTripContext = null,
 }: {
   initialAttentionContext?: AttentionLandingContext;
+  initialRetryQueueRoundTripContext?: RetryQueueRoundTripContext;
 }) {
   return (
     <OperationalShell
@@ -23,6 +31,7 @@ export function JobsEventsAlertsPageClient({
         <JobsEventsAlertsModule
           authorizedFetch={authorizedFetch}
           initialAttentionContext={initialAttentionContext}
+          initialRetryQueueRoundTripContext={initialRetryQueueRoundTripContext}
         />
       )}
     </OperationalShell>

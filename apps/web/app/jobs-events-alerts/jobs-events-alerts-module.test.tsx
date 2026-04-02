@@ -154,10 +154,16 @@ function createMockApi({
 
 function renderJobsEventsAlertsModuleInShell({
   initialAttentionContext = null,
+  initialRetryQueueRoundTripContext = null,
 }: {
   initialAttentionContext?: {
     source: "dashboard_attention_queue";
     filter: "attention";
+  } | null;
+  initialRetryQueueRoundTripContext?: {
+    source: "activity_detail_roundtrip";
+    activityType: "job_run" | "command";
+    activityId: string;
   } | null;
 } = {}) {
   render(
@@ -170,6 +176,7 @@ function renderJobsEventsAlertsModuleInShell({
         <JobsEventsAlertsModule
           authorizedFetch={authorizedFetch}
           initialAttentionContext={initialAttentionContext}
+          initialRetryQueueRoundTripContext={initialRetryQueueRoundTripContext}
         />
       )}
     </OperationalShell>,
@@ -259,6 +266,60 @@ describe("JobsEventsAlertsModule", () => {
     expect(
       within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open commands page" })[0],
     ).toHaveAttribute("href", "/commands");
+  });
+
+  it("shows a round-trip cue on the retry queue after returning from activity detail", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderJobsEventsAlertsModuleInShell({
+      initialRetryQueueRoundTripContext: {
+        source: "activity_detail_roundtrip",
+        activityType: "job_run",
+        activityId: "job-run-1",
+      },
+    });
+
+    const retryPanel = (
+      await screen.findByRole("heading", { name: "Job runs + retry queue" })
+    ).closest("section");
+    expect(retryPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(retryPanel as HTMLElement).getByText(
+          "Returned from the job run activity detail after bounded remediation review. The retry queue remains available below for the next follow-up.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(retryPanel as HTMLElement).getByText("Retry queue round-trip"),
+      ).toBeInTheDocument();
+      expect(
+        within(retryPanel as HTMLElement).getAllByText("Job Run").length,
+      ).toBeGreaterThan(0);
+      expect(within(retryPanel as HTMLElement).getByText("job-run-1")).toBeInTheDocument();
+    });
+  });
+
+  it("does not show a round-trip cue on the retry queue during direct entry", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const retryPanel = (
+      await screen.findByRole("heading", { name: "Job runs + retry queue" })
+    ).closest("section");
+    expect(retryPanel).not.toBeNull();
+
+    expect(
+      within(retryPanel as HTMLElement).queryByText("Retry queue round-trip"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(retryPanel as HTMLElement).queryByText(
+        "Returned from the job run activity detail after bounded remediation review. The retry queue remains available below for the next follow-up.",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("lands in an attention-only monitoring context from the dashboard handoff", async () => {

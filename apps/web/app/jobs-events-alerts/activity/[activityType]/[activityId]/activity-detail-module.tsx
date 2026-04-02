@@ -182,6 +182,33 @@ function buildRetryRemediationHref({
   return `/commands?${searchParams.toString()}`;
 }
 
+function buildJobsEventsAlertsReturnHref({
+  activityType,
+  activityId,
+  returnContext,
+  isRetryWorthyActivity,
+}: {
+  activityType: ActivityType;
+  activityId: string;
+  returnContext: ActivityDetailReturnContext;
+  isRetryWorthyActivity: boolean;
+}): string {
+  if (
+    returnContext?.source !== "commands_remediation" ||
+    !isRetryWorthyActivity ||
+    activityType === "event"
+  ) {
+    return "/jobs-events-alerts";
+  }
+
+  const searchParams = new URLSearchParams({
+    retryQueueReturnSource: "activity_detail_roundtrip",
+    returnedActivityType: activityType,
+    returnedActivityId: activityId,
+  });
+  return `/jobs-events-alerts?${searchParams.toString()}`;
+}
+
 export function ActivityDetailModule({
   activityType,
   activityId,
@@ -316,6 +343,25 @@ export function ActivityDetailModule({
 
     return null;
   }, [detail]);
+  const jobsEventsAlertsReturnHref = useMemo(() => {
+    if (!detail) {
+      return "/jobs-events-alerts";
+    }
+
+    const currentStatus =
+      detail.type === "job_run"
+        ? detail.record.status
+        : detail.type === "command"
+          ? detail.record.command_status
+          : null;
+
+    return buildJobsEventsAlertsReturnHref({
+      activityType: detail.type,
+      activityId,
+      returnContext: initialReturnContext,
+      isRetryWorthyActivity: isRetryWorthyStatus(currentStatus),
+    });
+  }, [activityId, detail, initialReturnContext]);
 
   return (
     <section className="panel">
@@ -602,7 +648,7 @@ export function ActivityDetailModule({
             <p className="muted">Loading related operational surfaces...</p>
           ) : (
             <div className="artifact-row">
-              <Link className="secondary-button" href="/jobs-events-alerts">
+              <Link className="secondary-button" href={jobsEventsAlertsReturnHref}>
                 Back to jobs / events / alerts
               </Link>
               {remediationHref ? (

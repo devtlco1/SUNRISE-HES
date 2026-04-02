@@ -125,6 +125,12 @@ type AttentionLandingContext = {
   filter: "attention";
 };
 
+type RetryQueueRoundTripContext = {
+  source: "activity_detail_roundtrip";
+  activityType: "job_run" | "command";
+  activityId: string;
+};
+
 function buildJobRunTimestamp(jobRun: JobRunItem): string {
   return (
     jobRun.completed_at ??
@@ -231,9 +237,11 @@ function buildRetryRemediationHref({
 export function JobsEventsAlertsModule({
   authorizedFetch,
   initialAttentionContext = null,
+  initialRetryQueueRoundTripContext = null,
 }: {
   authorizedFetch: AuthorizedFetch;
   initialAttentionContext?: AttentionLandingContext | null;
+  initialRetryQueueRoundTripContext?: RetryQueueRoundTripContext | null;
 }) {
   const [jobRuns, setJobRuns] = useState<JobRunItem[] | null>(null);
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[] | null>(
@@ -569,6 +577,15 @@ export function JobsEventsAlertsModule({
     }
     return "All recent jobs, commands, and events visible in the current bounded monitoring scope.";
   }, [activityFilter]);
+  const retryQueueRoundTripSummary = useMemo(() => {
+    if (!initialRetryQueueRoundTripContext) {
+      return null;
+    }
+
+    const activityLabel =
+      initialRetryQueueRoundTripContext.activityType === "job_run" ? "job run" : "command";
+    return `Returned from the ${activityLabel} activity detail after bounded remediation review. The retry queue remains available below for the next follow-up.`;
+  }, [initialRetryQueueRoundTripContext]);
 
   return (
     <section className="panel">
@@ -634,6 +651,21 @@ export function JobsEventsAlertsModule({
                 Scan recent failed, timed-out, or cancelled execution contexts, then drill into the
                 existing activity detail, commands flow, or meter context for bounded follow-up.
               </p>
+
+              {initialRetryQueueRoundTripContext ? (
+                <div className="detail-stack">
+                  <p className="muted">{retryQueueRoundTripSummary}</p>
+                  <div className="artifact-row">
+                    <span className="artifact-pill">Retry queue round-trip</span>
+                    <span className="artifact-pill">
+                      {formatStatusLabel(initialRetryQueueRoundTripContext.activityType)}
+                    </span>
+                    <span className="artifact-pill">
+                      {initialRetryQueueRoundTripContext.activityId}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="command-list">
                 {retryQueueItems.length === 0 ? (

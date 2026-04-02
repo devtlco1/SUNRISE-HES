@@ -249,6 +249,12 @@ describe("ActivityDetailModule", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Retry-origin return")).toBeInTheDocument();
     expect(screen.getByText("Commands remediation")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Back to jobs / events / alerts" })).toHaveAttribute(
+        "href",
+        "/jobs-events-alerts?retryQueueReturnSource=activity_detail_roundtrip&returnedActivityType=job_run&returnedActivityId=job-run-1",
+      );
+    });
   });
 
   it("does not show a retry-origin banner during direct activity detail entry", async () => {
@@ -266,6 +272,12 @@ describe("ActivityDetailModule", () => {
         "Returned from the commands remediation context for this retry-worthy activity.",
       ),
     ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Back to jobs / events / alerts" })).toHaveAttribute(
+        "href",
+        "/jobs-events-alerts",
+      );
+    });
   });
 
   it("renders bounded event activity detail with meter linkage when available", async () => {
