@@ -115,12 +115,30 @@ function createMockApi() {
     },
   ];
 
-  const templates = [
+  const templates: Array<{
+    id: string;
+    code: string;
+    name: string;
+    category: string;
+    description: string | null;
+    payload_schema: Record<string, unknown> | null;
+    target_scope: string;
+    timeout_seconds: number;
+    max_retries: number;
+    is_active: boolean;
+  }> = [
     {
       id: "template-relay-disconnect",
       code: "relay-disconnect-template",
       name: "Relay disconnect template",
       category: "remote_disconnect",
+      description: "Default disconnect notes.",
+      payload_schema: {
+        default_bulk_notes: "Disconnect after the current approvals review.",
+      },
+      target_scope: "meter",
+      timeout_seconds: 120,
+      max_retries: 0,
       is_active: true,
     },
     {
@@ -128,6 +146,13 @@ function createMockApi() {
       code: "relay-reconnect-template",
       name: "Relay reconnect template",
       category: "remote_reconnect",
+      description: "Default reconnect notes.",
+      payload_schema: {
+        default_bulk_notes: "Reconnect after the service verification completes.",
+      },
+      target_scope: "meter",
+      timeout_seconds: 120,
+      max_retries: 0,
       is_active: true,
     },
     {
@@ -135,6 +160,13 @@ function createMockApi() {
       code: "on-demand-read-template",
       name: "On-demand read template",
       category: "on_demand_read",
+      description: "Default billing snapshot notes.",
+      payload_schema: {
+        default_bulk_notes: "Capture a billing snapshot for bounded recovery follow-up.",
+      },
+      target_scope: "meter",
+      timeout_seconds: 120,
+      max_retries: 0,
       is_active: true,
     },
     {
@@ -142,6 +174,11 @@ function createMockApi() {
       code: "profile-capture-template",
       name: "Profile capture template",
       category: "profile_capture",
+      description: null,
+      payload_schema: null,
+      target_scope: "meter",
+      timeout_seconds: 120,
+      max_retries: 0,
       is_active: true,
     },
   ];
@@ -275,6 +312,29 @@ function createMockApi() {
     }
 
     if (url.endsWith("/api/v1/command-templates")) {
+      if (init?.method === "POST") {
+        const payload = JSON.parse(String(init.body ?? "{}")) as {
+          code: string;
+          name: string;
+          category: string;
+          description?: string | null;
+          payload_schema?: Record<string, unknown> | null;
+        };
+        const createdTemplate = {
+          id: `template-saved-${templates.length + 1}`,
+          code: payload.code,
+          name: payload.name,
+          category: payload.category,
+          description: payload.description ?? null,
+          payload_schema: payload.payload_schema ?? null,
+          target_scope: "meter",
+          timeout_seconds: 120,
+          max_retries: 0,
+          is_active: true,
+        };
+        templates.push(createdTemplate);
+        return jsonResponse(createdTemplate, 201);
+      }
       return jsonResponse({ total: templates.length, items: templates });
     }
 
@@ -508,6 +568,7 @@ describe("CommandsModule", () => {
     expect(await screen.findByRole("link", { name: "Commands" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Commands command center" })).toBeInTheDocument();
     expect(screen.getByText("Bulk command wizard")).toBeInTheDocument();
+    expect(screen.getByText("Command templates")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Approvals queue" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recent approval decisions" })).toBeInTheDocument();
     expect(await screen.findByText("Approved by the duty operator.")).toBeInTheDocument();
@@ -517,6 +578,96 @@ describe("CommandsModule", () => {
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
     expect(screen.getAllByText("relay-disconnect-template")).not.toHaveLength(0);
     expect(screen.getAllByText("on-demand-read-template")).not.toHaveLength(0);
+  });
+
+  it("saves the current wizard configuration as a reusable command template", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell({
+      initialCommandFamily: "on_demand_read",
+      initialRecoveryAction: {
+        source: "readings_missing_recovery_queue",
+        issueType: "missing_billing_read_context",
+        reason: "Capture a billing snapshot after recovery follow-up.",
+        context: "SN-1002",
+      },
+    });
+
+    const bulkNotesInput = await screen.findByRole("textbox", { name: "Bulk notes" });
+    const templateNameInput = await screen.findByRole("textbox", { name: "Template name" });
+    expect(await screen.findByRole("combobox", { name: "Command family" })).toHaveValue(
+      "on_demand_read",
+    );
+    expect(bulkNotesInput).toHaveValue(
+      "Recovery action seeded from the readings missing-reads queue. Issue Missing Billing Read Context. Capture a billing snapshot after recovery follow-up. Context SN-1002.",
+    );
+    await user.type(templateNameInput, "Recovery follow-up read");
+    await user.click(screen.getByRole("button", { name: "Save current as template" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Command template saved for reuse in the bulk wizard."),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Recovery follow-up read")).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "Command template" })).toHaveValue(
+        "template-saved-5",
+      );
+    });
+
+    const templateCreateCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        input.toString().endsWith("/api/v1/command-templates") && init?.method === "POST",
+    );
+    expect(templateCreateCall).toBeDefined();
+    const requestBody = JSON.parse(String(templateCreateCall?.[1]?.body ?? "{}")) as {
+      code?: string;
+      name?: string;
+      category?: string;
+      description?: string;
+      payload_schema?: Record<string, unknown>;
+    };
+    expect(requestBody.code).toBe("recovery-follow-up-read-on-demand-read");
+    expect(requestBody.name).toBe("Recovery follow-up read");
+    expect(requestBody.category).toBe("on_demand_read");
+    expect(requestBody.description).toBe(
+      "Recovery action seeded from the readings missing-reads queue. Issue Missing Billing Read Context. Capture a billing snapshot after recovery follow-up. Context SN-1002.",
+    );
+    expect(requestBody.payload_schema?.default_bulk_notes).toBe(
+      "Recovery action seeded from the readings missing-reads queue. Issue Missing Billing Read Context. Capture a billing snapshot after recovery follow-up. Context SN-1002.",
+    );
+  });
+
+  it("reuses a saved template back into the bulk wizard", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell();
+
+    const reconnectTemplateCard = (await screen.findByText("Relay reconnect template")).closest(
+      "article",
+    );
+    expect(reconnectTemplateCard).not.toBeNull();
+
+    await user.click(
+      within(reconnectTemplateCard as HTMLElement).getByRole("button", { name: "Use template" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Template Relay reconnect template loaded into the bulk wizard.")).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "Command family" })).toHaveValue(
+        "relay_control",
+      );
+      expect(screen.getByRole("combobox", { name: "Relay operation" })).toHaveValue("reconnect");
+      expect(screen.getByRole("combobox", { name: "Command template" })).toHaveValue(
+        "template-relay-reconnect",
+      );
+      expect(screen.getByRole("textbox", { name: "Bulk notes" })).toHaveValue(
+        "Reconnect after the service verification completes.",
+      );
+    });
   });
 
   it("loads bounded command detail when a recent command is selected", async () => {

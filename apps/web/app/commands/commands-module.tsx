@@ -97,6 +97,11 @@ type CommandTemplate = {
   code: string;
   name: string;
   category: string;
+  description?: string | null;
+  payload_schema?: Record<string, unknown> | null;
+  target_scope?: string;
+  timeout_seconds?: number;
+  max_retries?: number;
   is_active: boolean;
 };
 
@@ -252,6 +257,30 @@ function buildInitialRecoveryNotes(value: RecoveryActionHandoff | null): string 
     .join(" ");
 }
 
+function buildTemplateCategory(
+  wizardFamily: BulkCommandFamily,
+  wizardRelayOperation: RelayOperation,
+): string {
+  if (wizardFamily === "relay_control") {
+    return wizardRelayOperation === "reconnect" ? "remote_reconnect" : "remote_disconnect";
+  }
+  return "on_demand_read";
+}
+
+function buildTemplateCode(name: string, category: string): string {
+  const normalizedName = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${normalizedName || "command-template"}-${category.replace(/_/g, "-")}`;
+}
+
+function extractTemplateDefaultNotes(template: CommandTemplate): string {
+  const defaultBulkNotes = template.payload_schema?.default_bulk_notes;
+  return typeof defaultBulkNotes === "string" ? defaultBulkNotes : "";
+}
+
 function sortRecentCommandsByUpdatedAt(items: CommandRecentItem[]): CommandRecentItem[] {
   return [...items].sort(
     (left, right) =>
@@ -316,6 +345,8 @@ export function CommandsModule({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [bulkActionError, setBulkActionError] = useState<string | null>(null);
   const [bulkActionSuccess, setBulkActionSuccess] = useState<string | null>(null);
+  const [templateActionError, setTemplateActionError] = useState<string | null>(null);
+  const [templateActionSuccess, setTemplateActionSuccess] = useState<string | null>(null);
   const [bulkSubmissionResult, setBulkSubmissionResult] = useState<BulkCommandResponse | null>(
     null,
   );
@@ -324,6 +355,7 @@ export function CommandsModule({
   const [isLoadingRecentCommands, setIsLoadingRecentCommands] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isLoadingWizardContext, setIsLoadingWizardContext] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isLoadingPendingApprovals, setIsLoadingPendingApprovals] = useState(false);
   const [isLoadingApprovalHistory, setIsLoadingApprovalHistory] = useState(false);
   const [isSubmittingBulkRequest, setIsSubmittingBulkRequest] = useState(false);
@@ -337,6 +369,7 @@ export function CommandsModule({
   const [wizardOnDemandReadOperation] =
     useState<OnDemandReadOperation>("read_billing_snapshot");
   const [wizardTemplateId, setWizardTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
   const [wizardMeterSearchQuery, setWizardMeterSearchQuery] = useState("");
   const [selectedWizardMeterIds, setSelectedWizardMeterIds] = useState<string[]>([]);
   const [isSelectFilteredConfirmationVisible, setIsSelectFilteredConfirmationVisible] =
@@ -544,6 +577,17 @@ export function CommandsModule({
     }
     return activeTemplates.filter((template) => template.category === "on_demand_read");
   }, [availableTemplates, wizardFamily, wizardRelayOperation]);
+  const reusableCommandTemplates = useMemo(
+    () =>
+      availableTemplates.filter(
+        (template) =>
+          template.is_active &&
+          (template.category === "on_demand_read" ||
+            template.category === "remote_disconnect" ||
+            template.category === "remote_reconnect"),
+      ),
+    [availableTemplates],
+  );
 
   const filteredWizardMeters = useMemo(() => {
     const normalizedQuery = wizardMeterSearchQuery.trim().toLowerCase();
@@ -774,6 +818,65 @@ export function CommandsModule({
   const restoreHandedOffWizardMeters = useCallback(() => {
     setSelectedWizardMeterIds(handedOffWizardMeters.map((meter) => meter.id));
   }, [handedOffWizardMeters]);
+  const applyTemplateToWizard = useCallback((template: CommandTemplate) => {
+    if (template.category === "on_demand_read") {
+      setWizardFamily("on_demand_read");
+    } else if (template.category === "remote_disconnect") {
+      setWizardFamily("relay_control");
+      setWizardRelayOperation("disconnect");
+    } else if (template.category === "remote_reconnect") {
+      setWizardFamily("relay_control");
+      setWizardRelayOperation("reconnect");
+    } else {
+      return;
+    }
+
+    setWizardTemplateId(template.id);
+    setBulkNotes(extractTemplateDefaultNotes(template));
+    setTemplateActionError(null);
+    setTemplateActionSuccess(`Template ${template.name} loaded into the bulk wizard.`);
+  }, []);
+  const handleTemplateSave = useCallback(async () => {
+    const trimmedTemplateName = templateName.trim();
+    if (!trimmedTemplateName) {
+      setTemplateActionError("Enter a template name before saving the current wizard configuration.");
+      setTemplateActionSuccess(null);
+      return;
+    }
+
+    const category = buildTemplateCategory(wizardFamily, wizardRelayOperation);
+    const defaultBulkNotes = bulkNotes.trim();
+    setIsSavingTemplate(true);
+    setTemplateActionError(null);
+    setTemplateActionSuccess(null);
+
+    try {
+      const response = await authorizedFetch<CommandTemplate>("/api/v1/command-templates", {
+        method: "POST",
+        body: JSON.stringify({
+          code: buildTemplateCode(trimmedTemplateName, category),
+          name: trimmedTemplateName,
+          category,
+          description: defaultBulkNotes || undefined,
+          payload_schema: {
+            default_bulk_notes: defaultBulkNotes,
+          },
+        }),
+      });
+      setAvailableTemplates((currentTemplates) =>
+        [...currentTemplates, response].sort((left, right) => left.name.localeCompare(right.name)),
+      );
+      setWizardTemplateId(response.id);
+      setTemplateName("");
+      setTemplateActionSuccess("Command template saved for reuse in the bulk wizard.");
+    } catch (error) {
+      setTemplateActionError(
+        error instanceof Error ? error.message : "Unable to save the current command template.",
+      );
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  }, [authorizedFetch, bulkNotes, templateName, wizardFamily, wizardRelayOperation]);
 
   const handleBulkSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -997,6 +1100,115 @@ export function CommandsModule({
                       value={bulkNotes}
                     />
                   </label>
+                </div>
+
+                <div className="detail-stack">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Command templates</h3>
+                      <p className="muted">
+                        Save the current bulk wizard configuration for bounded reuse across
+                        relay control and on-demand read only.
+                      </p>
+                    </div>
+                    <span className="artifact-pill">
+                      {reusableCommandTemplates.length} reusable template
+                      {reusableCommandTemplates.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  {templateActionError ? <p className="error-banner">{templateActionError}</p> : null}
+                  {templateActionSuccess ? (
+                    <p className="success-banner">{templateActionSuccess}</p>
+                  ) : null}
+
+                  <div className="inline-form">
+                    <label className="field">
+                      <span>Template name</span>
+                      <input
+                        aria-label="Template name"
+                        onChange={(event) => setTemplateName(event.target.value)}
+                        placeholder="Recovery follow-up billing read"
+                        type="text"
+                        value={templateName}
+                      />
+                    </label>
+                    <div className="field">
+                      <span>Derived template code</span>
+                      <strong>
+                        {buildTemplateCode(
+                          templateName || "command-template",
+                          buildTemplateCategory(wizardFamily, wizardRelayOperation),
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="artifact-row">
+                    <span className="artifact-pill">
+                      {formatCommandCategoryLabel(
+                        buildTemplateCategory(wizardFamily, wizardRelayOperation),
+                      )}
+                    </span>
+                    <button
+                      className="secondary-button"
+                      disabled={isSavingTemplate || templateName.trim().length < 2}
+                      onClick={handleTemplateSave}
+                      type="button"
+                    >
+                      {isSavingTemplate ? "Saving template..." : "Save current as template"}
+                    </button>
+                  </div>
+
+                  {reusableCommandTemplates.length === 0 ? (
+                    <p className="muted">
+                      No reusable relay control or on-demand read templates are available yet.
+                    </p>
+                  ) : (
+                    <div className="command-list">
+                      {reusableCommandTemplates.map((template) => (
+                        <article key={template.id} className="command-list-item">
+                          <div className="command-list-item-header">
+                            <strong>{template.name}</strong>
+                            <div className="artifact-row">
+                              <span className="artifact-pill">
+                                {formatCommandCategoryLabel(template.category)}
+                              </span>
+                              {wizardTemplateId === template.id ? (
+                                <span className="artifact-pill">Selected in wizard</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>{template.code}</span>
+                            <span>
+                              {template.target_scope
+                                ? `Target scope ${formatStatusLabel(template.target_scope)}`
+                                : "Target scope Meter"}
+                            </span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>
+                              {extractTemplateDefaultNotes(template) || "No default bulk notes saved"}
+                            </span>
+                            <span>
+                              Timeout {template.timeout_seconds ?? 120}s • Retries{" "}
+                              {template.max_retries ?? 0}
+                            </span>
+                          </div>
+                          <div className="artifact-row">
+                            <button
+                              className="secondary-button"
+                              onClick={() => applyTemplateToWizard(template)}
+                              type="button"
+                            >
+                              Use template
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="commands-selection-summary">
