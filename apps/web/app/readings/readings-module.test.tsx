@@ -428,6 +428,22 @@ describe("ReadingsModule", () => {
           name: "Review recent reading context",
         }),
       ).toHaveAttribute("href", "#recent-reading-context-section");
+      const recoveryActionLinks = within(billingPanel as HTMLElement).getAllByRole("link", {
+        name: "Open on-demand read handoff",
+      });
+      expect(recoveryActionLinks.length).toBeGreaterThan(0);
+      expect(recoveryActionLinks[0].getAttribute("href")).toContain("/commands?meterId=meter-2");
+      expect(recoveryActionLinks[0].getAttribute("href")).toContain(
+        "commandFamily=on_demand_read",
+      );
+      expect(recoveryActionLinks[0].getAttribute("href")).toContain(
+        "recoveryIssueType=missing_billing_read_context",
+      );
+      expect(
+        within(billingPanel as HTMLElement).getAllByText(
+          "Opens the existing commands wizard with approvals behavior unchanged.",
+        ).length,
+      ).toBeGreaterThan(0);
       expect(
         within(billingPanel as HTMLElement).getByText(
           "No billing reads available for the selected meter yet. The selected meter summary above reflects the current missing billing-read context.",
@@ -727,17 +743,29 @@ describe("ReadingsModule", () => {
     renderReadingsModuleInShell();
 
     expect(await screen.findByText("Missing reads / recovery queue")).toBeInTheDocument();
-    expect(screen.getByText("Stale Interval Window")).toBeInTheDocument();
-    expect(screen.getByText("Lag 30 min")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "The latest interval window ends before the most recent raw reading update, indicating a stale interval horizon.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Review interval reads" })).toHaveAttribute(
-      "href",
-      "#interval-reads-section",
-    );
+    await waitFor(() => {
+      expect(screen.getAllByText(includesText("Stale Interval Window")).length).toBeGreaterThan(0);
+      expect(screen.getByText("Lag 30 min")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "The latest interval window ends before the most recent raw reading update, indicating a stale interval horizon.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Review interval reads" })).toHaveAttribute(
+        "href",
+        "#interval-reads-section",
+      );
+      const staleRecoveryActionLink = screen.getByRole("link", {
+        name: "Open on-demand read handoff",
+      });
+      expect(staleRecoveryActionLink.getAttribute("href")).toContain("/commands?meterId=meter-1");
+      expect(staleRecoveryActionLink.getAttribute("href")).toContain(
+        "commandFamily=on_demand_read",
+      );
+      expect(staleRecoveryActionLink.getAttribute("href")).toContain(
+        "recoveryIssueType=stale_interval_window",
+      );
+    });
   });
 
   it("renders a bounded empty validation state when no issues are derived", async () => {

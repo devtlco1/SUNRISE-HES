@@ -454,10 +454,19 @@ function createMockApi() {
 }
 
 function renderCommandsModuleInShell({
+  initialCommandFamily = null,
   initialMeterIds = [],
+  initialRecoveryAction = null,
   initialMeterScopeSource = null,
 }: {
+  initialCommandFamily?: "relay_control" | "on_demand_read" | null;
   initialMeterIds?: string[];
+  initialRecoveryAction?: {
+    source: "readings_missing_recovery_queue";
+    issueType: string | null;
+    reason: string | null;
+    context: string | null;
+  } | null;
   initialMeterScopeSource?: "visible_filtered_result_set" | null;
 } = {}) {
   render(
@@ -469,7 +478,9 @@ function renderCommandsModuleInShell({
       {({ authorizedFetch }) => (
         <CommandsModule
           authorizedFetch={authorizedFetch}
+          initialCommandFamily={initialCommandFamily}
           initialMeterIds={initialMeterIds}
+          initialRecoveryAction={initialRecoveryAction}
           initialMeterScopeSource={initialMeterScopeSource}
         />
       )}
@@ -654,6 +665,63 @@ describe("CommandsModule", () => {
         }),
       ).toBeInTheDocument();
     });
+  });
+
+  it("hydrates the bulk wizard from a readings recovery handoff into on-demand read", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell({
+      initialCommandFamily: "on_demand_read",
+      initialMeterIds: ["meter-2"],
+      initialRecoveryAction: {
+        source: "readings_missing_recovery_queue",
+        issueType: "missing_billing_read_context",
+        reason: "No billing read is currently available for the selected meter.",
+        context: "SN-1002",
+      },
+    });
+
+    expect(
+      (await screen.findAllByText(includesText("Recovery action handoff"))).length,
+    ).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Command family" })).toHaveValue(
+        "on_demand_read",
+      );
+      expect(screen.getByRole("combobox", { name: "Command template" })).toHaveValue(
+        "template-on-demand-read",
+      );
+      expect(screen.getByRole("textbox", { name: "Bulk notes" })).toHaveValue(
+        "Recovery action seeded from the readings missing-reads queue. Issue Missing Billing Read Context. No billing read is currently available for the selected meter. Context SN-1002.",
+      );
+      expect(screen.getByText("1 handed-off target loaded")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Submit for approval" })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Submit for approval" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("1 bulk command requests submitted for approval.")).toBeInTheDocument();
+      expect(screen.getAllByText("Submitted For Approval")).not.toHaveLength(0);
+    });
+
+    const bulkRequestCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        input.toString().endsWith("/api/v1/commands/bulk-requests") && init?.method === "POST",
+    );
+    expect(bulkRequestCall).toBeDefined();
+    const requestBody = JSON.parse(String(bulkRequestCall?.[1]?.body ?? "{}")) as {
+      family?: string;
+      meter_ids?: string[];
+      on_demand_read_operation?: string;
+      notes?: string;
+    };
+    expect(requestBody.family).toBe("on_demand_read");
+    expect(requestBody.meter_ids).toEqual(["meter-2"]);
+    expect(requestBody.on_demand_read_operation).toBe("read_billing_snapshot");
+    expect(requestBody.notes).toContain("Missing Billing Read Context");
   });
 
   it("submits a bounded bulk command request and shows it in the approvals queue", async () => {

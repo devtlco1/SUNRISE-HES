@@ -14,6 +14,12 @@ type ApprovalFamilyFilter = "all" | BulkCommandFamily;
 type ApprovalHistoryFilter = "all_decisions" | "approved" | "rejected";
 type RelayOperation = "disconnect" | "reconnect";
 type OnDemandReadOperation = "read_billing_snapshot";
+type RecoveryActionHandoff = {
+  source: "readings_missing_recovery_queue";
+  issueType: string | null;
+  reason: string | null;
+  context: string | null;
+};
 
 type CommandRecentItem = {
   command_id: string;
@@ -213,6 +219,39 @@ function formatProjectionKey(value: string): string {
     .join(" ");
 }
 
+function ensureSentence(value: string | null): string | null {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.endsWith(".") || trimmed.endsWith("!") || trimmed.endsWith("?")) {
+    return trimmed;
+  }
+  return `${trimmed}.`;
+}
+
+function formatRecoveryActionSource(value: RecoveryActionHandoff["source"]): string {
+  switch (value) {
+    case "readings_missing_recovery_queue":
+      return "Readings missing-reads queue";
+  }
+}
+
+function buildInitialRecoveryNotes(value: RecoveryActionHandoff | null): string {
+  if (!value) {
+    return "";
+  }
+
+  return [
+    "Recovery action seeded from the readings missing-reads queue.",
+    value.issueType ? ensureSentence(`Issue ${formatCommandCategoryLabel(value.issueType)}`) : null,
+    ensureSentence(value.reason),
+    value.context ? ensureSentence(`Context ${value.context}`) : null,
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join(" ");
+}
+
 function sortRecentCommandsByUpdatedAt(items: CommandRecentItem[]): CommandRecentItem[] {
   return [...items].sort(
     (left, right) =>
@@ -252,11 +291,15 @@ function haveSameMeterIds(left: string[], right: string[]): boolean {
 
 export function CommandsModule({
   authorizedFetch,
+  initialCommandFamily = null,
   initialMeterIds = [],
+  initialRecoveryAction = null,
   initialMeterScopeSource = null,
 }: {
   authorizedFetch: AuthorizedFetch;
+  initialCommandFamily?: BulkCommandFamily | null;
   initialMeterIds?: string[];
+  initialRecoveryAction?: RecoveryActionHandoff | null;
   initialMeterScopeSource?: "visible_filtered_result_set" | null;
 }) {
   const [recentFamilyFilter, setRecentFamilyFilter] = useState<FamilyFilter>("all");
@@ -287,7 +330,9 @@ export function CommandsModule({
   const [activeApprovalActionCommandId, setActiveApprovalActionCommandId] = useState<
     string | null
   >(null);
-  const [wizardFamily, setWizardFamily] = useState<BulkCommandFamily>("relay_control");
+  const [wizardFamily, setWizardFamily] = useState<BulkCommandFamily>(
+    initialCommandFamily ?? "relay_control",
+  );
   const [wizardRelayOperation, setWizardRelayOperation] = useState<RelayOperation>("disconnect");
   const [wizardOnDemandReadOperation] =
     useState<OnDemandReadOperation>("read_billing_snapshot");
@@ -296,7 +341,7 @@ export function CommandsModule({
   const [selectedWizardMeterIds, setSelectedWizardMeterIds] = useState<string[]>([]);
   const [isSelectFilteredConfirmationVisible, setIsSelectFilteredConfirmationVisible] =
     useState(false);
-  const [bulkNotes, setBulkNotes] = useState("");
+  const [bulkNotes, setBulkNotes] = useState(() => buildInitialRecoveryNotes(initialRecoveryAction));
   const [approvalFamilyFilter, setApprovalFamilyFilter] =
     useState<ApprovalFamilyFilter>("all");
   const [approvalHistoryFilter, setApprovalHistoryFilter] =
@@ -565,6 +610,18 @@ export function CommandsModule({
 
     return `${handedOffMeterIds.length} handed-off target${handedOffMeterIds.length === 1 ? "" : "s"} arrived in the bulk wizard. Review the scope below before continuing.`;
   }, [handedOffMeterIds, initialMeterScopeSource]);
+  const recoveryActionSummary = useMemo(() => {
+    if (!initialRecoveryAction) {
+      return null;
+    }
+
+    const sourceLabel = formatRecoveryActionSource(initialRecoveryAction.source);
+    const issueLabel = initialRecoveryAction.issueType
+      ? formatCommandCategoryLabel(initialRecoveryAction.issueType)
+      : "Recovery issue";
+
+    return `${sourceLabel} opened this handoff with On-demand read billing snapshot preselected for ${handedOffMeterIds.length === 1 ? "the handed-off meter" : "the handed-off meter scope"}. ${issueLabel} remains visible here so you can review target and notes before submitting for approval.`;
+  }, [handedOffMeterIds.length, initialRecoveryAction]);
   const shouldConfirmSelectFilteredReplacement = useMemo(
     () =>
       selectedWizardMeterIds.length > 0 &&
@@ -959,6 +1016,21 @@ export function CommandsModule({
                       : "On-demand read billing snapshot"}
                   </span>
                 </div>
+
+                {initialRecoveryAction ? (
+                  <div className="detail-stack">
+                    {recoveryActionSummary ? <p className="muted">{recoveryActionSummary}</p> : null}
+                    <div className="artifact-row">
+                      <span className="artifact-pill">Recovery action handoff</span>
+                      <span className="artifact-pill">On-demand read billing snapshot</span>
+                      {initialRecoveryAction.issueType ? (
+                        <span className="artifact-pill">
+                          {formatCommandCategoryLabel(initialRecoveryAction.issueType)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
 
                 {handedOffMeterIds.length > 0 ? (
                   <div className="detail-stack">

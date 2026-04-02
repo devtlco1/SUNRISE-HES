@@ -134,6 +134,18 @@ type MissingReadsIssue = {
   related_action_label: string;
 };
 
+function buildRecoveryActionHref(meterId: string, issue: MissingReadsIssue): string {
+  const searchParams = new URLSearchParams({
+    meterId,
+    commandFamily: "on_demand_read",
+    recoverySource: "readings_missing_recovery_queue",
+    recoveryIssueType: issue.issue_type,
+    recoveryReason: issue.reason,
+    recoveryContext: issue.related_context,
+  });
+  return `/commands?${searchParams.toString()}`;
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return "Not available";
@@ -1504,9 +1516,20 @@ export function ReadingsModule({
                                 <div className="muted">{issue.related_source}</div>
                               </td>
                               <td>
-                                <Link className="secondary-button" href={issue.related_section_href}>
-                                  {issue.related_action_label}
-                                </Link>
+                                <div className="artifact-row">
+                                  <Link className="secondary-button" href={issue.related_section_href}>
+                                    {issue.related_action_label}
+                                  </Link>
+                                  <Link
+                                    className="primary-button"
+                                    href={buildRecoveryActionHref(selectedMeter.id, issue)}
+                                  >
+                                    Open on-demand read handoff
+                                  </Link>
+                                </div>
+                                <div className="muted">
+                                  Opens the existing commands wizard with approvals behavior unchanged.
+                                </div>
                               </td>
                             </tr>
                           ))}
