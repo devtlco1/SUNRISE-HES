@@ -120,6 +120,20 @@ type ValidationIssue = {
   related_action_label: string;
 };
 
+type MissingReadsIssue = {
+  id: string;
+  issue_type: string;
+  severity: ValidationIssueSeverity;
+  state: "open";
+  missing_window: string;
+  reason: string;
+  observed_at: string | null;
+  related_context: string;
+  related_source: string;
+  related_section_href: string;
+  related_action_label: string;
+};
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return "Not available";
@@ -704,6 +718,110 @@ export function ReadingsModule({
     loadProfileIntervals,
     selectedMeter,
   ]);
+  const missingReadsIssues = useMemo(() => {
+    if (!selectedMeter) {
+      return [] as MissingReadsIssue[];
+    }
+
+    const nextIssues: MissingReadsIssue[] = [];
+
+    if (billingSnapshots.length === 0) {
+      nextIssues.push({
+        id: `missing-billing-${selectedMeter.id}`,
+        issue_type: "missing_billing_read_context",
+        severity: "warning",
+        state: "open",
+        missing_window: "Current bounded billing scope",
+        reason: "No billing read is currently available for the selected meter.",
+        observed_at: null,
+        related_context: selectedMeter.serial_number,
+        related_source: "Billing reads section",
+        related_section_href: "#billing-reads-section",
+        related_action_label: "Review billing reads",
+      });
+    }
+
+    if (loadProfileChannels.length > 0 && loadProfileIntervals.length === 0) {
+      nextIssues.push({
+        id: `missing-intervals-${selectedMeter.id}`,
+        issue_type: "missing_recent_interval_records",
+        severity: "critical",
+        state: "open",
+        missing_window: "Recent interval window missing",
+        reason:
+          "No interval records are available even though interval channel context exists for the selected meter.",
+        observed_at: null,
+        related_context: `${selectedMeter.serial_number} • ${intervalChannelsSummary}`,
+        related_source: "Interval reads section",
+        related_section_href: "#interval-reads-section",
+        related_action_label: "Review interval reads",
+      });
+    }
+
+    if (meterReadings.length === 0) {
+      nextIssues.push({
+        id: `missing-recent-reading-${selectedMeter.id}`,
+        issue_type: "missing_recent_reading_update",
+        severity: "warning",
+        state: "open",
+        missing_window: "Recent raw reading unavailable",
+        reason: "No recent raw reading update is available for the selected meter.",
+        observed_at: null,
+        related_context: selectedMeter.serial_number,
+        related_source: "Recent reading context",
+        related_section_href: "#recent-reading-context-section",
+        related_action_label: "Review recent reading context",
+      });
+    }
+
+    if (latestInterval && latestReading) {
+      const staleGapMs =
+        new Date(latestReading.captured_at).getTime() -
+        new Date(latestInterval.interval_end).getTime();
+
+      if (staleGapMs > 0) {
+        nextIssues.push({
+          id: `stale-interval-window-${selectedMeter.id}`,
+          issue_type: "stale_interval_window",
+          severity: "warning",
+          state: "open",
+          missing_window: `Lag ${formatDurationFromMs(staleGapMs)}`,
+          reason:
+            "The latest interval window ends before the most recent raw reading update, indicating a stale interval horizon.",
+          observed_at: latestReading.captured_at,
+          related_context: latestIntervalChannel
+            ? `${latestIntervalChannel.channel_code} • ${formatIntervalWindow(latestInterval)}`
+            : formatIntervalWindow(latestInterval),
+          related_source: "Interval reads section",
+          related_section_href: "#interval-reads-section",
+          related_action_label: "Review interval reads",
+        });
+      }
+    }
+
+    return nextIssues.sort((left, right) => {
+      const severityWeight =
+        (left.severity === "critical" ? 0 : 1) -
+        (right.severity === "critical" ? 0 : 1);
+      if (severityWeight !== 0) {
+        return severityWeight;
+      }
+
+      const rightTime = right.observed_at ? new Date(right.observed_at).getTime() : 0;
+      const leftTime = left.observed_at ? new Date(left.observed_at).getTime() : 0;
+      return rightTime - leftTime;
+    });
+  }, [
+    billingSnapshots.length,
+    intervalChannelsSummary,
+    latestInterval,
+    latestIntervalChannel,
+    latestReading,
+    loadProfileChannels.length,
+    loadProfileIntervals.length,
+    meterReadings.length,
+    selectedMeter,
+  ]);
 
   const overviewCards = useMemo(
     () => [
@@ -780,6 +898,15 @@ export function ReadingsModule({
             : `No validation issues derived for ${selectedMeter.serial_number}`
           : "No selected meter validation context",
       },
+      {
+        label: "Missing reads in focus",
+        value: String(missingReadsIssues.length),
+        note: selectedMeter
+          ? missingReadsIssues.length > 0
+            ? `${formatCountLabel(missingReadsIssues.length, "recovery issue", "recovery issues")} derived for ${selectedMeter.serial_number}`
+            : `No missing reads derived for ${selectedMeter.serial_number}`
+          : "No selected meter recovery context",
+      },
     ],
     [
       billingSnapshots.length,
@@ -795,6 +922,7 @@ export function ReadingsModule({
       loadProfileIntervals.length,
       meterReadings.length,
       meterSearchQuery,
+      missingReadsIssues.length,
       selectedMeter,
       selectedMeterSignalLabel,
       selectedMeterStatusLabel,
@@ -1010,6 +1138,9 @@ export function ReadingsModule({
                     </span>
                     <span className="artifact-pill">
                       {validationIssues.length} validation issues
+                    </span>
+                    <span className="artifact-pill">
+                      {missingReadsIssues.length} missing reads
                     </span>
                     <span className="artifact-pill">
                       {meterReadings.length} recent raw readings
@@ -1313,6 +1444,78 @@ export function ReadingsModule({
                   )}
                 </section>
 
+                <section className="subpanel" id="missing-reads-recovery-section">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Missing reads / recovery queue</h3>
+                      <p className="muted">
+                        Derived recovery queue for the selected meter using current
+                        billing, interval, and raw-reading context only.
+                      </p>
+                    </div>
+                    <span className="artifact-pill">
+                      {missingReadsIssues.length} open recovery issues
+                    </span>
+                  </div>
+
+                  {missingReadsIssues.length === 0 ? (
+                    <p className="muted">
+                      No missing reads or recovery issues match the current bounded selected-meter scope.
+                    </p>
+                  ) : (
+                    <div className="readings-table-shell">
+                      <table className="readings-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Issue</th>
+                            <th scope="col">Severity</th>
+                            <th scope="col">State</th>
+                            <th scope="col">Missing window</th>
+                            <th scope="col">Observed</th>
+                            <th scope="col">Context</th>
+                            <th scope="col">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {missingReadsIssues.map((issue) => (
+                            <tr key={issue.id}>
+                              <td>
+                                <strong>{formatValidationIssueType(issue.issue_type)}</strong>
+                                <div className="muted">{issue.reason}</div>
+                              </td>
+                              <td>
+                                <span
+                                  className={`status-pill ${buildValidationSeverityTone(
+                                    issue.severity,
+                                  )}`}
+                                >
+                                  {formatStatusLabel(issue.severity)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className="status-pill warning">
+                                  {formatStatusLabel(issue.state)}
+                                </span>
+                              </td>
+                              <td>{issue.missing_window}</td>
+                              <td>{formatDateTime(issue.observed_at)}</td>
+                              <td>
+                                <strong>{issue.related_context}</strong>
+                                <div className="muted">{issue.related_source}</div>
+                              </td>
+                              <td>
+                                <Link className="secondary-button" href={issue.related_section_href}>
+                                  {issue.related_action_label}
+                                </Link>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
                 <div className="detail-grid">
                   <div className="stat-card">
                     <span className="stat-label">Meter ID</span>
@@ -1446,7 +1649,7 @@ export function ReadingsModule({
                   )}
                 </section>
 
-                <section className="subpanel">
+                <section className="subpanel" id="recent-reading-context-section">
                   <div className="section-heading">
                     <div>
                       <h3>Recent reading context</h3>
