@@ -18,14 +18,24 @@ function createMockApi({
       id: "job-run-1",
       job_definition_id: "job-definition-1",
       target_meter_id: "meter-1",
+      target_endpoint_id: null,
       related_command_id: "command-1",
       scheduled_for: "2026-03-31T09:55:00.000Z",
       available_at: "2026-03-31T09:55:00.000Z",
       claimed_at: "2026-03-31T09:56:00.000Z",
+      claim_expires_at: null,
+      worker_identifier: "worker-1",
       started_at: "2026-03-31T09:57:00.000Z",
       completed_at: null,
+      cancelled_at: null,
       status: "failed",
+      retry_count: 1,
+      max_retries: 3,
+      request_payload: { request: "payload" },
+      result_summary: { error: "Association rejected" },
+      latest_error_code: "AUTH_FAILED",
       latest_error_message: "Association rejected",
+      correlation_id: "job-correlation-1",
       related_command: {
         id: "command-1",
         current_status: "failed",
@@ -41,6 +51,7 @@ function createMockApi({
       command_status: "failed",
       meter_id: "meter-1",
       command_template_code: "profile-capture-template",
+      latest_command_execution_attempt_status: "failed",
       family_specific_outcome_summary: {
         terminal_status_category: "rejected",
       },
@@ -52,6 +63,7 @@ function createMockApi({
       command_status: "queued",
       meter_id: "meter-2",
       command_template_code: "relay-disconnect-template",
+      latest_command_execution_attempt_status: "queued",
       family_specific_outcome_summary: {
         relay_control_operation: "disconnect",
         relay_control_execution_outcome: "pending",
@@ -192,7 +204,45 @@ describe("JobsEventsAlertsModule", () => {
       expect(screen.getByText("Recent job runs loaded")).toBeInTheDocument();
       expect(screen.getByText("Recent events loaded")).toBeInTheDocument();
       expect(screen.getByText("Derived alerts in current view")).toBeInTheDocument();
+      expect(screen.getByText("Retry-worthy execution contexts")).toBeInTheDocument();
     });
+  });
+
+  it("renders a bounded job runs and retry queue surface with retry and attempt visibility", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const retryPanel = (
+      await screen.findByRole("heading", { name: "Job runs + retry queue" })
+    ).closest("section");
+    expect(retryPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(retryPanel as HTMLElement).getByText("Job runs with retry capacity"),
+      ).toBeInTheDocument();
+      expect(within(retryPanel as HTMLElement).getByText("Retries 1/3")).toBeInTheDocument();
+      expect(
+        within(retryPanel as HTMLElement).getByText(
+          "2 retry slots remaining in the current bounded runtime budget.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(retryPanel as HTMLElement).getByText("Latest attempt Failed"),
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open retry detail" })[0],
+    ).toHaveAttribute("href", "/jobs-events-alerts/activity/command/command-1");
+    expect(
+      within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open retry detail" })[1],
+    ).toHaveAttribute("href", "/jobs-events-alerts/activity/job_run/job-run-1");
+    expect(
+      within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open commands page" })[0],
+    ).toHaveAttribute("href", "/commands");
   });
 
   it("lands in an attention-only monitoring context from the dashboard handoff", async () => {
@@ -307,6 +357,7 @@ describe("JobsEventsAlertsModule", () => {
     expect(
       await screen.findByText("Loading jobs, events, and alerts overview..."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Loading job runs and retry queue...")).toBeInTheDocument();
     expect(screen.getByText("Loading recent operational activity...")).toBeInTheDocument();
   });
 
@@ -323,13 +374,22 @@ describe("JobsEventsAlertsModule", () => {
     const alertsPanel = (
       await screen.findByRole("heading", { name: "Derived alerts" })
     ).closest("section");
+    const retryPanel = screen
+      .getByRole("heading", { name: "Job runs + retry queue" })
+      .closest("section");
     const activityPanel = screen
       .getByRole("heading", { name: "Recent operational activity" })
       .closest("section");
     expect(alertsPanel).not.toBeNull();
+    expect(retryPanel).not.toBeNull();
     expect(activityPanel).not.toBeNull();
 
     await waitFor(() => {
+      expect(
+        within(retryPanel as HTMLElement).getByText(
+          "No retry-worthy job runs or problematic command execution contexts are currently visible.",
+        ),
+      ).toBeInTheDocument();
       expect(
         within(alertsPanel as HTMLElement).getByText(
           "No alert-like operational activity is currently visible.",
@@ -353,6 +413,7 @@ describe("JobsEventsAlertsModule", () => {
           command_status: "queued",
           meter_id: "meter-2",
           command_template_code: "relay-disconnect-template",
+          latest_command_execution_attempt_status: "queued",
           family_specific_outcome_summary: {
             relay_control_operation: "disconnect",
             relay_control_execution_outcome: "pending",

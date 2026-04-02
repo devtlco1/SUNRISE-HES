@@ -15,14 +15,24 @@ type JobRunItem = {
   id: string;
   job_definition_id: string;
   target_meter_id: string | null;
+  target_endpoint_id: string | null;
   related_command_id: string | null;
   scheduled_for: string;
   available_at: string;
   claimed_at: string | null;
+  claim_expires_at: string | null;
+  worker_identifier: string | null;
   started_at: string | null;
   completed_at: string | null;
+  cancelled_at: string | null;
   status: string;
+  retry_count: number;
+  max_retries: number;
+  request_payload: Record<string, unknown> | null;
+  result_summary: Record<string, unknown> | null;
+  latest_error_code: string | null;
   latest_error_message: string | null;
+  correlation_id: string | null;
   related_command: {
     id: string;
     current_status: string;
@@ -42,6 +52,7 @@ type CommandRecentItem = {
   command_status: string;
   meter_id: string;
   command_template_code: string;
+  latest_command_execution_attempt_status: string | null;
   family_specific_outcome_summary: Record<string, string | null>;
   latest_updated_at: string;
 };
@@ -90,6 +101,22 @@ type AlertItem = {
   timestamp: string;
   status: string;
   targetHref: string | null;
+};
+
+type RetryQueueItem = {
+  id: string;
+  sourceType: "job_run" | "command";
+  title: string;
+  category: string;
+  status: string;
+  timestamp: string;
+  meterId: string | null;
+  reason: string;
+  attemptSummary: string;
+  retrySummary: string;
+  detailHref: string;
+  meterHref: string | null;
+  commandsHref: string | null;
 };
 
 type AttentionLandingContext = {
@@ -150,6 +177,23 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
     return "warning";
   }
   return "neutral";
+}
+
+function isRetryWorthyStatus(value: string | null): boolean {
+  return ["failed", "timed_out", "cancelled"].includes(value ?? "");
+}
+
+function formatRetrySummary(retryCount: number, maxRetries: number): string {
+  if (maxRetries <= 0) {
+    return "No automatic retry budget configured in the current bounded runtime flow.";
+  }
+
+  if (retryCount < maxRetries) {
+    const remaining = maxRetries - retryCount;
+    return `${remaining} retry slot${remaining === 1 ? "" : "s"} remaining in the current bounded runtime budget.`;
+  }
+
+  return "Retry budget exhausted in the current bounded runtime budget.";
 }
 
 export function JobsEventsAlertsModule({
@@ -231,7 +275,7 @@ export function JobsEventsAlertsModule({
           `Job run ${jobRun.id.slice(0, 8)}`,
         category: "job run",
         status: jobRun.status,
-        isAttentionItem: ["failed", "timed_out", "cancelled"].includes(jobRun.status),
+        isAttentionItem: isRetryWorthyStatus(jobRun.status),
         meterId: jobRun.target_meter_id,
         timestamp: buildJobRunTimestamp(jobRun),
         summary:
@@ -252,7 +296,7 @@ export function JobsEventsAlertsModule({
         title: command.command_template_code,
         category: command.command_family,
         status: command.command_status,
-        isAttentionItem: ["failed", "timed_out", "cancelled"].includes(command.command_status),
+        isAttentionItem: isRetryWorthyStatus(command.command_status),
         meterId: command.meter_id,
         timestamp: command.latest_updated_at,
         summary: formatCommandSummary(command.family_specific_outcome_summary),
@@ -350,6 +394,68 @@ export function JobsEventsAlertsModule({
 
     return sortByTimestampDesc(alerts).slice(0, 5);
   }, [jobRuns, recentCommands, recentEvents]);
+  const retryQueueItems = useMemo(() => {
+    const items: RetryQueueItem[] = [];
+
+    for (const jobRun of jobRuns ?? []) {
+      if (!isRetryWorthyStatus(jobRun.status)) {
+        continue;
+      }
+
+      items.push({
+        id: `job-run-${jobRun.id}`,
+        sourceType: "job_run",
+        title:
+          jobRun.related_command?.command_template_code ?? `Job run ${jobRun.id.slice(0, 8)}`,
+        category: "job run",
+        status: jobRun.status,
+        timestamp: buildJobRunTimestamp(jobRun),
+        meterId: jobRun.target_meter_id,
+        reason:
+          jobRun.latest_error_message ??
+          jobRun.latest_error_code ??
+          `Job run ${formatStatusLabel(jobRun.status)}`,
+        attemptSummary: `Retries ${jobRun.retry_count}/${jobRun.max_retries}`,
+        retrySummary: formatRetrySummary(jobRun.retry_count, jobRun.max_retries),
+        detailHref: buildActivityDetailHref("job_run", jobRun.id),
+        meterHref: jobRun.target_meter_id ? `/meters/${jobRun.target_meter_id}` : null,
+        commandsHref: jobRun.related_command_id ? "/commands" : null,
+      });
+    }
+
+    for (const command of recentCommands ?? []) {
+      if (!isRetryWorthyStatus(command.command_status)) {
+        continue;
+      }
+
+      items.push({
+        id: `command-${command.command_id}`,
+        sourceType: "command",
+        title: command.command_template_code,
+        category: command.command_family,
+        status: command.command_status,
+        timestamp: command.latest_updated_at,
+        meterId: command.meter_id,
+        reason: formatCommandSummary(command.family_specific_outcome_summary),
+        attemptSummary: command.latest_command_execution_attempt_status
+          ? `Latest attempt ${formatStatusLabel(command.latest_command_execution_attempt_status)}`
+          : "No execution attempt recorded in the current bounded projection.",
+        retrySummary: "Retry handoff remains in the stable commands and runtime review flow.",
+        detailHref: buildActivityDetailHref("command", command.command_id),
+        meterHref: `/meters/${command.meter_id}`,
+        commandsHref: "/commands",
+      });
+    }
+
+    return sortByTimestampDesc(items).slice(0, 8);
+  }, [jobRuns, recentCommands]);
+  const jobRunsWithRetryCapacity = useMemo(
+    () =>
+      (jobRuns ?? []).filter(
+        (jobRun) => isRetryWorthyStatus(jobRun.status) && jobRun.retry_count < jobRun.max_retries,
+      ).length,
+    [jobRuns],
+  );
 
   const overviewCards = useMemo(
     () => [
@@ -369,8 +475,12 @@ export function JobsEventsAlertsModule({
         label: "Derived alerts in current view",
         value: String(alertItems.length),
       },
+      {
+        label: "Retry-worthy execution contexts",
+        value: String(retryQueueItems.length),
+      },
     ],
-    [alertItems.length, jobRuns, recentCommands, recentEvents],
+    [alertItems.length, jobRuns, recentCommands, recentEvents, retryQueueItems.length],
   );
 
   useEffect(() => {
@@ -436,6 +546,91 @@ export function JobsEventsAlertsModule({
                   <strong>{card.value}</strong>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Job runs + retry queue</h2>
+              <p className="muted">
+                Recent retry-worthy job runs and problematic command execution contexts in one
+                bounded operational queue.
+              </p>
+            </div>
+            <span className="artifact-pill">
+              {retryQueueItems.length} retry item{retryQueueItems.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {isLoadingActivity ? (
+            <p className="muted">Loading job runs and retry queue...</p>
+          ) : (
+            <div className="detail-stack">
+              <div className="jobs-overview-grid">
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Retry-worthy items</span>
+                  <strong>{retryQueueItems.length}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Job runs with retry capacity</span>
+                  <strong>{jobRunsWithRetryCapacity}</strong>
+                </div>
+              </div>
+
+              <p className="muted">
+                Scan recent failed, timed-out, or cancelled execution contexts, then drill into the
+                existing activity detail, commands flow, or meter context for bounded follow-up.
+              </p>
+
+              <div className="command-list">
+                {retryQueueItems.length === 0 ? (
+                  <p className="muted">
+                    No retry-worthy job runs or problematic command execution contexts are
+                    currently visible.
+                  </p>
+                ) : null}
+
+                {retryQueueItems.map((item) => (
+                  <article key={item.id} className="command-list-item">
+                    <div className="command-list-item-header">
+                      <strong>{item.title}</strong>
+                      <span className={`status-pill ${buildStatusTone(item.status)}`}>
+                        {formatStatusLabel(item.status)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-badges">
+                      <span className="artifact-pill">{formatStatusLabel(item.sourceType)}</span>
+                      <span className="artifact-pill">{formatStatusLabel(item.category)}</span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>{item.meterId ? `Meter ${item.meterId}` : "No meter target"}</span>
+                      <span>{formatDateTime(item.timestamp)}</span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>{item.reason}</span>
+                      <span>{item.attemptSummary}</span>
+                    </div>
+                    <p className="muted">{item.retrySummary}</p>
+                    <div className="artifact-row">
+                      <Link className="secondary-button" href={item.detailHref}>
+                        Open retry detail
+                      </Link>
+                      {item.commandsHref ? (
+                        <Link className="secondary-button" href={item.commandsHref}>
+                          Open commands page
+                        </Link>
+                      ) : null}
+                      {item.meterHref ? (
+                        <Link className="secondary-button" href={item.meterHref}>
+                          Open meter detail
+                        </Link>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
           )}
         </section>
