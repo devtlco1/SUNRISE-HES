@@ -199,6 +199,10 @@ describe("ActivityDetailModule", () => {
       "href",
       "/commands",
     );
+    expect(screen.getByRole("link", { name: "Open remediation context" })).toHaveAttribute(
+      "href",
+      "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=command&retryReason=rejected&retryContext=Meter+meter-1.+Latest+attempt+Failed.",
+    );
   });
 
   it("renders bounded job-run activity detail with linked command and payload context", async () => {
@@ -215,6 +219,10 @@ describe("ActivityDetailModule", () => {
     expect(screen.getByText("command-1")).toBeInTheDocument();
     expect(screen.getByText("Result summary")).toBeInTheDocument();
     expect(screen.getAllByText("Failed")).not.toHaveLength(0);
+    expect(screen.getByRole("link", { name: "Open remediation context" })).toHaveAttribute(
+      "href",
+      "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=job_run&retryReason=Association+rejected&retryContext=Meter+meter-1.+Retries+1%2F3.",
+    );
   });
 
   it("renders bounded event activity detail with meter linkage when available", async () => {

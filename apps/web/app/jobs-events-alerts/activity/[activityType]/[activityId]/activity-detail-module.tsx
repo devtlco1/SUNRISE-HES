@@ -133,6 +133,41 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function isRetryWorthyStatus(value: string | null): boolean {
+  return ["failed", "timed_out", "cancelled"].includes(value ?? "");
+}
+
+function buildRetryRemediationHref({
+  commandId,
+  itemType,
+  reason,
+  context,
+}: {
+  commandId: string | null;
+  itemType: "job_run" | "command";
+  reason: string | null;
+  context: string | null;
+}): string | null {
+  if (!commandId) {
+    return null;
+  }
+
+  const searchParams = new URLSearchParams({
+    selectedCommandId: commandId,
+    retrySource: "jobs_retry_queue",
+    retryItemType: itemType,
+  });
+
+  if (reason) {
+    searchParams.set("retryReason", reason);
+  }
+  if (context) {
+    searchParams.set("retryContext", context);
+  }
+
+  return `/commands?${searchParams.toString()}`;
+}
+
 export function ActivityDetailModule({
   activityType,
   activityId,
@@ -220,6 +255,46 @@ export function ActivityDetailModule({
         label: "Open meter detail",
       },
     ];
+  }, [detail]);
+  const remediationHref = useMemo(() => {
+    if (!detail) {
+      return null;
+    }
+
+    if (detail.type === "job_run") {
+      if (!isRetryWorthyStatus(detail.record.status)) {
+        return null;
+      }
+
+      return buildRetryRemediationHref({
+        commandId: detail.record.related_command_id,
+        itemType: "job_run",
+        reason:
+          detail.record.latest_error_message ??
+          detail.record.latest_error_code ??
+          `Job run ${formatStatusLabel(detail.record.status)}`,
+        context: `${detail.record.target_meter_id ? `Meter ${detail.record.target_meter_id}. ` : ""}Retries ${detail.record.retry_count}/${detail.record.max_retries}.`,
+      });
+    }
+
+    if (detail.type === "command") {
+      if (!isRetryWorthyStatus(detail.record.command_status)) {
+        return null;
+      }
+
+      return buildRetryRemediationHref({
+        commandId: detail.record.command_id,
+        itemType: "command",
+        reason: formatCommandSummary(detail.record.family_specific_outcome_summary),
+        context: `Meter ${detail.record.meter_id}. ${
+          detail.record.latest_command_execution_attempt_status
+            ? `Latest attempt ${formatStatusLabel(detail.record.latest_command_execution_attempt_status)}.`
+            : "No execution attempt recorded."
+        }`,
+      });
+    }
+
+    return null;
   }, [detail]);
 
   return (
@@ -496,6 +571,11 @@ export function ActivityDetailModule({
               <Link className="secondary-button" href="/jobs-events-alerts">
                 Back to jobs / events / alerts
               </Link>
+              {remediationHref ? (
+                <Link className="primary-button" href={remediationHref}>
+                  Open remediation context
+                </Link>
+              ) : null}
               {relatedLinks.map((link) => (
                 <Link key={link.href} className="secondary-button" href={link.href}>
                   {link.label}
