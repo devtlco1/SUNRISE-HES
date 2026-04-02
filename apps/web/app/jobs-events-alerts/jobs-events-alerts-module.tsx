@@ -234,6 +234,16 @@ function buildRetryRemediationHref({
   return `/commands?${searchParams.toString()}`;
 }
 
+function buildRetryQueueActivityDetailHref(
+  activityType: "job_run" | "command",
+  activityId: string,
+): string {
+  const searchParams = new URLSearchParams({
+    retryEntrySource: "jobs_retry_queue",
+  });
+  return `${buildActivityDetailHref(activityType, activityId)}?${searchParams.toString()}`;
+}
+
 export function JobsEventsAlertsModule({
   authorizedFetch,
   initialAttentionContext = null,
@@ -457,7 +467,7 @@ export function JobsEventsAlertsModule({
           `Job run ${formatStatusLabel(jobRun.status)}`,
         attemptSummary: `Retries ${jobRun.retry_count}/${jobRun.max_retries}`,
         retrySummary: formatRetrySummary(jobRun.retry_count, jobRun.max_retries),
-        detailHref: buildActivityDetailHref("job_run", jobRun.id),
+        detailHref: buildRetryQueueActivityDetailHref("job_run", jobRun.id),
         remediationHref: buildRetryRemediationHref({
           commandId: jobRun.related_command_id,
           itemType: "job_run",
@@ -490,7 +500,7 @@ export function JobsEventsAlertsModule({
           ? `Latest attempt ${formatStatusLabel(command.latest_command_execution_attempt_status)}`
           : "No execution attempt recorded in the current bounded projection.",
         retrySummary: "Retry handoff remains in the stable commands and runtime review flow.",
-        detailHref: buildActivityDetailHref("command", command.command_id),
+        detailHref: buildRetryQueueActivityDetailHref("command", command.command_id),
         remediationHref: buildRetryRemediationHref({
           commandId: command.command_id,
           itemType: "command",

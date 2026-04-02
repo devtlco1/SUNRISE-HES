@@ -88,6 +88,10 @@ type ActivityDetailReturnContext = {
   source: "commands_remediation";
 } | null;
 
+type ActivityDetailEntryContext = {
+  source: "jobs_retry_queue";
+} | null;
+
 function isActivityType(value: string): value is ActivityType {
   return value === "job_run" || value === "command" || value === "event";
 }
@@ -213,11 +217,13 @@ export function ActivityDetailModule({
   activityType,
   activityId,
   authorizedFetch,
+  initialEntryContext = null,
   initialReturnContext = null,
 }: {
   activityType: string;
   activityId: string;
   authorizedFetch: AuthorizedFetch;
+  initialEntryContext?: ActivityDetailEntryContext;
   initialReturnContext?: ActivityDetailReturnContext;
 }) {
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
@@ -362,12 +368,41 @@ export function ActivityDetailModule({
       isRetryWorthyActivity: isRetryWorthyStatus(currentStatus),
     });
   }, [activityId, detail, initialReturnContext]);
+  const retryQueueEntrySummary = useMemo(() => {
+    if (!initialEntryContext || !detail) {
+      return null;
+    }
+
+    const activityLabel = detail.type === "job_run" ? "job run" : "command";
+    return `Opened from the retry queue list for this ${activityLabel} detail. Continue bounded review here or jump into the existing remediation context.`;
+  }, [detail, initialEntryContext]);
+  const isRetryQueueEntryCueActive = useMemo(() => {
+    if (!initialEntryContext || !detail || detail.type === "event") {
+      return false;
+    }
+
+    const currentStatus =
+      detail.type === "job_run" ? detail.record.status : detail.record.command_status;
+    return isRetryWorthyStatus(currentStatus);
+  }, [detail, initialEntryContext]);
 
   return (
     <section className="panel">
       {pageError ? <p className="error-banner">{pageError}</p> : null}
 
       <div className="detail-stack">
+        {isRetryQueueEntryCueActive ? (
+          <section className="subpanel">
+            <div className="detail-stack">
+              <p className="muted">{retryQueueEntrySummary}</p>
+              <div className="artifact-row">
+                <span className="artifact-pill">Retry queue entry</span>
+                <span className="artifact-pill">Jobs retry queue</span>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         {initialReturnContext ? (
           <section className="subpanel">
             <div className="detail-stack">

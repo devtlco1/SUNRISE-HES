@@ -7,13 +7,19 @@ type ActivityDetailReturnContext = {
   source: "commands_remediation";
 } | null;
 
+type ActivityDetailEntryContext = {
+  source: "jobs_retry_queue";
+} | null;
+
 export function ActivityDetailPageClient({
   activityType,
   activityId,
+  initialEntryContext = null,
   initialReturnContext = null,
 }: {
   activityType: string;
   activityId: string;
+  initialEntryContext?: ActivityDetailEntryContext;
   initialReturnContext?: ActivityDetailReturnContext;
 }) {
   return (
@@ -27,6 +33,7 @@ export function ActivityDetailPageClient({
           activityType={activityType}
           activityId={activityId}
           authorizedFetch={authorizedFetch}
+          initialEntryContext={initialEntryContext}
           initialReturnContext={initialReturnContext}
         />
       )}

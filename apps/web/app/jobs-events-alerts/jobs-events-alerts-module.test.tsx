@@ -259,10 +259,16 @@ describe("JobsEventsAlertsModule", () => {
     );
     expect(
       within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open retry detail" })[0],
-    ).toHaveAttribute("href", "/jobs-events-alerts/activity/command/command-1");
+    ).toHaveAttribute(
+      "href",
+      "/jobs-events-alerts/activity/command/command-1?retryEntrySource=jobs_retry_queue",
+    );
     expect(
       within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open retry detail" })[1],
-    ).toHaveAttribute("href", "/jobs-events-alerts/activity/job_run/job-run-1");
+    ).toHaveAttribute(
+      "href",
+      "/jobs-events-alerts/activity/job_run/job-run-1?retryEntrySource=jobs_retry_queue",
+    );
     expect(
       within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open commands page" })[0],
     ).toHaveAttribute("href", "/commands");

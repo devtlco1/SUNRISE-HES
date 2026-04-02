@@ -142,10 +142,14 @@ function createMockApi({
 function renderActivityDetailModuleInShell({
   activityType,
   activityId,
+  initialEntryContext = null,
   initialReturnContext = null,
 }: {
   activityType: string;
   activityId: string;
+  initialEntryContext?: {
+    source: "jobs_retry_queue";
+  } | null;
   initialReturnContext?: {
     source: "commands_remediation";
   } | null;
@@ -161,6 +165,7 @@ function renderActivityDetailModuleInShell({
           activityType={activityType}
           activityId={activityId}
           authorizedFetch={authorizedFetch}
+          initialEntryContext={initialEntryContext}
           initialReturnContext={initialReturnContext}
         />
       )}
@@ -230,6 +235,27 @@ describe("ActivityDetailModule", () => {
     );
   });
 
+  it("shows a retry-queue entry cue when activity detail is opened from the retry queue", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderActivityDetailModuleInShell({
+      activityType: "job_run",
+      activityId: "job-run-1",
+      initialEntryContext: {
+        source: "jobs_retry_queue",
+      },
+    });
+
+    expect(
+      await screen.findByText(
+        "Opened from the retry queue list for this job run detail. Continue bounded review here or jump into the existing remediation context.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Retry queue entry")).toBeInTheDocument();
+    expect(screen.getByText("Jobs retry queue")).toBeInTheDocument();
+  });
+
   it("shows a retry-origin banner when activity detail is reopened from commands remediation", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
@@ -278,6 +304,24 @@ describe("ActivityDetailModule", () => {
         "/jobs-events-alerts",
       );
     });
+  });
+
+  it("does not show a retry-queue entry cue during direct activity detail entry", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderActivityDetailModuleInShell({
+      activityType: "job_run",
+      activityId: "job-run-1",
+    });
+
+    await screen.findByText("job-run-1");
+    expect(
+      screen.queryByText(
+        "Opened from the retry queue list for this job run detail. Continue bounded review here or jump into the existing remediation context.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Retry queue entry")).not.toBeInTheDocument();
   });
 
   it("renders bounded event activity detail with meter linkage when available", async () => {
