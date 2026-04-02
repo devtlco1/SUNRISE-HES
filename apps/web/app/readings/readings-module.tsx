@@ -134,6 +134,15 @@ type MissingReadsIssue = {
   related_action_label: string;
 };
 
+type SelectedRecoveryIssue = {
+  issueId: string;
+  meterId: string;
+  meterSerialNumber: string;
+  issueType: string;
+  reason: string;
+  context: string;
+};
+
 function buildRecoveryActionHref(meterId: string, issue: MissingReadsIssue): string {
   const searchParams = new URLSearchParams({
     meterId,
@@ -142,6 +151,33 @@ function buildRecoveryActionHref(meterId: string, issue: MissingReadsIssue): str
     recoveryIssueType: issue.issue_type,
     recoveryReason: issue.reason,
     recoveryContext: issue.related_context,
+  });
+  return `/commands?${searchParams.toString()}`;
+}
+
+function buildBulkRecoveryActionHref(selectedIssues: SelectedRecoveryIssue[]): string {
+  const selectedMeterIds = Array.from(new Set(selectedIssues.map((issue) => issue.meterId)));
+  const selectedMeterLabels = Array.from(
+    new Set(selectedIssues.map((issue) => issue.meterSerialNumber)),
+  );
+  const selectedIssueLabels = Array.from(
+    new Set(selectedIssues.map((issue) => formatValidationIssueType(issue.issueType))),
+  );
+  const searchParams = new URLSearchParams({
+    meterIds: selectedMeterIds.join(","),
+    commandFamily: "on_demand_read",
+    recoverySource: "readings_missing_recovery_queue",
+    recoveryIssueType: "bulk_recovery_selection",
+    recoveryReason: `${formatCountLabel(
+      selectedIssues.length,
+      "recovery item",
+      "recovery items",
+    )} selected from the readings missing-reads queue for bounded ON_DEMAND_READ handoff.`,
+    recoveryContext: `${formatCountLabel(
+      selectedMeterLabels.length,
+      "meter",
+      "meters",
+    )}: ${selectedMeterLabels.join(", ")}. Issue mix: ${selectedIssueLabels.join(", ")}.`,
   });
   return `/commands?${searchParams.toString()}`;
 }
@@ -322,6 +358,7 @@ export function ReadingsModule({
   const [readingBatches, setReadingBatches] = useState<MeterReadingBatchItem[]>([]);
   const [loadProfileChannels, setLoadProfileChannels] = useState<LoadProfileChannelItem[]>([]);
   const [loadProfileIntervals, setLoadProfileIntervals] = useState<LoadProfileIntervalItem[]>([]);
+  const [selectedRecoveryIssues, setSelectedRecoveryIssues] = useState<SelectedRecoveryIssue[]>([]);
   const [pageError, setPageError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [isLoadingOverview, setIsLoadingOverview] = useState(false);
@@ -522,6 +559,21 @@ export function ReadingsModule({
   const selectedMeter = useMemo(
     () => meters.find((meter) => meter.id === selectedMeterId) ?? null,
     [meters, selectedMeterId],
+  );
+  const selectedRecoveryIssueIdSet = useMemo(
+    () => new Set(selectedRecoveryIssues.map((issue) => issue.issueId)),
+    [selectedRecoveryIssues],
+  );
+  const selectedRecoveryMeterIds = useMemo(
+    () => Array.from(new Set(selectedRecoveryIssues.map((issue) => issue.meterId))),
+    [selectedRecoveryIssues],
+  );
+  const selectedRecoveryIssueTypeLabels = useMemo(
+    () =>
+      Array.from(
+        new Set(selectedRecoveryIssues.map((issue) => formatValidationIssueType(issue.issueType))),
+      ),
+    [selectedRecoveryIssues],
   );
 
   const batchById = useMemo(
@@ -834,6 +886,38 @@ export function ReadingsModule({
     meterReadings.length,
     selectedMeter,
   ]);
+  const toggleRecoveryIssueSelection = useCallback(
+    (issue: MissingReadsIssue) => {
+      if (!selectedMeter) {
+        return;
+      }
+
+      setSelectedRecoveryIssues((currentSelectedIssues) => {
+        const isAlreadySelected = currentSelectedIssues.some(
+          (selectedIssue) => selectedIssue.issueId === issue.id,
+        );
+        if (isAlreadySelected) {
+          return currentSelectedIssues.filter((selectedIssue) => selectedIssue.issueId !== issue.id);
+        }
+
+        return [
+          ...currentSelectedIssues,
+          {
+            issueId: issue.id,
+            meterId: selectedMeter.id,
+            meterSerialNumber: selectedMeter.serial_number,
+            issueType: issue.issue_type,
+            reason: issue.reason,
+            context: issue.related_context,
+          },
+        ];
+      });
+    },
+    [selectedMeter],
+  );
+  const clearSelectedRecoveryIssues = useCallback(() => {
+    setSelectedRecoveryIssues([]);
+  }, []);
 
   const overviewCards = useMemo(
     () => [
@@ -1476,6 +1560,42 @@ export function ReadingsModule({
                     </p>
                   ) : (
                     <div className="readings-table-shell">
+                      {selectedRecoveryIssues.length > 0 ? (
+                        <div className="detail-stack">
+                          <div className="artifact-row">
+                            <span className="artifact-pill">
+                              {selectedRecoveryIssues.length} selected recovery item
+                              {selectedRecoveryIssues.length === 1 ? "" : "s"}
+                            </span>
+                            <span className="artifact-pill">
+                              {selectedRecoveryMeterIds.length} selected meter
+                              {selectedRecoveryMeterIds.length === 1 ? "" : "s"}
+                            </span>
+                            <span className="artifact-pill">
+                              {selectedRecoveryIssueTypeLabels.join(", ")}
+                            </span>
+                          </div>
+                          <div className="artifact-row">
+                            <span className="muted">
+                              Recovery selections remain preserved while you inspect additional
+                              meters in the bounded readings scope.
+                            </span>
+                            <button
+                              className="secondary-button"
+                              onClick={clearSelectedRecoveryIssues}
+                              type="button"
+                            >
+                              Clear recovery selection
+                            </button>
+                            <Link
+                              className="primary-button"
+                              href={buildBulkRecoveryActionHref(selectedRecoveryIssues)}
+                            >
+                              Open bulk recovery handoff
+                            </Link>
+                          </div>
+                        </div>
+                      ) : null}
                       <table className="readings-table">
                         <thead>
                           <tr>
@@ -1491,6 +1611,19 @@ export function ReadingsModule({
                         <tbody>
                           {missingReadsIssues.map((issue) => (
                             <tr key={issue.id}>
+                              <td>
+                                <label className="artifact-pill">
+                                  <input
+                                    aria-label={`Include ${formatValidationIssueType(
+                                      issue.issue_type,
+                                    )} for ${selectedMeter?.serial_number ?? "the selected meter"} in bulk recovery handoff`}
+                                    checked={selectedRecoveryIssueIdSet.has(issue.id)}
+                                    onChange={() => toggleRecoveryIssueSelection(issue)}
+                                    type="checkbox"
+                                  />{" "}
+                                  Include
+                                </label>
+                              </td>
                               <td>
                                 <strong>{formatValidationIssueType(issue.issue_type)}</strong>
                                 <div className="muted">{issue.reason}</div>

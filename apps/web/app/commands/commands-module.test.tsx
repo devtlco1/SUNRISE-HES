@@ -724,6 +724,60 @@ describe("CommandsModule", () => {
     expect(requestBody.notes).toContain("Missing Billing Read Context");
   });
 
+  it("hydrates the bulk wizard from a multi-meter bulk recovery handoff", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderCommandsModuleInShell({
+      initialCommandFamily: "on_demand_read",
+      initialMeterIds: ["meter-1", "meter-2"],
+      initialRecoveryAction: {
+        source: "readings_missing_recovery_queue",
+        issueType: "bulk_recovery_selection",
+        reason: "2 recovery items selected from the readings missing-reads queue for bounded ON_DEMAND_READ handoff.",
+        context: "2 meters: SN-1001, SN-1002. Issue mix: Stale Interval Window, Missing Billing Read Context.",
+      },
+    });
+
+    expect(
+      (await screen.findAllByText(includesText("Recovery action handoff"))).length,
+    ).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Command family" })).toHaveValue(
+        "on_demand_read",
+      );
+      expect(screen.getByRole("textbox", { name: "Bulk notes" })).toHaveValue(
+        "Recovery action seeded from the readings missing-reads queue. Issue Bulk Recovery Selection. 2 recovery items selected from the readings missing-reads queue for bounded ON_DEMAND_READ handoff. Context 2 meters: SN-1001, SN-1002. Issue mix: Stale Interval Window, Missing Billing Read Context.",
+      );
+      expect(screen.getByText("2 handed-off targets loaded")).toBeInTheDocument();
+      expect(screen.getByText("2 included meters")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Submit for approval" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("2 bulk command requests submitted for approval.")).toBeInTheDocument();
+      expect(screen.getByText("2 waiting")).toBeInTheDocument();
+    });
+
+    const bulkRequestCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        input.toString().endsWith("/api/v1/commands/bulk-requests") && init?.method === "POST",
+    );
+    expect(bulkRequestCall).toBeDefined();
+    const requestBody = JSON.parse(String(bulkRequestCall?.[1]?.body ?? "{}")) as {
+      family?: string;
+      meter_ids?: string[];
+      on_demand_read_operation?: string;
+      notes?: string;
+    };
+    expect(requestBody.family).toBe("on_demand_read");
+    expect(requestBody.meter_ids).toEqual(["meter-1", "meter-2"]);
+    expect(requestBody.on_demand_read_operation).toBe("read_billing_snapshot");
+    expect(requestBody.notes).toContain("Bulk Recovery Selection");
+  });
+
   it("submits a bounded bulk command request and shows it in the approvals queue", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);

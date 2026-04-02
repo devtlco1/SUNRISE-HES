@@ -768,6 +768,87 @@ describe("ReadingsModule", () => {
     });
   });
 
+  it("preserves multi-meter recovery selections and hands them off through bulk commands", async () => {
+    const { fetchMock } = createMockApi({
+      readingsByMeter: {
+        "meter-1": [
+          {
+            id: "reading-stale-1",
+            batch_id: "batch-billing-1",
+            meter_id: "meter-1",
+            obis_code: "1.0.1.8.0.255",
+            reading_type: "register",
+            value_numeric: "123.999",
+            value_text: null,
+            value_timestamp: null,
+            unit: "kWh",
+            quality: "good",
+            captured_at: "2026-04-02T11:30:00.000Z",
+            metadata: null,
+          },
+        ],
+        "meter-2": [],
+      },
+      loadProfileIntervalsByMeter: {
+        "meter-1": [
+          {
+            id: "interval-stale-1",
+            meter_id: "meter-1",
+            channel_id: "channel-1",
+            interval_start: "2026-04-02T10:45:00.000Z",
+            interval_end: "2026-04-02T11:00:00.000Z",
+            value_numeric: "1.250",
+            quality: "good",
+            source_batch_id: "batch-billing-1",
+          },
+        ],
+        "meter-2": [],
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderReadingsModuleInShell();
+
+    const staleSelection = await screen.findByRole("checkbox", {
+      name: "Include Stale Interval Window for SN-1001 in bulk recovery handoff",
+    });
+    await user.click(staleSelection);
+
+    await waitFor(() => {
+      expect(staleSelection).toBeChecked();
+      expect(screen.getByRole("link", { name: "Open bulk recovery handoff" })).toHaveAttribute(
+        "href",
+        expect.stringContaining("/commands?meterIds=meter-1"),
+      );
+    });
+
+    const inspectButtons = await screen.findAllByRole("button", {
+      name: "Inspect readings",
+    });
+    await user.click(inspectButtons[1]);
+
+    const meterTwoSelection = await screen.findByRole("checkbox", {
+      name: "Include Missing Billing Read Context for SN-1002 in bulk recovery handoff",
+    });
+    await user.click(meterTwoSelection);
+
+    await waitFor(() => {
+      expect(meterTwoSelection).toBeChecked();
+      expect(screen.getByRole("link", { name: "Open bulk recovery handoff" })).toHaveAttribute(
+        "href",
+        expect.stringContaining("/commands?meterIds=meter-1%2Cmeter-2"),
+      );
+    });
+
+    const bulkRecoveryLink = screen.getByRole("link", { name: "Open bulk recovery handoff" });
+    expect(bulkRecoveryLink.getAttribute("href")).toContain("/commands?meterIds=meter-1%2Cmeter-2");
+    expect(bulkRecoveryLink.getAttribute("href")).toContain("commandFamily=on_demand_read");
+    expect(bulkRecoveryLink.getAttribute("href")).toContain(
+      "recoveryIssueType=bulk_recovery_selection",
+    );
+  });
+
   it("renders a bounded empty validation state when no issues are derived", async () => {
     const { fetchMock } = createMockApi({
       loadProfileIntervalsByMeter: {
