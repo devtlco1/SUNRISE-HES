@@ -115,6 +115,7 @@ type RetryQueueItem = {
   attemptSummary: string;
   retrySummary: string;
   detailHref: string;
+  remediationHref: string | null;
   meterHref: string | null;
   commandsHref: string | null;
 };
@@ -194,6 +195,37 @@ function formatRetrySummary(retryCount: number, maxRetries: number): string {
   }
 
   return "Retry budget exhausted in the current bounded runtime budget.";
+}
+
+function buildRetryRemediationHref({
+  commandId,
+  itemType,
+  reason,
+  context,
+}: {
+  commandId: string | null;
+  itemType: "job_run" | "command";
+  reason: string | null;
+  context: string | null;
+}): string | null {
+  if (!commandId) {
+    return null;
+  }
+
+  const searchParams = new URLSearchParams({
+    selectedCommandId: commandId,
+    retrySource: "jobs_retry_queue",
+    retryItemType: itemType,
+  });
+
+  if (reason) {
+    searchParams.set("retryReason", reason);
+  }
+  if (context) {
+    searchParams.set("retryContext", context);
+  }
+
+  return `/commands?${searchParams.toString()}`;
 }
 
 export function JobsEventsAlertsModule({
@@ -418,6 +450,15 @@ export function JobsEventsAlertsModule({
         attemptSummary: `Retries ${jobRun.retry_count}/${jobRun.max_retries}`,
         retrySummary: formatRetrySummary(jobRun.retry_count, jobRun.max_retries),
         detailHref: buildActivityDetailHref("job_run", jobRun.id),
+        remediationHref: buildRetryRemediationHref({
+          commandId: jobRun.related_command_id,
+          itemType: "job_run",
+          reason:
+            jobRun.latest_error_message ??
+            jobRun.latest_error_code ??
+            `Job run ${formatStatusLabel(jobRun.status)}`,
+          context: `${jobRun.target_meter_id ? `Meter ${jobRun.target_meter_id}. ` : ""}Retries ${jobRun.retry_count}/${jobRun.max_retries}.`,
+        }),
         meterHref: jobRun.target_meter_id ? `/meters/${jobRun.target_meter_id}` : null,
         commandsHref: jobRun.related_command_id ? "/commands" : null,
       });
@@ -442,6 +483,16 @@ export function JobsEventsAlertsModule({
           : "No execution attempt recorded in the current bounded projection.",
         retrySummary: "Retry handoff remains in the stable commands and runtime review flow.",
         detailHref: buildActivityDetailHref("command", command.command_id),
+        remediationHref: buildRetryRemediationHref({
+          commandId: command.command_id,
+          itemType: "command",
+          reason: formatCommandSummary(command.family_specific_outcome_summary),
+          context: `Meter ${command.meter_id}. ${
+            command.latest_command_execution_attempt_status
+              ? `Latest attempt ${formatStatusLabel(command.latest_command_execution_attempt_status)}.`
+              : "No execution attempt recorded."
+          }`,
+        }),
         meterHref: `/meters/${command.meter_id}`,
         commandsHref: "/commands",
       });
@@ -614,6 +665,11 @@ export function JobsEventsAlertsModule({
                     </div>
                     <p className="muted">{item.retrySummary}</p>
                     <div className="artifact-row">
+                      {item.remediationHref ? (
+                        <Link className="primary-button" href={item.remediationHref}>
+                          Open remediation context
+                        </Link>
+                      ) : null}
                       <Link className="secondary-button" href={item.detailHref}>
                         Open retry detail
                       </Link>

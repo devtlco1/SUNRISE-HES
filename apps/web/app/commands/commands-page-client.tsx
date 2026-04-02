@@ -10,16 +10,27 @@ type RecoveryActionHandoff = {
   context: string | null;
 };
 
+type RetryRemediationHandoff = {
+  source: "jobs_retry_queue";
+  itemType: "job_run" | "command";
+  reason: string | null;
+  context: string | null;
+};
+
 export function CommandsPageClient({
   initialCommandFamily = null,
   initialMeterIds = [],
   initialRecoveryAction = null,
   initialMeterScopeSource = null,
+  initialSelectedCommandId = null,
+  initialRetryRemediation = null,
 }: {
   initialCommandFamily?: "relay_control" | "on_demand_read" | null;
   initialMeterIds?: string[];
   initialRecoveryAction?: RecoveryActionHandoff | null;
   initialMeterScopeSource?: "visible_filtered_result_set" | null;
+  initialSelectedCommandId?: string | null;
+  initialRetryRemediation?: RetryRemediationHandoff | null;
 }) {
   return (
     <OperationalShell
@@ -34,6 +45,8 @@ export function CommandsPageClient({
           initialMeterIds={initialMeterIds}
           initialRecoveryAction={initialRecoveryAction}
           initialMeterScopeSource={initialMeterScopeSource}
+          initialSelectedCommandId={initialSelectedCommandId}
+          initialRetryRemediation={initialRetryRemediation}
         />
       )}
     </OperationalShell>

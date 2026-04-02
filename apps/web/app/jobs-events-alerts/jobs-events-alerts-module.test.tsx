@@ -235,6 +235,22 @@ describe("JobsEventsAlertsModule", () => {
     });
 
     expect(
+      within(retryPanel as HTMLElement).getAllByRole("link", {
+        name: "Open remediation context",
+      })[0],
+    ).toHaveAttribute(
+      "href",
+      "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=command&retryReason=rejected&retryContext=Meter+meter-1.+Latest+attempt+Failed.",
+    );
+    expect(
+      within(retryPanel as HTMLElement).getAllByRole("link", {
+        name: "Open remediation context",
+      })[1],
+    ).toHaveAttribute(
+      "href",
+      "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=job_run&retryReason=Association+rejected&retryContext=Meter+meter-1.+Retries+1%2F3.",
+    );
+    expect(
       within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open retry detail" })[0],
     ).toHaveAttribute("href", "/jobs-events-alerts/activity/command/command-1");
     expect(

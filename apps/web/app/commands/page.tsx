@@ -3,10 +3,18 @@ import { CommandsPageClient } from "./commands-page-client";
 type MeterScopeSource = "visible_filtered_result_set";
 type BulkCommandFamily = "relay_control" | "on_demand_read";
 type RecoveryActionSource = "readings_missing_recovery_queue";
+type RetryRemediationSource = "jobs_retry_queue";
 
 type RecoveryActionHandoff = {
   source: RecoveryActionSource;
   issueType: string | null;
+  reason: string | null;
+  context: string | null;
+};
+
+type RetryRemediationHandoff = {
+  source: RetryRemediationSource;
+  itemType: "job_run" | "command";
   reason: string | null;
   context: string | null;
 };
@@ -69,6 +77,27 @@ function resolveRecoveryActionHandoff(searchParams: {
   };
 }
 
+function resolveRetryRemediationHandoff(searchParams: {
+  retrySource?: string | string[];
+  retryItemType?: string | string[];
+  retryReason?: string | string[];
+  retryContext?: string | string[];
+}): RetryRemediationHandoff | null {
+  const source = resolveSingleValue(searchParams.retrySource);
+  const itemType = resolveSingleValue(searchParams.retryItemType);
+
+  if (source !== "jobs_retry_queue" || (itemType !== "job_run" && itemType !== "command")) {
+    return null;
+  }
+
+  return {
+    source,
+    itemType,
+    reason: resolveSingleValue(searchParams.retryReason),
+    context: resolveSingleValue(searchParams.retryContext),
+  };
+}
+
 export default async function CommandsPage({
   searchParams,
 }: {
@@ -81,6 +110,11 @@ export default async function CommandsPage({
     recoveryIssueType?: string | string[];
     recoveryReason?: string | string[];
     recoveryContext?: string | string[];
+    selectedCommandId?: string | string[];
+    retrySource?: string | string[];
+    retryItemType?: string | string[];
+    retryReason?: string | string[];
+    retryContext?: string | string[];
   }>;
 }) {
   const resolvedSearchParams = await searchParams;
@@ -94,7 +128,9 @@ export default async function CommandsPage({
     resolvedSearchParams.meterScopeSource,
   );
   const initialCommandFamily = resolveInitialCommandFamily(resolvedSearchParams.commandFamily);
+  const initialSelectedCommandId = resolveSingleValue(resolvedSearchParams.selectedCommandId);
   const initialRecoveryAction = resolveRecoveryActionHandoff(resolvedSearchParams);
+  const initialRetryRemediation = resolveRetryRemediationHandoff(resolvedSearchParams);
 
   return (
     <CommandsPageClient
@@ -102,6 +138,8 @@ export default async function CommandsPage({
       initialMeterIds={initialMeterIds}
       initialRecoveryAction={initialRecoveryAction}
       initialMeterScopeSource={initialMeterScopeSource}
+      initialSelectedCommandId={initialSelectedCommandId}
+      initialRetryRemediation={initialRetryRemediation}
     />
   );
 }

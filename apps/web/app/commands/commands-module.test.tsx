@@ -518,6 +518,8 @@ function renderCommandsModuleInShell({
   initialMeterIds = [],
   initialRecoveryAction = null,
   initialMeterScopeSource = null,
+  initialSelectedCommandId = null,
+  initialRetryRemediation = null,
 }: {
   initialCommandFamily?: "relay_control" | "on_demand_read" | null;
   initialMeterIds?: string[];
@@ -528,6 +530,13 @@ function renderCommandsModuleInShell({
     context: string | null;
   } | null;
   initialMeterScopeSource?: "visible_filtered_result_set" | null;
+  initialSelectedCommandId?: string | null;
+  initialRetryRemediation?: {
+    source: "jobs_retry_queue";
+    itemType: "job_run" | "command";
+    reason: string | null;
+    context: string | null;
+  } | null;
 } = {}) {
   render(
     <OperationalShell
@@ -542,6 +551,8 @@ function renderCommandsModuleInShell({
           initialMeterIds={initialMeterIds}
           initialRecoveryAction={initialRecoveryAction}
           initialMeterScopeSource={initialMeterScopeSource}
+          initialSelectedCommandId={initialSelectedCommandId}
+          initialRetryRemediation={initialRetryRemediation}
         />
       )}
     </OperationalShell>,
@@ -692,6 +703,41 @@ describe("CommandsModule", () => {
       expect(within(detailPanel as HTMLElement).getByText("meter-2")).toBeInTheDocument();
       expect(within(detailPanel as HTMLElement).getByText("runtime-relay-1")).toBeInTheDocument();
       expect(within(detailPanel as HTMLElement).getByText("Approval context")).toBeInTheDocument();
+    });
+  });
+
+  it("lands in the selected command detail from a retry remediation handoff", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderCommandsModuleInShell({
+      initialSelectedCommandId: "cmd-rejected-1",
+      initialRetryRemediation: {
+        source: "jobs_retry_queue",
+        itemType: "job_run",
+        reason: "Association rejected",
+        context: "Meter meter-2. Retries 1/3.",
+      },
+    });
+
+    expect(await screen.findByText("Retry remediation preselected")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Retry remediation opened from the jobs retry queue. Queue item Job Run. Association rejected. Context Meter meter-2. Retries 1/3.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Retry remediation handoff")).toBeInTheDocument();
+    expect(screen.getByText("Jobs retry queue")).toBeInTheDocument();
+
+    const detailPanel = screen.getAllByRole("heading", { name: "Command detail" })[0].closest(
+      "section",
+    );
+    expect(detailPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(within(detailPanel as HTMLElement).getByText("on-demand-read-template")).toBeInTheDocument();
+      expect(within(detailPanel as HTMLElement).getByText("meter-2")).toBeInTheDocument();
+      expect(within(detailPanel as HTMLElement).getAllByText("Cancelled").length).toBeGreaterThan(0);
     });
   });
 

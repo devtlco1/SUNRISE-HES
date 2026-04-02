@@ -20,6 +20,12 @@ type RecoveryActionHandoff = {
   reason: string | null;
   context: string | null;
 };
+type RetryRemediationHandoff = {
+  source: "jobs_retry_queue";
+  itemType: "job_run" | "command";
+  reason: string | null;
+  context: string | null;
+};
 
 type CommandRecentItem = {
   command_id: string;
@@ -257,6 +263,28 @@ function buildInitialRecoveryNotes(value: RecoveryActionHandoff | null): string 
     .join(" ");
 }
 
+function formatRetryRemediationSource(value: RetryRemediationHandoff["source"]): string {
+  switch (value) {
+    case "jobs_retry_queue":
+      return "Jobs retry queue";
+  }
+}
+
+function buildRetryRemediationSummary(value: RetryRemediationHandoff | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return [
+    "Retry remediation opened from the jobs retry queue.",
+    ensureSentence(`Queue item ${formatStatusLabel(value.itemType)}`),
+    ensureSentence(value.reason),
+    value.context ? ensureSentence(`Context ${value.context}`) : null,
+  ]
+    .filter((item): item is string => Boolean(item))
+    .join(" ");
+}
+
 function buildTemplateCategory(
   wizardFamily: BulkCommandFamily,
   wizardRelayOperation: RelayOperation,
@@ -324,12 +352,16 @@ export function CommandsModule({
   initialMeterIds = [],
   initialRecoveryAction = null,
   initialMeterScopeSource = null,
+  initialSelectedCommandId = null,
+  initialRetryRemediation = null,
 }: {
   authorizedFetch: AuthorizedFetch;
   initialCommandFamily?: BulkCommandFamily | null;
   initialMeterIds?: string[];
   initialRecoveryAction?: RecoveryActionHandoff | null;
   initialMeterScopeSource?: "visible_filtered_result_set" | null;
+  initialSelectedCommandId?: string | null;
+  initialRetryRemediation?: RetryRemediationHandoff | null;
 }) {
   const [recentFamilyFilter, setRecentFamilyFilter] = useState<FamilyFilter>("all");
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[]>([]);
@@ -337,7 +369,9 @@ export function CommandsModule({
   const [availableTemplates, setAvailableTemplates] = useState<CommandTemplate[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<CommandRecentItem[]>([]);
   const [approvalHistoryItems, setApprovalHistoryItems] = useState<CommandRecentItem[]>([]);
-  const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
+  const [selectedCommandId, setSelectedCommandId] = useState<string | null>(
+    initialSelectedCommandId,
+  );
   const [selectedCommandDetail, setSelectedCommandDetail] =
     useState<CommandDetail | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -381,6 +415,7 @@ export function CommandsModule({
     useState<ApprovalHistoryFilter>("all_decisions");
   const [approvalSearchQuery, setApprovalSearchQuery] = useState("");
   const hasAppliedInitialTargetScopeRef = useRef(false);
+  const hasAppliedInitialSelectedCommandRef = useRef(false);
   const handedOffMeterIds = useMemo(
     () =>
       Array.from(
@@ -536,8 +571,11 @@ export function CommandsModule({
   );
 
   useEffect(() => {
-    void loadRecentCommands();
-  }, [loadRecentCommands]);
+    const preferredCommandId =
+      !hasAppliedInitialSelectedCommandRef.current ? initialSelectedCommandId ?? undefined : undefined;
+    hasAppliedInitialSelectedCommandRef.current = true;
+    void loadRecentCommands(preferredCommandId);
+  }, [initialSelectedCommandId, loadRecentCommands]);
 
   useEffect(() => {
     void loadWizardContext();
@@ -666,6 +704,19 @@ export function CommandsModule({
 
     return `${sourceLabel} opened this handoff with On-demand read billing snapshot preselected for ${handedOffMeterIds.length === 1 ? "the handed-off meter" : "the handed-off meter scope"}. ${issueLabel} remains visible here so you can review target and notes before submitting for approval.`;
   }, [handedOffMeterIds.length, initialRecoveryAction]);
+  const retryRemediationSummary = useMemo(
+    () => buildRetryRemediationSummary(initialRetryRemediation),
+    [initialRetryRemediation],
+  );
+  const isRetryRemediationActive = useMemo(
+    () =>
+      Boolean(
+        initialRetryRemediation &&
+          initialSelectedCommandId &&
+          selectedCommandDetail?.command_id === initialSelectedCommandId,
+      ),
+    [initialRetryRemediation, initialSelectedCommandId, selectedCommandDetail],
+  );
   const shouldConfirmSelectFilteredReplacement = useMemo(
     () =>
       selectedWizardMeterIds.length > 0 &&
@@ -1746,6 +1797,9 @@ export function CommandsModule({
                     Selected: {selectedRecentCommand.command_template_code}
                   </span>
                 ) : null}
+                {isRetryRemediationActive ? (
+                  <span className="artifact-pill">Retry remediation preselected</span>
+                ) : null}
               </div>
             ) : null}
 
@@ -1812,6 +1866,23 @@ export function CommandsModule({
 
             {selectedCommandDetail ? (
               <div className="detail-stack">
+                {isRetryRemediationActive ? (
+                  <div className="detail-stack">
+                    {retryRemediationSummary ? <p className="muted">{retryRemediationSummary}</p> : null}
+                    <div className="artifact-row">
+                      <span className="artifact-pill">Retry remediation handoff</span>
+                      <span className="artifact-pill">
+                        {formatRetryRemediationSource(
+                          initialRetryRemediation?.source ?? "jobs_retry_queue",
+                        )}
+                      </span>
+                      <span className="artifact-pill">
+                        {formatStatusLabel(initialRetryRemediation?.itemType ?? "command")}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
                 <section className="commands-detail-hero">
                   <div className="commands-detail-title-row">
                     <div>
