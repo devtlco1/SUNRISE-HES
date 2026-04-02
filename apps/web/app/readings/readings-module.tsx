@@ -74,6 +74,37 @@ type MeterReadingBatchListResponse = {
   items: MeterReadingBatchItem[];
 };
 
+type LoadProfileChannelItem = {
+  id: string;
+  meter_id: string;
+  channel_code: string;
+  obis_code: string;
+  unit: string | null;
+  interval_seconds: number;
+  is_active: boolean;
+};
+
+type LoadProfileChannelListResponse = {
+  total: number;
+  items: LoadProfileChannelItem[];
+};
+
+type LoadProfileIntervalItem = {
+  id: string;
+  meter_id: string;
+  channel_id: string;
+  interval_start: string;
+  interval_end: string;
+  value_numeric: string | null;
+  quality: string | null;
+  source_batch_id: string | null;
+};
+
+type LoadProfileIntervalListResponse = {
+  total: number;
+  items: LoadProfileIntervalItem[];
+};
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return "Not available";
@@ -190,6 +221,21 @@ function formatCountLabel(count: number, singular: string, plural: string): stri
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function formatIntervalValue(
+  interval: LoadProfileIntervalItem,
+  channel: LoadProfileChannelItem | null,
+): string {
+  if (interval.value_numeric === null) {
+    return "Not available";
+  }
+
+  return `${interval.value_numeric}${channel?.unit ? ` ${channel.unit}` : ""}`;
+}
+
+function formatIntervalWindow(interval: LoadProfileIntervalItem): string {
+  return `${formatDateTime(interval.interval_start)} to ${formatDateTime(interval.interval_end)}`;
+}
+
 export function ReadingsModule({
   authorizedFetch,
   initialMeterId = null,
@@ -204,6 +250,8 @@ export function ReadingsModule({
   const [meterReadings, setMeterReadings] = useState<MeterReadingItem[]>([]);
   const [billingSnapshots, setBillingSnapshots] = useState<MeterRegisterSnapshotItem[]>([]);
   const [readingBatches, setReadingBatches] = useState<MeterReadingBatchItem[]>([]);
+  const [loadProfileChannels, setLoadProfileChannels] = useState<LoadProfileChannelItem[]>([]);
+  const [loadProfileIntervals, setLoadProfileIntervals] = useState<LoadProfileIntervalItem[]>([]);
   const [pageError, setPageError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [isLoadingOverview, setIsLoadingOverview] = useState(false);
@@ -250,13 +298,25 @@ export function ReadingsModule({
       setIsLoadingDetail(true);
       setDetailError(null);
 
-      const [readingsResult, snapshotsResult, batchesResult] = await Promise.allSettled([
+      const [
+        readingsResult,
+        snapshotsResult,
+        batchesResult,
+        loadProfileChannelsResult,
+        loadProfileIntervalsResult,
+      ] = await Promise.allSettled([
         authorizedFetch<MeterReadingListResponse>(`/api/v1/meters/${meterId}/readings?limit=10`),
         authorizedFetch<MeterRegisterSnapshotListResponse>(
           `/api/v1/meters/${meterId}/register-snapshots?limit=25`,
         ),
         authorizedFetch<MeterReadingBatchListResponse>(
           `/api/v1/meters/${meterId}/reading-batches?limit=25`,
+        ),
+        authorizedFetch<LoadProfileChannelListResponse>(
+          `/api/v1/meters/${meterId}/load-profile-channels`,
+        ),
+        authorizedFetch<LoadProfileIntervalListResponse>(
+          `/api/v1/meters/${meterId}/load-profile-intervals?limit=96`,
         ),
       ]);
 
@@ -291,11 +351,29 @@ export function ReadingsModule({
         setReadingBatches([]);
       }
 
-      const failedResults = [readingsResult, snapshotsResult, batchesResult].filter(
+      if (loadProfileChannelsResult.status === "fulfilled") {
+        setLoadProfileChannels(loadProfileChannelsResult.value.items);
+      } else {
+        setLoadProfileChannels([]);
+      }
+
+      if (loadProfileIntervalsResult.status === "fulfilled") {
+        setLoadProfileIntervals(loadProfileIntervalsResult.value.items);
+      } else {
+        setLoadProfileIntervals([]);
+      }
+
+      const failedResults = [
+        readingsResult,
+        snapshotsResult,
+        batchesResult,
+        loadProfileChannelsResult,
+        loadProfileIntervalsResult,
+      ].filter(
         (result): result is PromiseRejectedResult => result.status === "rejected",
       );
 
-      if (failedResults.length === 3) {
+      if (failedResults.length === 5) {
         const firstError = failedResults[0]?.reason;
         setDetailError(
           firstError instanceof Error
@@ -320,6 +398,8 @@ export function ReadingsModule({
       setMeterReadings([]);
       setBillingSnapshots([]);
       setReadingBatches([]);
+      setLoadProfileChannels([]);
+      setLoadProfileIntervals([]);
       setDetailError(null);
       return;
     }
@@ -378,9 +458,20 @@ export function ReadingsModule({
     () => new Map(readingBatches.map((batch) => [batch.id, batch])),
     [readingBatches],
   );
+  const loadProfileChannelById = useMemo(
+    () => new Map(loadProfileChannels.map((channel) => [channel.id, channel])),
+    [loadProfileChannels],
+  );
 
   const latestBillingSnapshot = billingSnapshots[0] ?? null;
   const latestReading = meterReadings[0] ?? null;
+  const latestInterval = loadProfileIntervals[0] ?? null;
+  const latestIntervalChannel = latestInterval
+    ? loadProfileChannelById.get(latestInterval.channel_id) ?? null
+    : null;
+  const latestIntervalBatch = latestInterval?.source_batch_id
+    ? batchById.get(latestInterval.source_batch_id) ?? null
+    : null;
   const latestBillingBatch = latestBillingSnapshot
     ? batchById.get(latestBillingSnapshot.related_batch_id) ?? null
     : null;
@@ -418,6 +509,28 @@ export function ReadingsModule({
         latestBillingBatch.received_at,
       )}`
     : "No batch source or receipt recorded";
+  const latestIntervalValueLabel = latestInterval
+    ? formatIntervalValue(latestInterval, latestIntervalChannel)
+    : "No interval value recorded";
+  const latestIntervalQualityLabel = latestInterval
+    ? formatStatusLabel(latestInterval.quality)
+    : "No quality recorded";
+  const latestIntervalNarrative = latestInterval
+    ? `Latest interval captured for ${selectedMeter?.serial_number ?? "the selected meter"} spans ${formatIntervalWindow(
+        latestInterval,
+      )} with ${latestIntervalValueLabel} and quality ${latestIntervalQualityLabel}.`
+    : "No interval-read context is recorded yet for the selected meter. The bounded interval surface remains empty until load profile intervals are available.";
+  const latestIntervalSourceLabel = latestIntervalBatch
+    ? formatStatusLabel(latestIntervalBatch.source_type)
+    : "Not available";
+  const latestIntervalStatusLabel = latestIntervalBatch
+    ? formatStatusLabel(latestIntervalBatch.status)
+    : "Not recorded";
+  const latestIntervalReceivedLabel = formatDateTime(latestIntervalBatch?.received_at ?? null);
+  const intervalChannelsSummary =
+    loadProfileChannels.length > 0
+      ? formatCountLabel(loadProfileChannels.length, "channel", "channels")
+      : "No interval channels";
 
   const overviewCards = useMemo(
     () => [
@@ -478,6 +591,13 @@ export function ReadingsModule({
           ? `${latestReading.obis_code} • ${formatReadingValue(latestReading)}`
           : "No recent reading value recorded",
       },
+      {
+        label: "Recent interval reads loaded",
+        value: String(loadProfileIntervals.length),
+        note: latestInterval
+          ? `${latestIntervalChannel?.channel_code ?? latestInterval.channel_id} • ${latestIntervalValueLabel}`
+          : "No interval reads recorded for the current selection",
+      },
     ],
     [
       billingSnapshots.length,
@@ -487,6 +607,10 @@ export function ReadingsModule({
       latestBillingContextLabel,
       latestBillingPrimaryValue,
       latestReading,
+      latestInterval,
+      latestIntervalChannel,
+      latestIntervalValueLabel,
+      loadProfileIntervals.length,
       meterReadings.length,
       meterSearchQuery,
       selectedMeter,
@@ -699,6 +823,9 @@ export function ReadingsModule({
                         : "No billing batch yet"}
                     </span>
                     <span className="artifact-pill">
+                      {loadProfileIntervals.length} interval reads
+                    </span>
+                    <span className="artifact-pill">
                       {meterReadings.length} recent raw readings
                     </span>
                     <span className="artifact-pill">
@@ -768,6 +895,166 @@ export function ReadingsModule({
                       <strong>{latestBillingSummary}</strong>
                     </div>
                   </div>
+                </section>
+
+                <section className="subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Interval reads</h3>
+                      <p className="muted">
+                        Recent load profile interval visibility for the selected meter using
+                        the existing interval and channel read models only.
+                      </p>
+                    </div>
+                    <span className="artifact-pill">Newest interval first</span>
+                  </div>
+
+                  <div className="detail-stack">
+                    <p className="muted">{latestIntervalNarrative}</p>
+
+                    <div className="artifact-row">
+                      <span className="artifact-pill">
+                        {loadProfileIntervals.length} interval reads
+                      </span>
+                      <span className="artifact-pill">{intervalChannelsSummary}</span>
+                      <span className="artifact-pill">
+                        {latestInterval
+                          ? `Latest value ${latestIntervalValueLabel}`
+                          : "Latest value unavailable"}
+                      </span>
+                      <span
+                        className={`status-pill ${buildStatusTone(
+                          latestInterval?.quality ?? null,
+                        )}`}
+                      >
+                        {latestInterval
+                          ? `Latest quality ${latestIntervalQualityLabel}`
+                          : "No interval quality yet"}
+                      </span>
+                    </div>
+
+                    <div className="detail-grid">
+                      <div className="stat-card">
+                        <span className="stat-label">Latest interval window</span>
+                        <strong>
+                          {latestInterval ? formatIntervalWindow(latestInterval) : "Not available"}
+                        </strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Latest interval value</span>
+                        <strong>{latestIntervalValueLabel}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Latest interval quality</span>
+                        <strong>{latestIntervalQualityLabel}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Latest interval source</span>
+                        <strong>{latestIntervalSourceLabel}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Latest interval status</span>
+                        <strong>{latestIntervalStatusLabel}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Latest interval received</span>
+                        <strong>{latestIntervalReceivedLabel}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {loadProfileIntervals.length === 0 ? (
+                    <p className="muted">
+                      No interval reads available for the selected meter yet. The interval
+                      section remains bounded to current recent load profile records only.
+                    </p>
+                  ) : (
+                    <div className="readings-table-shell">
+                      <table className="readings-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Interval window</th>
+                            <th scope="col">Channel</th>
+                            <th scope="col">Value</th>
+                            <th scope="col">Quality</th>
+                            <th scope="col">Source</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {loadProfileIntervals.map((interval, index) => {
+                            const channel = loadProfileChannelById.get(interval.channel_id) ?? null;
+                            const relatedBatch = interval.source_batch_id
+                              ? batchById.get(interval.source_batch_id) ?? null
+                              : null;
+                            const isLatestInterval = index === 0;
+
+                            return (
+                              <tr
+                                key={interval.id}
+                                className={
+                                  isLatestInterval
+                                    ? "readings-table-row readings-table-row-latest"
+                                    : "readings-table-row"
+                                }
+                              >
+                                <td>
+                                  <strong>{formatIntervalWindow(interval)}</strong>
+                                  <div className="artifact-row">
+                                    {isLatestInterval ? (
+                                      <span className="artifact-pill">Latest interval</span>
+                                    ) : null}
+                                    <span className="muted">
+                                      Ends {formatDateTime(interval.interval_end)}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <strong>
+                                    {channel
+                                      ? `${channel.channel_code} • ${channel.obis_code}`
+                                      : interval.channel_id}
+                                  </strong>
+                                  <div className="muted">
+                                    {channel
+                                      ? `${channel.interval_seconds} second interval`
+                                      : "Channel metadata unavailable"}
+                                  </div>
+                                </td>
+                                <td>
+                                  <strong>{formatIntervalValue(interval, channel)}</strong>
+                                  <div className="muted">
+                                    {channel?.unit ? `Unit ${channel.unit}` : "Unit not recorded"}
+                                  </div>
+                                </td>
+                                <td>
+                                  <span
+                                    className={`status-pill ${buildStatusTone(interval.quality ?? null)}`}
+                                  >
+                                    {formatStatusLabel(interval.quality)}
+                                  </span>
+                                  <div className="muted">Interval quality</div>
+                                </td>
+                                <td>
+                                  <strong>
+                                    {relatedBatch
+                                      ? `Source ${formatStatusLabel(relatedBatch.source_type)}`
+                                      : "Source unavailable"}
+                                  </strong>
+                                  <div className="muted">
+                                    {relatedBatch
+                                      ? `Batch ${formatStatusLabel(relatedBatch.status)} • Received ${formatDateTime(
+                                          relatedBatch.received_at,
+                                        )}`
+                                      : "No source batch recorded"}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </section>
 
                 <div className="detail-grid">

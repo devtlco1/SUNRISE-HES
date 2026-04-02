@@ -103,6 +103,45 @@ function createMockApi({
     ],
     "meter-2": [],
   } as Record<string, Array<Record<string, unknown>>>,
+  loadProfileChannelsByMeter = {
+    "meter-1": [
+      {
+        id: "channel-1",
+        meter_id: "meter-1",
+        channel_code: "lp_import",
+        obis_code: "1.0.99.1.0.255",
+        unit: "kWh",
+        interval_seconds: 900,
+        is_active: true,
+      },
+    ],
+    "meter-2": [],
+  } as Record<string, Array<Record<string, unknown>>>,
+  loadProfileIntervalsByMeter = {
+    "meter-1": [
+      {
+        id: "interval-1",
+        meter_id: "meter-1",
+        channel_id: "channel-1",
+        interval_start: "2026-04-02T10:45:00.000Z",
+        interval_end: "2026-04-02T11:00:00.000Z",
+        value_numeric: "1.250",
+        quality: "good",
+        source_batch_id: "batch-billing-1",
+      },
+      {
+        id: "interval-2",
+        meter_id: "meter-1",
+        channel_id: "channel-1",
+        interval_start: "2026-04-02T10:30:00.000Z",
+        interval_end: "2026-04-02T10:45:00.000Z",
+        value_numeric: "1.125",
+        quality: "estimated",
+        source_batch_id: "batch-billing-1",
+      },
+    ],
+    "meter-2": [],
+  } as Record<string, Array<Record<string, unknown>>>,
   delayedMeters = false,
   delayedDetail = false,
 }: {
@@ -112,6 +151,8 @@ function createMockApi({
   readingsByMeter?: Record<string, Array<Record<string, unknown>>>;
   registerSnapshotsByMeter?: Record<string, Array<Record<string, unknown>>>;
   readingBatchesByMeter?: Record<string, Array<Record<string, unknown>>>;
+  loadProfileChannelsByMeter?: Record<string, Array<Record<string, unknown>>>;
+  loadProfileIntervalsByMeter?: Record<string, Array<Record<string, unknown>>>;
   delayedMeters?: boolean;
   delayedDetail?: boolean;
 } = {}) {
@@ -182,6 +223,32 @@ function createMockApi({
       });
     }
 
+    const channelsMatch = url.match(/\/api\/v1\/meters\/([^/]+)\/load-profile-channels$/);
+    if (channelsMatch) {
+      if (delayedDetail) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+      }
+      const meterId = channelsMatch[1];
+      return jsonResponse({
+        total: loadProfileChannelsByMeter[meterId]?.length ?? 0,
+        items: loadProfileChannelsByMeter[meterId] ?? [],
+      });
+    }
+
+    const intervalsMatch = url.match(
+      /\/api\/v1\/meters\/([^/]+)\/load-profile-intervals\?limit=96$/,
+    );
+    if (intervalsMatch) {
+      if (delayedDetail) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+      }
+      const meterId = intervalsMatch[1];
+      return jsonResponse({
+        total: loadProfileIntervalsByMeter[meterId]?.length ?? 0,
+        items: loadProfileIntervalsByMeter[meterId] ?? [],
+      });
+    }
+
     throw new Error(`Unhandled request: ${url}`);
   });
 
@@ -245,6 +312,15 @@ describe("ReadingsModule", () => {
     expect(screen.getByText(/Latest billing snapshot captured/)).toBeInTheDocument();
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
     expect(screen.getByText("Newest first")).toBeInTheDocument();
+      expect(screen.getByText("Interval reads")).toBeInTheDocument();
+      expect(screen.getByText("Newest interval first")).toBeInTheDocument();
+      expect(screen.getAllByText("Latest interval").length).toBeGreaterThan(0);
+      expect(screen.getByText("Recent interval reads loaded")).toBeInTheDocument();
+      expect(screen.getAllByText("Latest quality Good")).not.toHaveLength(0);
+      expect(screen.getAllByText("Latest value 1.250 kWh")).not.toHaveLength(0);
+      expect(screen.getAllByText("lp_import • 1.0.99.1.0.255")).not.toHaveLength(0);
+      expect(screen.getByText("Interval window")).toBeInTheDocument();
+      expect(screen.getByText("Quality")).toBeInTheDocument();
     expect(screen.getAllByText("Latest billing read")).not.toHaveLength(0);
     expect(screen.getByText("Received at")).toBeInTheDocument();
     expect(screen.getAllByText("Latest batch Received")).not.toHaveLength(0);
@@ -296,15 +372,26 @@ describe("ReadingsModule", () => {
       ).toBeInTheDocument();
       expect(
         within(billingPanel as HTMLElement).getByText(
+          "No interval reads available for the selected meter yet. The interval section remains bounded to current recent load profile records only.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText(
           "No billing-read context recorded yet for the selected meter.",
         ),
       ).toBeInTheDocument();
       expect(
         within(billingPanel as HTMLElement).getByText("Current billing context"),
       ).toBeInTheDocument();
+      expect(within(billingPanel as HTMLElement).getByText("Interval reads")).toBeInTheDocument();
       expect(
         within(billingPanel as HTMLElement).getByText(
           "No billing-read context is recorded yet for the selected meter. Use the meter detail return path if you need to confirm whether a billing read should exist for this meter.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(billingPanel as HTMLElement).getByText(
+          "No interval-read context is recorded yet for the selected meter. The bounded interval surface remains empty until load profile intervals are available.",
         ),
       ).toBeInTheDocument();
       expect(
@@ -451,6 +538,56 @@ describe("ReadingsModule", () => {
           },
         ],
       },
+      loadProfileChannelsByMeter: {
+        "meter-1": [
+          {
+            id: "channel-1",
+            meter_id: "meter-1",
+            channel_code: "lp_import",
+            obis_code: "1.0.99.1.0.255",
+            unit: "kWh",
+            interval_seconds: 900,
+            is_active: true,
+          },
+        ],
+        "meter-2": [
+          {
+            id: "channel-2",
+            meter_id: "meter-2",
+            channel_code: "lp_export",
+            obis_code: "1.0.99.2.0.255",
+            unit: "kWh",
+            interval_seconds: 1800,
+            is_active: true,
+          },
+        ],
+      },
+      loadProfileIntervalsByMeter: {
+        "meter-1": [
+          {
+            id: "interval-1",
+            meter_id: "meter-1",
+            channel_id: "channel-1",
+            interval_start: "2026-04-02T10:45:00.000Z",
+            interval_end: "2026-04-02T11:00:00.000Z",
+            value_numeric: "1.250",
+            quality: "good",
+            source_batch_id: "batch-billing-1",
+          },
+        ],
+        "meter-2": [
+          {
+            id: "interval-2",
+            meter_id: "meter-2",
+            channel_id: "channel-2",
+            interval_start: "2026-04-03T10:30:00.000Z",
+            interval_end: "2026-04-03T11:00:00.000Z",
+            value_numeric: "2.500",
+            quality: "good",
+            source_batch_id: "batch-billing-2",
+          },
+        ],
+      },
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -467,6 +604,9 @@ describe("ReadingsModule", () => {
       expect(screen.getByText("Selected meter SN-1002")).toBeInTheDocument();
       expect(screen.getByText("Overview reflects current billing context")).toBeInTheDocument();
       expect(screen.getAllByText("Source Scheduled Read")).not.toHaveLength(0);
+      expect(screen.getAllByText("Latest quality Good")).not.toHaveLength(0);
+      expect(screen.getAllByText("Latest value 2.500 kWh")).not.toHaveLength(0);
+      expect(screen.getAllByText("lp_export • 1.0.99.2.0.255")).not.toHaveLength(0);
       expect(screen.getByText("Latest billing status")).toBeInTheDocument();
       expect(screen.getByText("Primary value Total Import: 456.789")).toBeInTheDocument();
       expect(screen.getAllByText("Total Import 456.789 • Reset Reason manual_close")).not.toHaveLength(0);
