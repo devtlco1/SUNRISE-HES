@@ -72,6 +72,14 @@ type ConnectivityIncident = {
   sortWeight: number;
 };
 
+type ConnectivityIncidentFilter = "all" | ConnectivityIncidentState;
+
+type ConnectivityIncidentRow = {
+  row: ConnectivityOverviewRow;
+  freshnessContext: FreshnessContext;
+  incident: ConnectivityIncident;
+};
+
 const STALE_SIGNAL_THRESHOLD_MS = 1000 * 60 * 60 * 24;
 
 function formatDateTime(value: string | null): string {
@@ -237,6 +245,7 @@ export function ConnectivityModule({
 }) {
   const [rows, setRows] = useState<ConnectivityOverviewRow[]>([]);
   const [selectedMeterId, setSelectedMeterId] = useState<string | null>(null);
+  const [incidentFilter, setIncidentFilter] = useState<ConnectivityIncidentFilter>("all");
   const [totalMeters, setTotalMeters] = useState(0);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isLoadingOverview, setIsLoadingOverview] = useState(false);
@@ -355,11 +364,7 @@ export function ConnectivityModule({
         .filter(
           (
             item,
-          ): item is {
-            row: ConnectivityOverviewRow;
-            freshnessContext: FreshnessContext;
-            incident: ConnectivityIncident;
-          } => item.incident !== null,
+          ): item is ConnectivityIncidentRow => item.incident !== null,
         )
         .sort((left, right) => {
           if (left.incident.sortWeight !== right.incident.sortWeight) {
@@ -373,6 +378,13 @@ export function ConnectivityModule({
           return left.row.meter.serial_number.localeCompare(right.row.meter.serial_number);
         }),
     [rows],
+  );
+  const filteredIncidentRows = useMemo(
+    () =>
+      incidentRows.filter((item) =>
+        incidentFilter === "all" ? true : item.incident.state === incidentFilter,
+      ),
+    [incidentFilter, incidentRows],
   );
 
   const selectedRow = useMemo(
@@ -428,6 +440,13 @@ export function ConnectivityModule({
     ],
     [overviewStats, rows.length, selectedRow, totalMeters],
   );
+  const incidentFilterSummary = useMemo(() => {
+    if (incidentFilter === "all") {
+      return "All incident states in the current bounded connectivity scope.";
+    }
+
+    return `Showing ${formatStatusLabel(incidentFilter).toLowerCase()} incidents only in the current bounded connectivity scope.`;
+  }, [incidentFilter]);
 
   return (
     <section className="panel">
@@ -472,7 +491,7 @@ export function ConnectivityModule({
                 freshness, or a recent failed connectivity session.
               </p>
             </div>
-            <span className="artifact-pill">{incidentRows.length} incident contexts</span>
+            <span className="artifact-pill">{filteredIncidentRows.length} incident contexts</span>
           </div>
 
           <div className="artifact-row">
@@ -484,18 +503,53 @@ export function ConnectivityModule({
             </span>
           </div>
 
+          <div className="artifact-row">
+            <button
+              className={incidentFilter === "all" ? "primary-button" : "secondary-button"}
+              onClick={() => setIncidentFilter("all")}
+              type="button"
+            >
+              All incidents
+            </button>
+            <button
+              className={incidentFilter === "offline" ? "primary-button" : "secondary-button"}
+              onClick={() => setIncidentFilter("offline")}
+              type="button"
+            >
+              Offline
+            </button>
+            <button
+              className={incidentFilter === "stale" ? "primary-button" : "secondary-button"}
+              onClick={() => setIncidentFilter("stale")}
+              type="button"
+            >
+              Stale
+            </button>
+            <button
+              className={incidentFilter === "degraded" ? "primary-button" : "secondary-button"}
+              onClick={() => setIncidentFilter("degraded")}
+              type="button"
+            >
+              Degraded
+            </button>
+          </div>
+
+          <p className="muted">{incidentFilterSummary}</p>
+
           {isLoadingOverview ? (
             <p className="muted">Loading offline meters and connectivity incidents...</p>
           ) : null}
 
           <div className="meter-list">
-            {!isLoadingOverview && incidentRows.length === 0 ? (
+            {!isLoadingOverview && filteredIncidentRows.length === 0 ? (
               <p className="muted">
-                No offline meters or connectivity incidents match the current bounded scope.
+                {incidentFilter === "all"
+                  ? "No offline meters or connectivity incidents match the current bounded scope."
+                  : `No ${incidentFilter} incidents match the current bounded scope.`}
               </p>
             ) : null}
 
-            {incidentRows.map(({ row, freshnessContext, incident }) => (
+            {filteredIncidentRows.map(({ row, freshnessContext, incident }) => (
               <article
                 key={`incident-${row.meter.id}`}
                 className={
