@@ -128,6 +128,10 @@ describe("MetersModule", () => {
     expect(await screen.findByRole("link", { name: "Meters" })).toBeInTheDocument();
     expect(screen.getByText("Meters in current result")).toBeInTheDocument();
     expect(screen.getByText("Active inventory items")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open import wizard" })).toHaveAttribute(
+      "href",
+      "/meters/import",
+    );
     expect(await screen.findByText("SN-1001")).toBeInTheDocument();
     expect(screen.getByText("SN-1002")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open bulk commands" })).toBeDisabled();

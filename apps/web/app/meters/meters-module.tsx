@@ -167,7 +167,12 @@ export function MetersModule({
             page.
           </p>
         </div>
-        <span className="artifact-pill">{statusSummary}</span>
+        <div className="artifact-row">
+          <span className="artifact-pill">{statusSummary}</span>
+          <Link className="secondary-button" href="/meters/import">
+            Open import wizard
+          </Link>
+        </div>
       </div>
 
       <section className="subpanel">
