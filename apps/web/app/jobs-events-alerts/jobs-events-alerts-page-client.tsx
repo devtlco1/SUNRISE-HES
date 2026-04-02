@@ -3,7 +3,16 @@
 import { OperationalShell } from "../operational-shell";
 import { JobsEventsAlertsModule } from "./jobs-events-alerts-module";
 
-export function JobsEventsAlertsPageClient() {
+type AttentionLandingContext = {
+  source: "dashboard_attention_queue";
+  filter: "attention";
+} | null;
+
+export function JobsEventsAlertsPageClient({
+  initialAttentionContext = null,
+}: {
+  initialAttentionContext?: AttentionLandingContext;
+}) {
   return (
     <OperationalShell
       eyebrow="Operational Pages"
@@ -11,7 +20,10 @@ export function JobsEventsAlertsPageClient() {
       description="Operational monitoring surface built from the current bounded job, command, and event read APIs."
     >
       {({ authorizedFetch }) => (
-        <JobsEventsAlertsModule authorizedFetch={authorizedFetch} />
+        <JobsEventsAlertsModule
+          authorizedFetch={authorizedFetch}
+          initialAttentionContext={initialAttentionContext}
+        />
       )}
     </OperationalShell>
   );

@@ -745,7 +745,10 @@ export function OperationalHomeModule({
               )}
 
               <div className="artifact-row">
-                <Link className="secondary-button" href="/jobs-events-alerts">
+                <Link
+                  className="secondary-button"
+                  href="/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention"
+                >
                   Open jobs / events / alerts
                 </Link>
                 <span className="muted">

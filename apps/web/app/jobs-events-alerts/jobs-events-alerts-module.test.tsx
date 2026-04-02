@@ -140,7 +140,14 @@ function createMockApi({
   return { fetchMock };
 }
 
-function renderJobsEventsAlertsModuleInShell() {
+function renderJobsEventsAlertsModuleInShell({
+  initialAttentionContext = null,
+}: {
+  initialAttentionContext?: {
+    source: "dashboard_attention_queue";
+    filter: "attention";
+  } | null;
+} = {}) {
   render(
     <OperationalShell
       eyebrow="Operational Pages"
@@ -148,7 +155,10 @@ function renderJobsEventsAlertsModuleInShell() {
       description="Bounded jobs, events, and alerts monitoring"
     >
       {({ authorizedFetch }) => (
-        <JobsEventsAlertsModule authorizedFetch={authorizedFetch} />
+        <JobsEventsAlertsModule
+          authorizedFetch={authorizedFetch}
+          initialAttentionContext={initialAttentionContext}
+        />
       )}
     </OperationalShell>,
   );
@@ -182,6 +192,41 @@ describe("JobsEventsAlertsModule", () => {
       expect(screen.getByText("Recent job runs loaded")).toBeInTheDocument();
       expect(screen.getByText("Recent events loaded")).toBeInTheDocument();
       expect(screen.getByText("Derived alerts in current view")).toBeInTheDocument();
+    });
+  });
+
+  it("lands in an attention-only monitoring context from the dashboard handoff", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderJobsEventsAlertsModuleInShell({
+      initialAttentionContext: {
+        source: "dashboard_attention_queue",
+        filter: "attention",
+      },
+    });
+
+    expect(
+      await screen.findByText(
+        "Dashboard attention handoff opened this monitoring surface with attention-oriented activity preselected.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Attention-only landing from the dashboard handoff. Review alert-like jobs, commands, and events first, or switch back to the full activity list.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Attention only" })).toBeInTheDocument();
+
+    const activityPanel = (
+      await screen.findByRole("heading", { name: "Recent operational activity" })
+    ).closest("section");
+    expect(activityPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(activityPanel as HTMLElement).queryByText("relay-disconnect-template"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(activityPanel as HTMLElement).getAllByText("profile-capture-template").length,
+      ).toBeGreaterThan(0);
+      expect(within(activityPanel as HTMLElement).getAllByText("Tamper Open").length).toBeGreaterThan(0);
     });
   });
 
@@ -295,6 +340,62 @@ describe("JobsEventsAlertsModule", () => {
           "No recent operational activity available.",
         ),
       ).toBeInTheDocument();
+    });
+  });
+
+  it("renders a bounded empty state for an attention-only landing with no alert-like activity", async () => {
+    const { fetchMock } = createMockApi({
+      jobRuns: [],
+      recentCommands: [
+        {
+          command_id: "command-healthy",
+          command_family: "relay_control",
+          command_status: "queued",
+          meter_id: "meter-2",
+          command_template_code: "relay-disconnect-template",
+          family_specific_outcome_summary: {
+            relay_control_operation: "disconnect",
+            relay_control_execution_outcome: "pending",
+          },
+          latest_updated_at: "2026-03-31T09:54:00.000Z",
+        },
+      ],
+      recentEvents: [
+        {
+          id: "event-closed",
+          meter_id: "meter-2",
+          event_code: "tamper_open",
+          event_name: "Tamper Open",
+          severity: "warning",
+          event_state: "closed",
+          occurred_at: "2026-03-31T09:59:00.000Z",
+          received_at: "2026-03-31T09:59:30.000Z",
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderJobsEventsAlertsModuleInShell({
+      initialAttentionContext: {
+        source: "dashboard_attention_queue",
+        filter: "attention",
+      },
+    });
+
+    const activityPanel = (
+      await screen.findByRole("heading", { name: "Recent operational activity" })
+    ).closest("section");
+    expect(activityPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(activityPanel as HTMLElement).getByText(
+          "No attention-oriented operational activity is currently visible.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(activityPanel as HTMLElement).queryByRole("button", { name: "Inspect summary" }),
+      ).not.toBeInTheDocument();
     });
   });
 

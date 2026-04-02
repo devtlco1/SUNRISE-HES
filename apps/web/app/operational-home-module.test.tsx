@@ -442,7 +442,7 @@ describe("OperationalHomeModule", () => {
     );
     expect(await screen.findByRole("link", { name: "Open jobs / events / alerts" })).toHaveAttribute(
       "href",
-      "/jobs-events-alerts",
+      "/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention",
     );
     expect(screen.getByRole("link", { name: "Open import wizard" })).toHaveAttribute(
       "href",

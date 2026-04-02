@@ -73,6 +73,7 @@ type ActivityItem = {
   title: string;
   category: string;
   status: string;
+  isAttentionItem: boolean;
   meterId: string | null;
   timestamp: string;
   summary: string;
@@ -89,6 +90,11 @@ type AlertItem = {
   timestamp: string;
   status: string;
   targetHref: string | null;
+};
+
+type AttentionLandingContext = {
+  source: "dashboard_attention_queue";
+  filter: "attention";
 };
 
 function buildJobRunTimestamp(jobRun: JobRunItem): string {
@@ -148,14 +154,19 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
 
 export function JobsEventsAlertsModule({
   authorizedFetch,
+  initialAttentionContext = null,
 }: {
   authorizedFetch: AuthorizedFetch;
+  initialAttentionContext?: AttentionLandingContext | null;
 }) {
   const [jobRuns, setJobRuns] = useState<JobRunItem[] | null>(null);
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[] | null>(
     null,
   );
   const [recentEvents, setRecentEvents] = useState<RecentEventItem[] | null>(null);
+  const [activityFilter, setActivityFilter] = useState<"all" | "attention">(
+    initialAttentionContext?.filter ?? "all",
+  );
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isLoadingActivity, setIsLoadingActivity] = useState(false);
@@ -220,6 +231,7 @@ export function JobsEventsAlertsModule({
           `Job run ${jobRun.id.slice(0, 8)}`,
         category: "job run",
         status: jobRun.status,
+        isAttentionItem: ["failed", "timed_out", "cancelled"].includes(jobRun.status),
         meterId: jobRun.target_meter_id,
         timestamp: buildJobRunTimestamp(jobRun),
         summary:
@@ -240,6 +252,7 @@ export function JobsEventsAlertsModule({
         title: command.command_template_code,
         category: command.command_family,
         status: command.command_status,
+        isAttentionItem: ["failed", "timed_out", "cancelled"].includes(command.command_status),
         meterId: command.meter_id,
         timestamp: command.latest_updated_at,
         summary: formatCommandSummary(command.family_specific_outcome_summary),
@@ -256,6 +269,9 @@ export function JobsEventsAlertsModule({
         title: event.event_name ?? event.event_code,
         category: event.event_code,
         status: `${event.severity} / ${event.event_state}`,
+        isAttentionItem:
+          event.severity === "critical" ||
+          (event.severity === "warning" && event.event_state === "open"),
         meterId: event.meter_id,
         timestamp: event.occurred_at,
         summary: `Received ${formatDateTime(event.received_at)}`,
@@ -267,6 +283,13 @@ export function JobsEventsAlertsModule({
 
     return sortByTimestampDesc(items).slice(0, 12);
   }, [jobRuns, recentCommands, recentEvents]);
+  const filteredActivityItems = useMemo(
+    () =>
+      activityItems.filter((item) =>
+        activityFilter === "attention" ? item.isAttentionItem : true,
+      ),
+    [activityFilter, activityItems],
+  );
 
   const alertItems = useMemo(() => {
     const alerts: AlertItem[] = [];
@@ -354,17 +377,20 @@ export function JobsEventsAlertsModule({
     setSelectedActivityId((currentSelectedActivityId) => {
       if (
         currentSelectedActivityId &&
-        activityItems.some((item) => item.id === currentSelectedActivityId)
+        filteredActivityItems.some((item) => item.id === currentSelectedActivityId)
       ) {
         return currentSelectedActivityId;
       }
-      return activityItems[0]?.id ?? null;
+      return filteredActivityItems[0]?.id ?? null;
     });
-  }, [activityItems]);
+  }, [filteredActivityItems]);
 
   const selectedActivity = useMemo(
-    () => activityItems.find((item) => item.id === selectedActivityId) ?? activityItems[0] ?? null,
-    [activityItems, selectedActivityId],
+    () =>
+      filteredActivityItems.find((item) => item.id === selectedActivityId) ??
+      filteredActivityItems[0] ??
+      null,
+    [filteredActivityItems, selectedActivityId],
   );
 
   const activityStatus = useMemo(() => {
@@ -376,6 +402,12 @@ export function JobsEventsAlertsModule({
     }
     return "Activity ready";
   }, [isLoadingActivity, jobRuns, pageError, recentCommands, recentEvents]);
+  const activityFilterSummary = useMemo(() => {
+    if (activityFilter === "attention") {
+      return "Attention-only landing from the dashboard handoff. Review alert-like jobs, commands, and events first, or switch back to the full activity list.";
+    }
+    return "All recent jobs, commands, and events visible in the current bounded monitoring scope.";
+  }, [activityFilter]);
 
   return (
     <section className="panel">
@@ -418,6 +450,19 @@ export function JobsEventsAlertsModule({
               </p>
             </div>
           </div>
+
+          {initialAttentionContext ? (
+            <div className="detail-stack">
+              <p className="muted">
+                Dashboard attention handoff opened this monitoring surface with attention-oriented
+                activity preselected.
+              </p>
+              <div className="artifact-row">
+                <span className="artifact-pill">Dashboard attention handoff</span>
+                <span className="artifact-pill">Attention-only landing</span>
+              </div>
+            </div>
+          ) : null}
 
           {isLoadingActivity ? (
             <p className="muted">Loading derived alerts...</p>
@@ -488,15 +533,38 @@ export function JobsEventsAlertsModule({
             </div>
           </div>
 
+          <div className="artifact-row">
+            <button
+              className={activityFilter === "all" ? "primary-button" : "secondary-button"}
+              onClick={() => setActivityFilter("all")}
+              type="button"
+            >
+              All activity
+            </button>
+            <button
+              className={activityFilter === "attention" ? "primary-button" : "secondary-button"}
+              onClick={() => setActivityFilter("attention")}
+              type="button"
+            >
+              Attention only
+            </button>
+          </div>
+
+          <p className="muted">{activityFilterSummary}</p>
+
           {isLoadingActivity ? (
             <p className="muted">Loading recent operational activity...</p>
           ) : (
             <div className="command-list">
-              {activityItems.length === 0 ? (
-                <p className="muted">No recent operational activity available.</p>
+              {filteredActivityItems.length === 0 ? (
+                <p className="muted">
+                  {activityFilter === "attention"
+                    ? "No attention-oriented operational activity is currently visible."
+                    : "No recent operational activity available."}
+                </p>
               ) : null}
 
-              {activityItems.map((item) => (
+              {filteredActivityItems.map((item) => (
                 <div key={item.id} className="command-list-item">
                   <div className="command-list-item-header">
                     <strong>{item.title}</strong>
