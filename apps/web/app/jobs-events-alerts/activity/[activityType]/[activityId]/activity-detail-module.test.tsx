@@ -201,7 +201,7 @@ describe("ActivityDetailModule", () => {
     );
     expect(screen.getByRole("link", { name: "Open remediation context" })).toHaveAttribute(
       "href",
-      "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=command&retryReason=rejected&retryContext=Meter+meter-1.+Latest+attempt+Failed.",
+      "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=command&retryReason=rejected&retryContext=Meter+meter-1.+Latest+attempt+Failed.&retryOriginActivityType=command&retryOriginActivityId=command-1",
     );
   });
 
@@ -221,7 +221,7 @@ describe("ActivityDetailModule", () => {
     expect(screen.getAllByText("Failed")).not.toHaveLength(0);
     expect(screen.getByRole("link", { name: "Open remediation context" })).toHaveAttribute(
       "href",
-      "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=job_run&retryReason=Association+rejected&retryContext=Meter+meter-1.+Retries+1%2F3.",
+      "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=job_run&retryReason=Association+rejected&retryContext=Meter+meter-1.+Retries+1%2F3.&retryOriginActivityType=job_run&retryOriginActivityId=job-run-1",
     );
   });
 

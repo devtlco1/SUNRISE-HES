@@ -142,11 +142,15 @@ function buildRetryRemediationHref({
   itemType,
   reason,
   context,
+  originActivityType,
+  originActivityId,
 }: {
   commandId: string | null;
   itemType: "job_run" | "command";
   reason: string | null;
   context: string | null;
+  originActivityType?: "job_run" | "command";
+  originActivityId?: string;
 }): string | null {
   if (!commandId) {
     return null;
@@ -163,6 +167,12 @@ function buildRetryRemediationHref({
   }
   if (context) {
     searchParams.set("retryContext", context);
+  }
+  if (originActivityType) {
+    searchParams.set("retryOriginActivityType", originActivityType);
+  }
+  if (originActivityId) {
+    searchParams.set("retryOriginActivityId", originActivityId);
   }
 
   return `/commands?${searchParams.toString()}`;
@@ -274,6 +284,8 @@ export function ActivityDetailModule({
           detail.record.latest_error_code ??
           `Job run ${formatStatusLabel(detail.record.status)}`,
         context: `${detail.record.target_meter_id ? `Meter ${detail.record.target_meter_id}. ` : ""}Retries ${detail.record.retry_count}/${detail.record.max_retries}.`,
+        originActivityType: "job_run",
+        originActivityId: detail.record.id,
       });
     }
 
@@ -291,6 +303,8 @@ export function ActivityDetailModule({
             ? `Latest attempt ${formatStatusLabel(detail.record.latest_command_execution_attempt_status)}.`
             : "No execution attempt recorded."
         }`,
+        originActivityType: "command",
+        originActivityId: detail.record.command_id,
       });
     }
 

@@ -17,6 +17,8 @@ type RetryRemediationHandoff = {
   itemType: "job_run" | "command";
   reason: string | null;
   context: string | null;
+  originActivityType: "job_run" | "command" | null;
+  originActivityId: string | null;
 };
 
 function resolveMeterIds(value: string | string[] | undefined): string[] {
@@ -82,9 +84,12 @@ function resolveRetryRemediationHandoff(searchParams: {
   retryItemType?: string | string[];
   retryReason?: string | string[];
   retryContext?: string | string[];
+  retryOriginActivityType?: string | string[];
+  retryOriginActivityId?: string | string[];
 }): RetryRemediationHandoff | null {
   const source = resolveSingleValue(searchParams.retrySource);
   const itemType = resolveSingleValue(searchParams.retryItemType);
+  const originActivityType = resolveSingleValue(searchParams.retryOriginActivityType);
 
   if (source !== "jobs_retry_queue" || (itemType !== "job_run" && itemType !== "command")) {
     return null;
@@ -95,6 +100,11 @@ function resolveRetryRemediationHandoff(searchParams: {
     itemType,
     reason: resolveSingleValue(searchParams.retryReason),
     context: resolveSingleValue(searchParams.retryContext),
+    originActivityType:
+      originActivityType === "job_run" || originActivityType === "command"
+        ? originActivityType
+        : null,
+    originActivityId: resolveSingleValue(searchParams.retryOriginActivityId),
   };
 }
 
@@ -115,6 +125,8 @@ export default async function CommandsPage({
     retryItemType?: string | string[];
     retryReason?: string | string[];
     retryContext?: string | string[];
+    retryOriginActivityType?: string | string[];
+    retryOriginActivityId?: string | string[];
   }>;
 }) {
   const resolvedSearchParams = await searchParams;

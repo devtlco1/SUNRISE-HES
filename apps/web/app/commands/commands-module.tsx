@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+
+import { buildActivityDetailHref } from "../jobs-events-alerts/activity-support";
 
 import type { AuthorizedFetch } from "../operational-shell";
 
@@ -25,6 +28,8 @@ type RetryRemediationHandoff = {
   itemType: "job_run" | "command";
   reason: string | null;
   context: string | null;
+  originActivityType: "job_run" | "command" | null;
+  originActivityId: string | null;
 };
 
 type CommandRecentItem = {
@@ -283,6 +288,14 @@ function buildRetryRemediationSummary(value: RetryRemediationHandoff | null): st
   ]
     .filter((item): item is string => Boolean(item))
     .join(" ");
+}
+
+function buildRetryRemediationReturnHref(value: RetryRemediationHandoff | null): string | null {
+  if (!value?.originActivityType || !value.originActivityId) {
+    return null;
+  }
+
+  return buildActivityDetailHref(value.originActivityType, value.originActivityId);
 }
 
 function buildTemplateCategory(
@@ -706,6 +719,10 @@ export function CommandsModule({
   }, [handedOffMeterIds.length, initialRecoveryAction]);
   const retryRemediationSummary = useMemo(
     () => buildRetryRemediationSummary(initialRetryRemediation),
+    [initialRetryRemediation],
+  );
+  const retryRemediationReturnHref = useMemo(
+    () => buildRetryRemediationReturnHref(initialRetryRemediation),
     [initialRetryRemediation],
   );
   const isRetryRemediationActive = useMemo(
@@ -1879,6 +1896,11 @@ export function CommandsModule({
                       <span className="artifact-pill">
                         {formatStatusLabel(initialRetryRemediation?.itemType ?? "command")}
                       </span>
+                      {retryRemediationReturnHref ? (
+                        <Link className="secondary-button" href={retryRemediationReturnHref}>
+                          Back to retry activity detail
+                        </Link>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}

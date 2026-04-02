@@ -536,6 +536,8 @@ function renderCommandsModuleInShell({
     itemType: "job_run" | "command";
     reason: string | null;
     context: string | null;
+    originActivityType: "job_run" | "command" | null;
+    originActivityId: string | null;
   } | null;
 } = {}) {
   render(
@@ -717,6 +719,8 @@ describe("CommandsModule", () => {
         itemType: "job_run",
         reason: "Association rejected",
         context: "Meter meter-2. Retries 1/3.",
+        originActivityType: "job_run",
+        originActivityId: "job-run-1",
       },
     });
 
@@ -728,6 +732,10 @@ describe("CommandsModule", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Retry remediation handoff")).toBeInTheDocument();
     expect(screen.getByText("Jobs retry queue")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to retry activity detail" })).toHaveAttribute(
+      "href",
+      "/jobs-events-alerts/activity/job_run/job-run-1",
+    );
 
     const detailPanel = screen.getAllByRole("heading", { name: "Command detail" })[0].closest(
       "section",

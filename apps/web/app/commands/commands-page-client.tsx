@@ -15,6 +15,8 @@ type RetryRemediationHandoff = {
   itemType: "job_run" | "command";
   reason: string | null;
   context: string | null;
+  originActivityType: "job_run" | "command" | null;
+  originActivityId: string | null;
 };
 
 export function CommandsPageClient({
