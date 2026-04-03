@@ -369,6 +369,9 @@ def test_relay_control_adapter_uses_bound_live_tcp_ingress_connection(monkeypatc
             assert operation_name == "remote_disconnect"
             return LiveTcpRelayControlExecution(
                 invocation_status="acknowledged",
+                before_state=None,
+                after_state=None,
+                error_detail=None,
                 protocol_trace={"start_protocol": config.start_protocol},
                 raw_frames=[{"stage": "fake-relay"}],
                 bytes_sent=21,
@@ -474,6 +477,143 @@ def test_relay_control_adapter_uses_bound_live_tcp_ingress_connection(monkeypatc
             is True
         )
         assert result.adapter_result_summary["live_tcp_ingress"]["bytes_sent"] == 21
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_relay_control_adapter_fails_when_bound_live_connection_cannot_be_reused(
+    monkeypatch,
+) -> None:
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        meter_id = uuid.uuid4()
+        endpoint_id = uuid.uuid4()
+        profile_id = uuid.uuid4()
+        manager.bind_active_connection(
+            meter_id=meter_id,
+            endpoint_id=endpoint_id,
+            protocol_association_profile_id=profile_id,
+        )
+
+        def unexpected_live_execute(**kwargs):
+            raise AssertionError("relay helper should not run while the bound connection is busy")
+
+        monkeypatch.setattr(
+            "app.runtime.adapters.dlms_cosem.execute_relay_control_over_tcp_ingress",
+            unexpected_live_execute,
+        )
+
+        with manager.borrow_bound_connection(meter_id=meter_id, endpoint_id=endpoint_id):
+            result = GuruxDlmsAdapterBridge().execute_relay_control(
+                RuntimeRelayControlAdapterRequest(
+                    adapter_key="gurux-dlms-bridge",
+                    protocol_family=ProtocolFamily.DLMS_COSEM,
+                    operation=RuntimeRelayControlOperation.DISCONNECT,
+                    command_category=CommandCategory.REMOTE_DISCONNECT,
+                    execution_context=RuntimeExecutionContext(
+                        command_id=uuid.uuid4(),
+                        job_run_id=uuid.uuid4(),
+                        command_attempt_id=uuid.uuid4(),
+                        correlation_id="corr-live-relay-busy",
+                        worker_identifier="worker-runtime-live-relay",
+                        request_id="request-live-relay-busy",
+                        triggered_at=datetime.now(UTC),
+                    ),
+                    target=MeterRuntimeTarget(
+                        meter_id=meter_id,
+                        serial_number="meter-live-relay-001",
+                        utility_meter_number="utility-live-relay-001",
+                        meter_profile_id=None,
+                        manufacturer_code="SUN",
+                        meter_model_code="ST34",
+                        meter_model_name="Sunrise Test Meter",
+                        endpoint_assignment_id=uuid.uuid4(),
+                        endpoint_id=endpoint_id,
+                        endpoint_code="live-endpoint",
+                        protocol_association_profile_id=profile_id,
+                    ),
+                    transport=RuntimeTransportConfig(
+                        endpoint_transport_type=ConnectivityTransportType.TCP_IP,
+                        host="127.0.0.1",
+                        port=listen_port,
+                    ),
+                    security=RuntimeSecurityMaterialRefs(
+                        authentication_mode=AssociationAuthenticationMode.NONE,
+                    ),
+                    protocol_profile_code="dlms-live-relay",
+                    iec62056_21_enabled=True,
+                    iec_device_address=None,
+                    iec_baud_rate=300,
+                    client_address=1,
+                    server_address=1,
+                    server_address_size=4,
+                    protocol_settings={"tcp_start_protocol": "iec", "use_broadcast_snrm_first": True},
+                    protocol_defaults=None,
+                    request_payload={"relay_control_operation": "disconnect"},
+                    normalized_payload={
+                        "relay_control_operation": "disconnect",
+                        "relay_control": {
+                            "target_object": {
+                                "interface_class": "disconnect_control",
+                                "obis_code": "0.0.96.3.10.255",
+                                "method_name": "remote_disconnect",
+                                "method_index": 1,
+                            }
+                        },
+                    },
+                    dispatch_envelope_record_id="dispatch-live-relay-busy",
+                    trace_references={
+                        "session_identifier": "session-live-relay-busy",
+                        "delivery_contract_record_id": "delivery-live-relay-busy",
+                        "envelope_record_id": "envelope-live-relay-busy",
+                        "publication_contract_record_id": "publication-live-relay-busy",
+                        "attestation_record_id": "attestation-live-relay-busy",
+                        "settlement_record_id": "settlement-live-relay-busy",
+                        "reconciliation_record_id": "reconciliation-live-relay-busy",
+                        "interpretation_record_id": "interpretation-live-relay-busy",
+                        "observation_record_id": "observation-live-relay-busy",
+                        "invocation_result_record_id": "invocation-live-relay-busy",
+                        "dispatch_request_record_id": "dispatch-request-live-relay-busy",
+                        "selection_record_id": "selection-live-relay-busy",
+                        "intent_record_id": "intent-live-relay-busy",
+                        "closure_record_id": "closure-live-relay-busy",
+                        "materialization_record_id": "materialization-live-relay-busy",
+                        "post_processing_record_id": "post-processing-live-relay-busy",
+                        "disposition_record_id": "disposition-live-relay-busy",
+                        "outcome_record_id": "outcome-live-relay-busy",
+                    },
+                    lineage=RuntimeExecutionSessionLineage(
+                        dispatch_request_identity="dispatch-identity-live-relay-busy",
+                        queue_message_id="queue-live-relay-busy",
+                        claim_token="claim-live-relay-busy",
+                        intended_worker_path="runtime-live-relay",
+                    ),
+                )
+            )
+
+        assert result.execution_outcome.value == "failed"
+        assert result.protocol_stage_outcome.value == "relay_operation_failed"
+        assert result.adapter_result_summary["live_tcp_ingress"]["used_bound_connection"] is False
+        assert (
+            "could not borrow it for real execution"
+            in result.error_detail.lower()
+        )
     finally:
         if client_socket is not None:
             client_socket.close()

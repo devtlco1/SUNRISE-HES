@@ -55,6 +55,7 @@ from app.runtime.contracts import (
 from app.runtime.services.runtime_secret_refs import resolve_runtime_secret_ref
 from app.runtime.services.tcp_meter_ingress import (
     borrow_runtime_tcp_meter_ingress_connection,
+    get_runtime_tcp_meter_ingress_status,
     mark_runtime_tcp_meter_ingress_connection_dead,
 )
 
@@ -199,6 +200,34 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
         )
         if live_execution is not None:
             trace_references = request.trace_references
+            live_execution_succeeded = live_execution.invocation_status == "acknowledged"
+            adapter_acknowledgment_state = (
+                RuntimeRelayControlAdapterAcknowledgmentState.ACCEPTED
+                if live_execution_succeeded
+                else RuntimeRelayControlAdapterAcknowledgmentState.REJECTED
+            )
+            protocol_stage_outcome = (
+                RuntimeRelayControlProtocolStageOutcome.RELAY_OPERATION_COMPLETED
+                if live_execution_succeeded
+                else RuntimeRelayControlProtocolStageOutcome.RELAY_OPERATION_FAILED
+            )
+            execution_outcome = (
+                RuntimeCommandOutcome.SUCCEEDED
+                if live_execution_succeeded
+                else RuntimeCommandOutcome.FAILED
+            )
+            error_category = None
+            if not live_execution_succeeded:
+                error_category = (
+                    RuntimeRelayControlErrorCategory.ADAPTER_REJECTED
+                    if live_execution.invocation_status == "rejected"
+                    else RuntimeRelayControlErrorCategory.EXECUTION_FAILED
+                )
+            summary = (
+                "Relay-control completed over the bound live TCP ingress session."
+                if live_execution_succeeded
+                else "Relay-control failed over the bound live TCP ingress session."
+            )
             return RuntimeRelayControlExecutionResult(
                 status=RuntimeRelayControlExecutionStatus.COMPLETED,
                 relay_control_execution_record_id=(
@@ -236,13 +265,9 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
                 protocol_family=request.protocol_family,
                 relay_operation=request.operation,
                 command_category=request.command_category,
-                adapter_acknowledgment_state=(
-                    RuntimeRelayControlAdapterAcknowledgmentState.ACCEPTED
-                ),
-                protocol_stage_outcome=(
-                    RuntimeRelayControlProtocolStageOutcome.RELAY_OPERATION_COMPLETED
-                ),
-                execution_outcome=RuntimeCommandOutcome.SUCCEEDED,
+                adapter_acknowledgment_state=adapter_acknowledgment_state,
+                protocol_stage_outcome=protocol_stage_outcome,
+                execution_outcome=execution_outcome,
                 correlation_id=request.execution_context.correlation_id,
                 request_id=request.execution_context.request_id,
                 execution_started_at=now.isoformat(),
@@ -253,8 +278,21 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
                     "protocol_family": request.protocol_family.value,
                     "vertical_slice": "relay_control",
                     "live_tcp_ingress": {
-                        "used_bound_connection": True,
+                        "used_bound_connection": bool(
+                            live_execution.protocol_trace.get("used_bound_connection", True)
+                        ),
                         "invocation_status": live_execution.invocation_status,
+                        "before_state": (
+                            live_execution.before_state.__dict__
+                            if live_execution.before_state is not None
+                            else None
+                        ),
+                        "after_state": (
+                            live_execution.after_state.__dict__
+                            if live_execution.after_state is not None
+                            else None
+                        ),
+                        "error_detail": live_execution.error_detail,
                         "protocol_trace": live_execution.protocol_trace,
                         "raw_frames": live_execution.raw_frames,
                         "bytes_sent": live_execution.bytes_sent,
@@ -269,16 +307,27 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
                     "protocol_profile_id": str(request.target.protocol_association_profile_id),
                     "live_tcp_ingress": {
                         "invocation_status": live_execution.invocation_status,
+                        "before_state": (
+                            live_execution.before_state.__dict__
+                            if live_execution.before_state is not None
+                            else None
+                        ),
+                        "after_state": (
+                            live_execution.after_state.__dict__
+                            if live_execution.after_state is not None
+                            else None
+                        ),
+                        "error_detail": live_execution.error_detail,
                         "protocol_trace": live_execution.protocol_trace,
                     },
                 },
-                error_category=None,
-                error_detail=None,
+                error_category=error_category,
+                error_detail=live_execution.error_detail,
                 relay_control_recorded_by_executor_identifier=str(
                     request.execution_context.worker_identifier
                 ),
                 already_recorded=False,
-                summary="Relay-control completed over the bound live TCP ingress session.",
+                summary=summary,
                 lineage=request.lineage,
             )
         payload = request.normalized_payload or request.request_payload or {}
@@ -820,11 +869,45 @@ def _execute_live_tcp_relay_control_if_available(
     if request.transport.endpoint_transport_type != ConnectivityTransportType.TCP_IP:
         return None
 
+    ingress_status = get_runtime_tcp_meter_ingress_status()
+    target_is_currently_bound = (
+        ingress_status.connected
+        and ingress_status.bound_meter_id == request.target.meter_id
+        and ingress_status.bound_endpoint_id == request.target.endpoint_id
+    )
     with borrow_runtime_tcp_meter_ingress_connection(
         meter_id=request.target.meter_id,
         endpoint_id=request.target.endpoint_id,
     ) as borrowed_connection:
         if borrowed_connection is None:
+            if target_is_currently_bound:
+                return LiveTcpRelayControlExecution(
+                    invocation_status="failed",
+                    before_state=None,
+                    after_state=None,
+                    error_detail=(
+                        "Bound live TCP ingress connection matched the target meter, "
+                        "but relay-control could not borrow it for real execution."
+                    ),
+                    protocol_trace={
+                        "used_bound_connection": False,
+                        "expected_bound_connection": True,
+                        "bound_meter_id": (
+                            str(ingress_status.bound_meter_id)
+                            if ingress_status.bound_meter_id is not None
+                            else None
+                        ),
+                        "bound_endpoint_id": (
+                            str(ingress_status.bound_endpoint_id)
+                            if ingress_status.bound_endpoint_id is not None
+                            else None
+                        ),
+                        "connection_in_use": ingress_status.connection_in_use,
+                    },
+                    raw_frames=[],
+                    bytes_sent=0,
+                    bytes_received=0,
+                )
             return None
 
         try:

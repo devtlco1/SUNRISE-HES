@@ -57,8 +57,19 @@ class LiveTcpIdentityDiscoveryExecution:
 
 
 @dataclass(frozen=True)
+class LiveTcpRelayControlStateObservation:
+    control_state: str | None
+    output_state: bool | None
+    control_state_error: str | None = None
+    output_state_error: str | None = None
+
+
+@dataclass(frozen=True)
 class LiveTcpRelayControlExecution:
     invocation_status: str
+    before_state: LiveTcpRelayControlStateObservation | None
+    after_state: LiveTcpRelayControlStateObservation | None
+    error_detail: str | None
     protocol_trace: dict[str, object]
     raw_frames: list[dict[str, object]]
     bytes_sent: int
@@ -300,27 +311,60 @@ def execute_relay_control_over_tcp_ingress(
     if not associated or client is None:
         raise RuntimeError(association_details.get("error", "DLMS association failed."))
 
+    before_state: LiveTcpRelayControlStateObservation | None = None
+    after_state: LiveTcpRelayControlStateObservation | None = None
+    invocation_status = "failed"
+    error_detail: str | None = None
     try:
-        invocation_status = _invoke_relay_control_via_gurux(
+        before_state = _read_disconnect_control_state(
             transport,
             client,
             relay_obis_code=relay_obis_code,
-            operation_name=operation_name,
             config=config,
         )
+        try:
+            _invoke_relay_control_via_gurux(
+                transport,
+                client,
+                relay_obis_code=relay_obis_code,
+                operation_name=operation_name,
+                config=config,
+            )
+        except RuntimeError as exc:
+            invocation_status = "rejected"
+            error_detail = str(exc)
+        after_state = _read_disconnect_control_state(
+            transport,
+            client,
+            relay_obis_code=relay_obis_code,
+            config=config,
+        )
+        if invocation_status != "rejected":
+            invocation_status, error_detail = _interpret_relay_control_state_transition(
+                operation_name=operation_name,
+                before_state=before_state,
+                after_state=after_state,
+            )
     finally:
         _try_gurux_disconnect(transport, client, config)
 
     return LiveTcpRelayControlExecution(
         invocation_status=invocation_status,
+        before_state=before_state,
+        after_state=after_state,
+        error_detail=error_detail,
         protocol_trace={
             "start_protocol": config.start_protocol,
             "association_method": (
                 "broadcast_snrm_then_aarq" if config.use_broadcast_snrm_first else "snrm_then_aarq"
             ),
+            "used_bound_connection": True,
             "relay_obis_code": relay_obis_code,
             "operation_name": operation_name,
             "association_details": association_details,
+            "before_state": before_state.__dict__ if before_state is not None else None,
+            "after_state": after_state.__dict__ if after_state is not None else None,
+            "error_detail": error_detail,
         },
         raw_frames=raw_frames,
         bytes_sent=transport.bytes_sent,
@@ -639,7 +683,131 @@ def _invoke_relay_control_via_gurux(
         raise RuntimeError(
             f"Relay-control invocation did not complete for '{operation_name}' over live TCP ingress."
         )
+    if getattr(reply, "error", 0):
+        error_description = _resolve_gurux_reply_error(reply)
+        raise RuntimeError(
+            f"Relay-control invocation was rejected for '{operation_name}': {error_description}"
+        )
     return "acknowledged"
+
+
+def _read_disconnect_control_state(
+    transport: SocketSerialAdapter,
+    client: Any,
+    *,
+    relay_obis_code: str,
+    config: LiveTcpDlmsSessionConfig,
+) -> LiveTcpRelayControlStateObservation:
+    from gurux_dlms.objects.GXDLMSDisconnectControl import GXDLMSDisconnectControl
+
+    relay_control = GXDLMSDisconnectControl(relay_obis_code)
+    output_state, output_state_error = _gurux_read_attribute(
+        transport,
+        client,
+        relay_control,
+        2,
+        config,
+    )
+    control_state, control_state_error = _gurux_read_attribute(
+        transport,
+        client,
+        relay_control,
+        3,
+        config,
+    )
+    return LiveTcpRelayControlStateObservation(
+        control_state=_normalize_disconnect_control_state(control_state),
+        output_state=_normalize_disconnect_output_state(output_state),
+        control_state_error=control_state_error,
+        output_state_error=output_state_error,
+    )
+
+
+def _interpret_relay_control_state_transition(
+    *,
+    operation_name: str,
+    before_state: LiveTcpRelayControlStateObservation | None,
+    after_state: LiveTcpRelayControlStateObservation | None,
+) -> tuple[str, str | None]:
+    after_control_state = after_state.control_state if after_state is not None else None
+    after_output_state = after_state.output_state if after_state is not None else None
+    if operation_name == "remote_disconnect":
+        if after_output_state is False or after_control_state in {
+            "DISCONNECTED",
+            "READY_FOR_RECONNECTION",
+        }:
+            return "acknowledged", None
+    elif operation_name == "remote_reconnect":
+        if after_output_state is True or after_control_state == "CONNECTED":
+            return "acknowledged", None
+    else:
+        raise ValueError(f"Unsupported live TCP relay-control operation '{operation_name}'.")
+
+    before_snapshot = before_state.__dict__ if before_state is not None else None
+    after_snapshot = after_state.__dict__ if after_state is not None else None
+    return (
+        "state_mismatch",
+        (
+            f"Relay-control '{operation_name}' did not reach the expected disconnect-control state. "
+            f"Before={before_snapshot}, After={after_snapshot}."
+        ),
+    )
+
+
+def _normalize_disconnect_control_state(value: Any) -> str | None:
+    if value is None:
+        return None
+    enum_name = getattr(value, "name", None)
+    if isinstance(enum_name, str) and enum_name:
+        return enum_name
+    if isinstance(value, bool):
+        return "CONNECTED" if value else "DISCONNECTED"
+    if isinstance(value, int):
+        mapping = {
+            0: "DISCONNECTED",
+            1: "CONNECTED",
+            2: "READY_FOR_RECONNECTION",
+        }
+        return mapping.get(value, str(value))
+    normalized = _coerce_display(value).strip().upper().replace(" ", "_")
+    if normalized in {"0", "DISCONNECTED"}:
+        return "DISCONNECTED"
+    if normalized in {"1", "CONNECTED"}:
+        return "CONNECTED"
+    if normalized in {"2", "READY_FOR_RECONNECTION"}:
+        return "READY_FOR_RECONNECTION"
+    return normalized or None
+
+
+def _normalize_disconnect_output_state(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    normalized = _coerce_display(value).strip().lower()
+    if normalized in {"true", "1", "connected", "on", "closed"}:
+        return True
+    if normalized in {"false", "0", "disconnected", "off", "open"}:
+        return False
+    return None
+
+
+def _resolve_gurux_reply_error(reply: Any) -> str:
+    try:
+        error_description = reply.getError()
+        if error_description is not None:
+            return str(error_description)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        error_description = reply.getErrorMessage()
+        if error_description is not None:
+            return str(error_description)
+    except Exception:  # noqa: BLE001
+        pass
+    return str(getattr(reply, "error", "unknown_error"))
 
 
 def _resolve_relay_control_action(relay_control: Any, operation_name: str) -> Any:
@@ -816,18 +984,49 @@ def _send_pdu_list(
     for pdu in pdus:
         read_buffer.clear()
         last_reply.clear()
-        transport.write(bytes(pdu))
-        transport.flush()
-        while not last_reply.isComplete():
-            if time.monotonic() > deadline:
-                return last_reply
-            chunk = transport.read(4096)
-            if chunk:
-                read_buffer.set(chunk)
-                client.getData(read_buffer, last_reply, None)
-            else:
-                time.sleep(0.05)
+        _exchange_gurux_reply(
+            transport,
+            client,
+            request_pdu=pdu,
+            reply=last_reply,
+            read_buffer=read_buffer,
+            deadline=deadline,
+        )
+        while last_reply.isMoreData():
+            next_pdu = None if last_reply.isStreaming() else client.receiverReady(last_reply)
+            _exchange_gurux_reply(
+                transport,
+                client,
+                request_pdu=next_pdu,
+                reply=last_reply,
+                read_buffer=read_buffer,
+                deadline=deadline,
+            )
     return last_reply
+
+
+def _exchange_gurux_reply(
+    transport: SocketSerialAdapter,
+    client: Any,
+    *,
+    request_pdu: Any,
+    reply: Any,
+    read_buffer: Any,
+    deadline: float,
+) -> None:
+    read_buffer.clear()
+    if request_pdu is not None:
+        transport.write(_frameify(request_pdu))
+        transport.flush()
+    while not reply.isComplete():
+        if time.monotonic() > deadline:
+            return
+        chunk = transport.read(4096)
+        if chunk:
+            read_buffer.set(chunk)
+            client.getData(read_buffer, reply, None)
+        else:
+            time.sleep(0.05)
 
 
 def _get_req_frames(client: Any, candidate_names: list[str]) -> list[Any]:
