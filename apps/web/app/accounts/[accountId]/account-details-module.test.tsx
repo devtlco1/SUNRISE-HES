@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "../../operational-shell";
@@ -106,6 +106,29 @@ describe("AccountDetailsModule", () => {
 
     expect(await screen.findAllByText("ACC-1001")).not.toHaveLength(0);
     expect(screen.getAllByText("Active")).not.toHaveLength(0);
+    const workspacePanel = screen
+      .getByRole("heading", { name: "Account workspace" })
+      .closest("section");
+    expect(workspacePanel).not.toBeNull();
+    expect(within(workspacePanel as HTMLElement).getByText("Amina Al Balushi")).toBeInTheDocument();
+    expect(
+      within(workspacePanel as HTMLElement).getByText("Residential • CON-1001"),
+    ).toBeInTheDocument();
+    expect(
+      within(workspacePanel as HTMLElement).getByText("monthly billing • SP-1001"),
+    ).toBeInTheDocument();
+    expect(
+      within(workspacePanel as HTMLElement).getByText("Service point SP-1001"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open linked subscriber detail" }),
+    ).toHaveAttribute("href", "/subscribers/consumer-1");
+    expect(
+      screen.getByRole("link", { name: "Open linked service point detail" }),
+    ).toHaveAttribute("href", "/service-points/service-point-1");
+    expect(
+      screen.getByRole("link", { name: "Open primary meter detail" }),
+    ).toHaveAttribute("href", "/meters/meter-1");
     expect(screen.getByRole("link", { name: "Open subscriber detail" })).toHaveAttribute(
       "href",
       "/subscribers/consumer-1",
@@ -136,7 +159,7 @@ describe("AccountDetailsModule", () => {
     renderAccountDetailsModuleInShell();
 
     expect(await screen.findByText("Loading account detail...")).toBeInTheDocument();
-    expect(await screen.findByText("ACC-1001")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "ACC-1001" })).toBeInTheDocument();
   });
 
   it("renders bounded empty linked sections when no service point or meters are linked", async () => {
@@ -165,6 +188,7 @@ describe("AccountDetailsModule", () => {
       expect(screen.getByText("No service point linked to this account.")).toBeInTheDocument();
     });
     expect(screen.getByText("No current meters linked to this account.")).toBeInTheDocument();
+    expect(screen.getByText("No current linked meter")).toBeInTheDocument();
   });
 
   it("renders a bounded error state when account detail fails", async () => {

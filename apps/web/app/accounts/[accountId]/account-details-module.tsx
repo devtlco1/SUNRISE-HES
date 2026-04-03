@@ -68,6 +68,22 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function formatServiceContext({
+  billingCycle,
+  servicePointCode,
+}: {
+  billingCycle: string | null;
+  servicePointCode: string | null;
+}): string {
+  if (billingCycle && servicePointCode) {
+    return `${billingCycle} billing • ${servicePointCode}`;
+  }
+  if (billingCycle) {
+    return `${billingCycle} billing`;
+  }
+  return servicePointCode ?? "No current service context";
+}
+
 export function AccountDetailsModule({
   accountId,
   authorizedFetch,
@@ -102,6 +118,52 @@ export function AccountDetailsModule({
     void loadDetail();
   }, [loadDetail]);
 
+  const primaryLinkedMeter = detail?.linked_meters[0] ?? null;
+  const workspaceCards = detail
+    ? [
+        {
+          label: "Account identity",
+          value: detail.account_number,
+          note: `${formatStatusLabel(detail.status)} • ${detail.id}`,
+        },
+        {
+          label: "Subscriber context",
+          value: detail.subscriber.full_name,
+          note: `${formatStatusLabel(detail.subscriber.consumer_type)} • ${detail.subscriber.external_ref ?? "No external subscriber identifier"}`,
+        },
+        {
+          label: "Service context",
+          value: formatServiceContext({
+            billingCycle: detail.billing_cycle,
+            servicePointCode: detail.service_point?.service_point_code ?? null,
+          }),
+          note: detail.service_point?.address_line ?? "No service-point address summary",
+        },
+        {
+          label: "Primary meter",
+          value: primaryLinkedMeter?.serial_number ?? "No current linked meter",
+          note: primaryLinkedMeter
+            ? `${formatStatusLabel(primaryLinkedMeter.current_status)} • ${primaryLinkedMeter.utility_meter_number ?? "No utility number"}`
+            : "No active current-meter linkage recorded",
+        },
+        {
+          label: "Premise context",
+          value:
+            detail.service_point?.premises_type
+              ? formatStatusLabel(detail.service_point.premises_type)
+              : "Not available",
+          note: detail.service_point
+            ? `Service point ${detail.service_point.service_point_code}`
+            : "No linked service point recorded",
+        },
+        {
+          label: "Linked estate",
+          value: `${detail.linked_meter_count} meter(s)`,
+          note: "Current account-linked operational meters in the bounded detail result set",
+        },
+      ]
+    : [];
+
   return (
     <section className="panel">
       {detailError ? <p className="error-banner">{detailError}</p> : null}
@@ -134,6 +196,31 @@ export function AccountDetailsModule({
                   {detail.service_point?.service_point_code ?? "No linked service point"}
                 </span>
               </div>
+
+              <div className="artifact-row">
+                <Link
+                  className="primary-button"
+                  href={`/subscribers/${detail.subscriber.id}`}
+                >
+                  Open linked subscriber detail
+                </Link>
+                {detail.service_point ? (
+                  <Link
+                    className="secondary-button"
+                    href={`/service-points/${detail.service_point.id}`}
+                  >
+                    Open linked service point detail
+                  </Link>
+                ) : null}
+                {primaryLinkedMeter ? (
+                  <Link
+                    className="secondary-button"
+                    href={`/meters/${primaryLinkedMeter.id}`}
+                  >
+                    Open primary meter detail
+                  </Link>
+                ) : null}
+              </div>
             </section>
 
             <div className="accounts-overview-grid">
@@ -153,6 +240,26 @@ export function AccountDetailsModule({
                 <span className="stat-label">Linked current meters</span>
                 <strong>{detail.linked_meter_count}</strong>
               </div>
+            </div>
+          </section>
+
+          <section className="subpanel">
+            <div className="section-heading">
+              <div>
+                <h3>Account workspace</h3>
+                <p className="muted">
+                  Dense operational and commercial summary for the selected account.
+                </p>
+              </div>
+            </div>
+            <div className="accounts-overview-grid">
+              {workspaceCards.map((card) => (
+                <div key={card.label} className="stat-card accounts-overview-card">
+                  <span className="stat-label">{card.label}</span>
+                  <strong>{card.value}</strong>
+                  <p className="muted">{card.note}</p>
+                </div>
+              ))}
             </div>
           </section>
 
@@ -181,6 +288,10 @@ export function AccountDetailsModule({
               <div className="stat-card">
                 <span className="stat-label">Subscriber type</span>
                 <strong>{formatStatusLabel(detail.subscriber.consumer_type)}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Subscriber external reference</span>
+                <strong>{detail.subscriber.external_ref ?? "Not available"}</strong>
               </div>
               <div className="stat-card">
                 <span className="stat-label">Service point</span>
@@ -277,6 +388,14 @@ export function AccountDetailsModule({
                   <div className="command-list-item-meta">
                     <span>Meter ID {meter.id}</span>
                     <span>Open existing meter detail</span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>{detail.account_number}</span>
+                    <span>
+                      {detail.service_point?.service_point_code
+                        ? `Service point ${detail.service_point.service_point_code}`
+                        : "No linked service point"}
+                    </span>
                   </div>
                 </Link>
               ))}
