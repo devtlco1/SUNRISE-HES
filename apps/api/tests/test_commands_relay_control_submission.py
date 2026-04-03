@@ -31,7 +31,7 @@ def _submit_relay_control_command(
     token: str,
     meter_id: str,
     *,
-    command_template_id: str,
+    command_template_id: str | None = None,
     relay_operation: str,
     endpoint_assignment_id: str,
     protocol_association_profile_id: str,
@@ -39,20 +39,22 @@ def _submit_relay_control_command(
     relay_target_obis_code: str = "0.0.96.3.10.255",
     idempotency_key: str | None = None,
 ):
+    json = {
+        "relay_operation": relay_operation,
+        "endpoint_assignment_id": endpoint_assignment_id,
+        "protocol_association_profile_id": protocol_association_profile_id,
+        "relay_target_interface_class": relay_target_interface_class,
+        "relay_target_obis_code": relay_target_obis_code,
+        "priority": "high",
+        "idempotency_key": idempotency_key,
+        "notes": "Relay control request",
+    }
+    if command_template_id is not None:
+        json["command_template_id"] = command_template_id
     return client.post(
         f"/api/v1/meters/{meter_id}/commands/relay-control",
         headers={"Authorization": f"Bearer {token}"},
-        json={
-            "command_template_id": command_template_id,
-            "relay_operation": relay_operation,
-            "endpoint_assignment_id": endpoint_assignment_id,
-            "protocol_association_profile_id": protocol_association_profile_id,
-            "relay_target_interface_class": relay_target_interface_class,
-            "relay_target_obis_code": relay_target_obis_code,
-            "priority": "high",
-            "idempotency_key": idempotency_key,
-            "notes": "Relay control request",
-        },
+        json=json,
     )
 
 
@@ -96,6 +98,31 @@ def test_submit_relay_control_command_with_valid_disconnect_prerequisites(
     assert payload["normalized_payload"]["relay_control"]["target_object"]["method_name"] == (
         "remote_disconnect"
     )
+
+
+def test_submit_relay_control_command_uses_stable_default_template_when_not_supplied(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    endpoint_assignment_id, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    response = _submit_relay_control_command(
+        client,
+        token,
+        meter_id,
+        relay_operation="disconnect",
+        endpoint_assignment_id=endpoint_assignment_id,
+        protocol_association_profile_id=protocol_profile_id,
+        idempotency_key="relay-control-default-template-1",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["command_template_code"] == "default-relay-control-disconnect"
+    assert payload["command_template_name"] == "Default Relay Disconnect"
+    assert payload["normalized_payload"]["relay_control_operation"] == "disconnect"
 
 
 def test_submit_relay_control_command_refuses_non_relay_compatible_template(

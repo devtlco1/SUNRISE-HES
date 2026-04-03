@@ -16,7 +16,9 @@ from app.runtime.adapters.base import BaseRuntimeAdapter
 from app.runtime.adapters.gurux_tcp_ingress import (
     LiveTcpDlmsSessionConfig,
     LiveTcpOnDemandReadExecution,
+    LiveTcpRelayControlExecution,
     execute_billing_snapshot_over_tcp_ingress,
+    execute_relay_control_over_tcp_ingress,
 )
 from app.runtime.contracts import (
     ProtocolExecutionPlan,
@@ -191,6 +193,94 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
         gurux_operation = _map_relay_control_operation_to_gurux_definition(
             request.operation
         )
+        live_execution = _execute_live_tcp_relay_control_if_available(
+            request,
+            gurux_operation=gurux_operation,
+        )
+        if live_execution is not None:
+            trace_references = request.trace_references
+            return RuntimeRelayControlExecutionResult(
+                status=RuntimeRelayControlExecutionStatus.COMPLETED,
+                relay_control_execution_record_id=(
+                    "runtime-relay-control:"
+                    f"{request.execution_context.command_attempt_id}:{request.execution_context.request_id or request.execution_context.command_id}"
+                ),
+                session_identifier=str(trace_references["session_identifier"]),
+                dispatch_envelope_record_id=request.dispatch_envelope_record_id,
+                delivery_contract_record_id=str(trace_references["delivery_contract_record_id"]),
+                envelope_record_id=str(trace_references["envelope_record_id"]),
+                publication_contract_record_id=str(
+                    trace_references["publication_contract_record_id"]
+                ),
+                attestation_record_id=str(trace_references["attestation_record_id"]),
+                settlement_record_id=str(trace_references["settlement_record_id"]),
+                reconciliation_record_id=str(trace_references["reconciliation_record_id"]),
+                interpretation_record_id=str(trace_references["interpretation_record_id"]),
+                observation_record_id=str(trace_references["observation_record_id"]),
+                invocation_result_record_id=str(
+                    trace_references["invocation_result_record_id"]
+                ),
+                dispatch_request_record_id=str(trace_references["dispatch_request_record_id"]),
+                selection_record_id=str(trace_references["selection_record_id"]),
+                intent_record_id=str(trace_references["intent_record_id"]),
+                closure_record_id=str(trace_references["closure_record_id"]),
+                materialization_record_id=str(trace_references["materialization_record_id"]),
+                post_processing_record_id=str(trace_references["post_processing_record_id"]),
+                disposition_record_id=str(trace_references["disposition_record_id"]),
+                outcome_record_id=str(trace_references["outcome_record_id"]),
+                executor_identifier=str(request.execution_context.worker_identifier),
+                job_run_id=str(request.execution_context.job_run_id),
+                related_command_id=str(request.execution_context.command_id),
+                command_attempt_id=str(request.execution_context.command_attempt_id),
+                adapter_key=self.adapter_key,
+                protocol_family=request.protocol_family,
+                relay_operation=request.operation,
+                command_category=request.command_category,
+                adapter_acknowledgment_state=(
+                    RuntimeRelayControlAdapterAcknowledgmentState.ACCEPTED
+                ),
+                protocol_stage_outcome=(
+                    RuntimeRelayControlProtocolStageOutcome.RELAY_OPERATION_COMPLETED
+                ),
+                execution_outcome=RuntimeCommandOutcome.SUCCEEDED,
+                correlation_id=request.execution_context.correlation_id,
+                request_id=request.execution_context.request_id,
+                execution_started_at=now.isoformat(),
+                execution_finished_at=now.isoformat(),
+                adapter_result_summary={
+                    "adapter_key": self.adapter_key,
+                    "operation": request.operation.value,
+                    "protocol_family": request.protocol_family.value,
+                    "vertical_slice": "relay_control",
+                    "live_tcp_ingress": {
+                        "used_bound_connection": True,
+                        "invocation_status": live_execution.invocation_status,
+                        "protocol_trace": live_execution.protocol_trace,
+                        "raw_frames": live_execution.raw_frames,
+                        "bytes_sent": live_execution.bytes_sent,
+                        "bytes_received": live_execution.bytes_received,
+                    },
+                },
+                adapter_response_snapshot={
+                    "adapter": self.adapter_key,
+                    "operation": request.operation.value,
+                    "target_meter_id": str(request.target.meter_id),
+                    "endpoint_id": str(request.target.endpoint_id),
+                    "protocol_profile_id": str(request.target.protocol_association_profile_id),
+                    "live_tcp_ingress": {
+                        "invocation_status": live_execution.invocation_status,
+                        "protocol_trace": live_execution.protocol_trace,
+                    },
+                },
+                error_category=None,
+                error_detail=None,
+                relay_control_recorded_by_executor_identifier=str(
+                    request.execution_context.worker_identifier
+                ),
+                already_recorded=False,
+                summary="Relay-control completed over the bound live TCP ingress session.",
+                lineage=request.lineage,
+            )
         payload = request.normalized_payload or request.request_payload or {}
         mock_execution = payload.get("mock_execution", {}) if isinstance(payload, dict) else {}
         resolved_transport_profile = _resolve_gurux_relay_control_transport_profile(
@@ -722,8 +812,35 @@ def _execute_live_tcp_on_demand_read_if_available(
             raise
 
 
+def _execute_live_tcp_relay_control_if_available(
+    request: RuntimeRelayControlAdapterRequest,
+    *,
+    gurux_operation: GuruxRelayControlOperationDefinition,
+) -> LiveTcpRelayControlExecution | None:
+    if request.transport.endpoint_transport_type != ConnectivityTransportType.TCP_IP:
+        return None
+
+    with borrow_runtime_tcp_meter_ingress_connection(
+        meter_id=request.target.meter_id,
+        endpoint_id=request.target.endpoint_id,
+    ) as borrowed_connection:
+        if borrowed_connection is None:
+            return None
+
+        try:
+            return execute_relay_control_over_tcp_ingress(
+                sock=borrowed_connection.socket,
+                config=_build_live_tcp_dlms_session_config(request),
+                relay_obis_code=gurux_operation.obis_code,
+                operation_name=gurux_operation.method_name,
+            )
+        except Exception:
+            mark_runtime_tcp_meter_ingress_connection_dead(borrowed_connection.connection_id)
+            raise
+
+
 def _build_live_tcp_dlms_session_config(
-    request: RuntimeOnDemandReadAdapterRequest,
+    request: RuntimeOnDemandReadAdapterRequest | RuntimeRelayControlAdapterRequest,
 ) -> LiveTcpDlmsSessionConfig:
     protocol_settings = request.protocol_settings or {}
     start_protocol = _resolve_live_tcp_start_protocol(request)
@@ -731,6 +848,10 @@ def _build_live_tcp_dlms_session_config(
     if request.security.authentication_mode.value == "low" and password is None:
         raise RuntimeError(
             "Live TCP ingress requires a resolvable password secret for LOW authentication."
+        )
+    if request.client_address is None or request.server_address is None:
+        raise RuntimeError(
+            "Live TCP ingress requires client and server addresses for DLMS association."
         )
 
     def _int_setting(key: str, default: int) -> int:
@@ -785,7 +906,7 @@ def _build_live_tcp_dlms_session_config(
 
 
 def _resolve_live_tcp_start_protocol(
-    request: RuntimeOnDemandReadAdapterRequest,
+    request: RuntimeOnDemandReadAdapterRequest | RuntimeRelayControlAdapterRequest,
 ) -> str:
     protocol_settings = request.protocol_settings or {}
     configured = protocol_settings.get("tcp_start_protocol")

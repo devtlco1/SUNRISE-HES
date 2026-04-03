@@ -87,7 +87,7 @@ class CaptureLoadProfileCommandCreate(BaseModel):
 
 
 class RelayControlCommandCreate(BaseModel):
-    command_template_id: UUID
+    command_template_id: UUID | None = None
     relay_operation: RelayControlCommandOperation
     endpoint_assignment_id: UUID
     protocol_association_profile_id: UUID

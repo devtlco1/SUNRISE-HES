@@ -19,25 +19,27 @@ def _execute_relay_control_now(
     token: str,
     meter_id: str,
     *,
-    command_template_id: str,
+    command_template_id: str | None = None,
     relay_operation: str,
     endpoint_assignment_id: str,
     protocol_association_profile_id: str,
     idempotency_key: str | None = None,
 ):
+    json = {
+        "relay_operation": relay_operation,
+        "endpoint_assignment_id": endpoint_assignment_id,
+        "protocol_association_profile_id": protocol_association_profile_id,
+        "priority": "high",
+        "idempotency_key": idempotency_key,
+        "notes": "Relay control execute now request",
+        "execute_now_reason": "relay-control-execute-now",
+    }
+    if command_template_id is not None:
+        json["command_template_id"] = command_template_id
     return client.post(
         f"/api/v1/meters/{meter_id}/commands/relay-control/execute-now",
         headers={"Authorization": f"Bearer {token}"},
-        json={
-            "command_template_id": command_template_id,
-            "relay_operation": relay_operation,
-            "endpoint_assignment_id": endpoint_assignment_id,
-            "protocol_association_profile_id": protocol_association_profile_id,
-            "priority": "high",
-            "idempotency_key": idempotency_key,
-            "notes": "Relay control execute now request",
-            "execute_now_reason": "relay-control-execute-now",
-        },
+        json=json,
     )
 
 
@@ -93,6 +95,32 @@ def test_relay_control_execute_now_succeeds_from_valid_application_request(
             "relay_control_execution_record_id"
         ]
     )
+
+
+def test_relay_control_execute_now_uses_default_template_when_not_supplied(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    endpoint_assignment_id, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    response = _execute_relay_control_now(
+        client,
+        token,
+        meter_id,
+        relay_operation="reconnect",
+        endpoint_assignment_id=endpoint_assignment_id,
+        protocol_association_profile_id=protocol_profile_id,
+        idempotency_key="relay-control-execute-now-default-template-1",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["related_command"]["command_template_code"] == "default-relay-control-reconnect"
+    assert payload["related_command"]["command_template_name"] == "Default Relay Reconnect"
+    assert payload["result"]["relay_control_operation"] == "reconnect"
+    assert payload["result"]["relay_control_execution_outcome"] == "succeeded"
 
 
 def test_relay_control_execute_now_is_idempotent_for_same_request_context(

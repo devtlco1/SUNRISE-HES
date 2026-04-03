@@ -56,6 +56,15 @@ class LiveTcpIdentityDiscoveryExecution:
     bytes_received: int
 
 
+@dataclass(frozen=True)
+class LiveTcpRelayControlExecution:
+    invocation_status: str
+    protocol_trace: dict[str, object]
+    raw_frames: list[dict[str, object]]
+    bytes_sent: int
+    bytes_received: int
+
+
 IDENTITY_DISCOVERY_OBIS_CODES = [
     "0.0.96.1.0.255",
     "0.0.96.1.1.255",
@@ -247,6 +256,70 @@ def execute_identity_discovery_over_tcp_ingress(
                 "broadcast_snrm_then_aarq" if config.use_broadcast_snrm_first else "snrm_then_aarq"
             ),
             "obis_count": len(obis_codes),
+            "association_details": association_details,
+        },
+        raw_frames=raw_frames,
+        bytes_sent=transport.bytes_sent,
+        bytes_received=transport.bytes_received,
+    )
+
+
+def execute_relay_control_over_tcp_ingress(
+    *,
+    sock: socket.socket,
+    config: LiveTcpDlmsSessionConfig,
+    relay_obis_code: str,
+    operation_name: str,
+) -> LiveTcpRelayControlExecution:
+    if not relay_obis_code.strip():
+        raise ValueError("Live TCP relay control requires a target OBIS code.")
+
+    transport = SocketSerialAdapter(sock)
+    raw_frames: list[dict[str, object]] = []
+
+    if config.start_protocol == "iec62056_21":
+        transport.timeout = float(config.iec_serial_timeout_seconds)
+        handshake_ok, handshake_details, handshake_frames = _run_iec_handshake_tcp(transport, config)
+        raw_frames.extend(handshake_frames)
+        if not handshake_ok:
+            raise RuntimeError(handshake_details.get("error", "IEC handshake failed."))
+        time.sleep(config.after_iec_sleep_ms / 1000.0)
+
+    transport.timeout = float(config.dlms_read_timeout_seconds)
+    if config.use_broadcast_snrm_first:
+        associated, association_details, association_frames, client = _attempt_vendor_broadcast_association(
+            transport,
+            config,
+        )
+    else:
+        associated, association_details, association_frames, client = _attempt_gurux_association(
+            transport,
+            config,
+        )
+    raw_frames.extend(association_frames)
+    if not associated or client is None:
+        raise RuntimeError(association_details.get("error", "DLMS association failed."))
+
+    try:
+        invocation_status = _invoke_relay_control_via_gurux(
+            transport,
+            client,
+            relay_obis_code=relay_obis_code,
+            operation_name=operation_name,
+            config=config,
+        )
+    finally:
+        _try_gurux_disconnect(transport, client, config)
+
+    return LiveTcpRelayControlExecution(
+        invocation_status=invocation_status,
+        protocol_trace={
+            "start_protocol": config.start_protocol,
+            "association_method": (
+                "broadcast_snrm_then_aarq" if config.use_broadcast_snrm_first else "snrm_then_aarq"
+            ),
+            "relay_obis_code": relay_obis_code,
+            "operation_name": operation_name,
             "association_details": association_details,
         },
         raw_frames=raw_frames,
@@ -549,6 +622,44 @@ def _gurux_strategies_for_ln(logical_name: str) -> list[tuple[str, Any, int]]:
     return strategies
 
 
+def _invoke_relay_control_via_gurux(
+    transport: SocketSerialAdapter,
+    client: Any,
+    *,
+    relay_obis_code: str,
+    operation_name: str,
+    config: LiveTcpDlmsSessionConfig,
+) -> str:
+    from gurux_dlms.objects.GXDLMSDisconnectControl import GXDLMSDisconnectControl
+
+    relay_control = GXDLMSDisconnectControl(relay_obis_code)
+    action = _resolve_relay_control_action(relay_control, operation_name)
+    reply = _send_pdu_list(transport, client, _frame_list(action(client)), config)
+    if reply is None or not reply.isComplete():
+        raise RuntimeError(
+            f"Relay-control invocation did not complete for '{operation_name}' over live TCP ingress."
+        )
+    return "acknowledged"
+
+
+def _resolve_relay_control_action(relay_control: Any, operation_name: str) -> Any:
+    normalized = operation_name.strip()
+    if normalized == "remote_disconnect":
+        candidate_names = ["remoteDisconnect", "remote_disconnect"]
+    elif normalized == "remote_reconnect":
+        candidate_names = ["remoteReconnect", "remote_reconnect"]
+    else:
+        raise ValueError(f"Unsupported live TCP relay-control operation '{operation_name}'.")
+
+    for name in candidate_names:
+        action = getattr(relay_control, name, None)
+        if action is not None:
+            return action
+    raise AttributeError(
+        f"Unable to resolve Gurux disconnect-control action for '{operation_name}'."
+    )
+
+
 def _try_gurux_disconnect(
     transport: SocketSerialAdapter,
     client: Any,
@@ -738,6 +849,12 @@ def _call_if_exists(client: Any, candidate_names: list[str], *args: object) -> A
             continue
         return method(*args)
     return None
+
+
+def _frame_list(frames: Any) -> list[Any]:
+    if isinstance(frames, list):
+        return frames
+    return [frames]
 
 
 def _frameify(frame: Any) -> bytes:

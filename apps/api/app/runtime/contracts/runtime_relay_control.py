@@ -49,6 +49,15 @@ class RuntimeRelayControlAdapterRequest(BaseModel):
     target: MeterRuntimeTarget
     transport: RuntimeTransportConfig
     security: RuntimeSecurityMaterialRefs
+    protocol_profile_code: str | None = None
+    iec62056_21_enabled: bool = False
+    iec_device_address: str | None = None
+    iec_baud_rate: int | None = None
+    client_address: int | None = None
+    server_address: int | None = None
+    server_address_size: int = 1
+    protocol_settings: dict[str, object] | None = None
+    protocol_defaults: dict[str, object] | None = None
     request_payload: dict[str, object] | None = None
     normalized_payload: dict[str, object] | None = None
     dispatch_envelope_record_id: str

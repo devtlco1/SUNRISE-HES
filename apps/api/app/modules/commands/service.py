@@ -322,6 +322,10 @@ RELAY_CONTROL_TARGET_CLASS_ID = 70
 RELAY_CONTROL_TARGET_OBIS_CODE = "0.0.96.3.10.255"
 ON_DEMAND_READ_SNAPSHOT_TYPE = SnapshotType.BILLING
 ON_DEMAND_READ_RUNTIME_OPERATION = OnDemandReadCommandOperation.READ_BILLING_SNAPSHOT.value
+DEFAULT_RELAY_CONTROL_DISCONNECT_TEMPLATE_CODE = "default-relay-control-disconnect"
+DEFAULT_RELAY_CONTROL_DISCONNECT_TEMPLATE_NAME = "Default Relay Disconnect"
+DEFAULT_RELAY_CONTROL_RECONNECT_TEMPLATE_CODE = "default-relay-control-reconnect"
+DEFAULT_RELAY_CONTROL_RECONNECT_TEMPLATE_NAME = "Default Relay Reconnect"
 DEFAULT_ON_DEMAND_READ_TEMPLATE_CODE = "default-on-demand-read-billing-snapshot"
 DEFAULT_ON_DEMAND_READ_TEMPLATE_NAME = "Default On-Demand Billing Snapshot"
 
@@ -339,18 +343,12 @@ def submit_relay_control_command(
     if meter is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meter not found.")
 
-    template = get_command_template(session, payload.command_template_id)
     expected_category = _resolve_relay_control_category(payload.relay_operation)
-    if template.category != expected_category:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Selected template is not compatible with the relay-control command submission slice.",
-        )
-    if not template.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot request a command from an inactive template.",
-        )
+    template = _resolve_relay_control_template(
+        session,
+        template_id=payload.command_template_id,
+        operation=payload.relay_operation,
+    )
 
     if payload.idempotency_key:
         existing = session.scalar(
@@ -405,7 +403,7 @@ def submit_relay_control_command(
         session,
         meter_id=meter_id,
         payload=MeterCommandCreate(
-            command_template_id=payload.command_template_id,
+            command_template_id=template.id,
             priority=payload.priority,
             scheduled_at=payload.scheduled_at,
             correlation_id=payload.correlation_id,
@@ -435,6 +433,75 @@ def _resolve_relay_control_category(
     if operation == RelayControlCommandOperation.DISCONNECT:
         return CommandCategory.REMOTE_DISCONNECT
     return CommandCategory.REMOTE_RECONNECT
+
+
+def _resolve_relay_control_template(
+    session: Session,
+    *,
+    template_id: uuid.UUID | None,
+    operation: RelayControlCommandOperation,
+) -> CommandTemplate:
+    expected_category = _resolve_relay_control_category(operation)
+    if template_id is not None:
+        template = get_command_template(session, template_id)
+        if template.category != expected_category:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Selected template is not compatible with the relay-control command submission slice.",
+            )
+        if not template.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot request a command from an inactive template.",
+            )
+        return template
+
+    default_template_code = (
+        DEFAULT_RELAY_CONTROL_DISCONNECT_TEMPLATE_CODE
+        if operation == RelayControlCommandOperation.DISCONNECT
+        else DEFAULT_RELAY_CONTROL_RECONNECT_TEMPLATE_CODE
+    )
+    default_template_name = (
+        DEFAULT_RELAY_CONTROL_DISCONNECT_TEMPLATE_NAME
+        if operation == RelayControlCommandOperation.DISCONNECT
+        else DEFAULT_RELAY_CONTROL_RECONNECT_TEMPLATE_NAME
+    )
+    template = session.scalar(
+        select(CommandTemplate).where(
+            func.lower(CommandTemplate.code) == default_template_code.lower()
+        )
+    )
+    if template is not None:
+        if template.category != expected_category:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Default relay-control template code is reserved for the matching relay-control family.",
+            )
+        if not template.is_active:
+            template.is_active = True
+            session.add(template)
+            session.flush()
+        return template
+
+    template = CommandTemplate(
+        code=default_template_code,
+        name=default_template_name,
+        category=expected_category,
+        target_scope=CommandTargetScope.METER,
+        description="Stable default template for bounded live relay-control execution.",
+        payload_schema={
+            "relay_operation": {
+                "type": "string",
+                "enum": [operation.value],
+            }
+        },
+        timeout_seconds=120,
+        max_retries=0,
+        is_active=True,
+    )
+    session.add(template)
+    session.flush()
+    return template
 
 
 def _validate_relay_control_target(payload: RelayControlCommandCreate) -> None:

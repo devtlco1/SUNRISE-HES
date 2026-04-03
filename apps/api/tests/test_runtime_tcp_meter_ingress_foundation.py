@@ -20,12 +20,15 @@ from app.runtime.adapters.dlms_cosem import GuruxDlmsAdapterBridge
 from app.runtime.adapters.gurux_tcp_ingress import (
     LiveTcpIdentityDiscoveryExecution,
     LiveTcpOnDemandReadExecution,
+    LiveTcpRelayControlExecution,
 )
 from app.runtime.contracts import (
     MeterRuntimeTarget,
     RuntimeExecutionContext,
     RuntimeOnDemandReadAdapterRequest,
     RuntimeOnDemandReadOperation,
+    RuntimeRelayControlAdapterRequest,
+    RuntimeRelayControlOperation,
     RuntimeSecurityMaterialRefs,
     RuntimeTransportConfig,
 )
@@ -321,6 +324,156 @@ def test_on_demand_read_adapter_uses_bound_live_tcp_ingress_connection(monkeypat
         assert result.register_snapshot.payload["1.0.1.8.0.255"] == "456.789"
         assert result.adapter_result_summary["live_tcp_ingress"] is True
         assert result.adapter_result_summary["bytes_sent"] == 12
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_relay_control_adapter_uses_bound_live_tcp_ingress_connection(monkeypatch) -> None:
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        meter_id = uuid.uuid4()
+        endpoint_id = uuid.uuid4()
+        profile_id = uuid.uuid4()
+        manager.bind_active_connection(
+            meter_id=meter_id,
+            endpoint_id=endpoint_id,
+            protocol_association_profile_id=profile_id,
+        )
+
+        def fake_execute_relay_control_over_tcp_ingress(
+            *,
+            sock,
+            config,
+            relay_obis_code,
+            operation_name,
+        ):
+            assert sock is not None
+            assert config.start_protocol == "iec62056_21"
+            assert relay_obis_code == "0.0.96.3.10.255"
+            assert operation_name == "remote_disconnect"
+            return LiveTcpRelayControlExecution(
+                invocation_status="acknowledged",
+                protocol_trace={"start_protocol": config.start_protocol},
+                raw_frames=[{"stage": "fake-relay"}],
+                bytes_sent=21,
+                bytes_received=43,
+            )
+
+        monkeypatch.setattr(
+            "app.runtime.adapters.dlms_cosem.execute_relay_control_over_tcp_ingress",
+            fake_execute_relay_control_over_tcp_ingress,
+        )
+
+        result = GuruxDlmsAdapterBridge().execute_relay_control(
+            RuntimeRelayControlAdapterRequest(
+                adapter_key="gurux-dlms-bridge",
+                protocol_family=ProtocolFamily.DLMS_COSEM,
+                operation=RuntimeRelayControlOperation.DISCONNECT,
+                command_category=CommandCategory.REMOTE_DISCONNECT,
+                execution_context=RuntimeExecutionContext(
+                    command_id=uuid.uuid4(),
+                    job_run_id=uuid.uuid4(),
+                    command_attempt_id=uuid.uuid4(),
+                    correlation_id="corr-live-relay",
+                    worker_identifier="worker-runtime-live-relay",
+                    request_id="request-live-relay",
+                    triggered_at=datetime.now(UTC),
+                ),
+                target=MeterRuntimeTarget(
+                    meter_id=meter_id,
+                    serial_number="meter-live-relay-001",
+                    utility_meter_number="utility-live-relay-001",
+                    meter_profile_id=None,
+                    manufacturer_code="SUN",
+                    meter_model_code="ST34",
+                    meter_model_name="Sunrise Test Meter",
+                    endpoint_assignment_id=uuid.uuid4(),
+                    endpoint_id=endpoint_id,
+                    endpoint_code="live-endpoint",
+                    protocol_association_profile_id=profile_id,
+                ),
+                transport=RuntimeTransportConfig(
+                    endpoint_transport_type=ConnectivityTransportType.TCP_IP,
+                    host="127.0.0.1",
+                    port=listen_port,
+                ),
+                security=RuntimeSecurityMaterialRefs(
+                    authentication_mode=AssociationAuthenticationMode.NONE,
+                ),
+                protocol_profile_code="dlms-live-relay",
+                iec62056_21_enabled=True,
+                iec_device_address=None,
+                iec_baud_rate=300,
+                client_address=1,
+                server_address=1,
+                server_address_size=4,
+                protocol_settings={"tcp_start_protocol": "iec", "use_broadcast_snrm_first": True},
+                protocol_defaults=None,
+                request_payload={"relay_control_operation": "disconnect"},
+                normalized_payload={
+                    "relay_control_operation": "disconnect",
+                    "relay_control": {
+                        "target_object": {
+                            "interface_class": "disconnect_control",
+                            "obis_code": "0.0.96.3.10.255",
+                            "method_name": "remote_disconnect",
+                            "method_index": 1,
+                        }
+                    },
+                },
+                dispatch_envelope_record_id="dispatch-live-relay",
+                trace_references={
+                    "session_identifier": "session-live-relay",
+                    "delivery_contract_record_id": "delivery-live-relay",
+                    "envelope_record_id": "envelope-live-relay",
+                    "publication_contract_record_id": "publication-live-relay",
+                    "attestation_record_id": "attestation-live-relay",
+                    "settlement_record_id": "settlement-live-relay",
+                    "reconciliation_record_id": "reconciliation-live-relay",
+                    "interpretation_record_id": "interpretation-live-relay",
+                    "observation_record_id": "observation-live-relay",
+                    "invocation_result_record_id": "invocation-live-relay",
+                    "dispatch_request_record_id": "dispatch-request-live-relay",
+                    "selection_record_id": "selection-live-relay",
+                    "intent_record_id": "intent-live-relay",
+                    "closure_record_id": "closure-live-relay",
+                    "materialization_record_id": "materialization-live-relay",
+                    "post_processing_record_id": "post-processing-live-relay",
+                    "disposition_record_id": "disposition-live-relay",
+                    "outcome_record_id": "outcome-live-relay",
+                },
+                lineage=RuntimeExecutionSessionLineage(
+                    dispatch_request_identity="dispatch-identity-live-relay",
+                    queue_message_id="queue-live-relay",
+                    claim_token="claim-live-relay",
+                    intended_worker_path="runtime-live-relay",
+                ),
+            )
+        )
+
+        assert result.execution_outcome.value == "succeeded"
+        assert result.protocol_stage_outcome.value == "relay_operation_completed"
+        assert (
+            result.adapter_result_summary["live_tcp_ingress"]["used_bound_connection"]
+            is True
+        )
+        assert result.adapter_result_summary["live_tcp_ingress"]["bytes_sent"] == 21
     finally:
         if client_socket is not None:
             client_socket.close()
