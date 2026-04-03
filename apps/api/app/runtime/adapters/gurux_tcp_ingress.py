@@ -641,10 +641,25 @@ def _gurux_read_attribute(
     except Exception:  # noqa: BLE001
         pass
 
-    value = getattr(obj, "value", None)
-    if value is None and hasattr(obj, "time"):
-        value = getattr(obj, "time", None)
-    return value, None
+    return _resolve_gurux_object_attribute_value(obj, attr_index), None
+
+
+def _resolve_gurux_object_attribute_value(obj: Any, attr_index: int) -> Any | None:
+    candidate_fields = ["value"]
+    if attr_index == 2:
+        candidate_fields.extend(["time", "outputState"])
+    elif attr_index == 3:
+        candidate_fields.append("controlState")
+    elif attr_index == 4:
+        candidate_fields.append("controlMode")
+
+    for field_name in candidate_fields:
+        if not hasattr(obj, field_name):
+            continue
+        value = getattr(obj, field_name)
+        if value is not None:
+            return value
+    return None
 
 
 def _gurux_strategies_for_ln(logical_name: str) -> list[tuple[str, Any, int]]:

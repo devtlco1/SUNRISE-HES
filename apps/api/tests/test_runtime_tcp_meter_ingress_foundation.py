@@ -21,6 +21,7 @@ from app.runtime.adapters.gurux_tcp_ingress import (
     LiveTcpIdentityDiscoveryExecution,
     LiveTcpOnDemandReadExecution,
     LiveTcpRelayControlExecution,
+    _resolve_gurux_object_attribute_value,
 )
 from app.runtime.contracts import (
     MeterRuntimeTarget,
@@ -618,6 +619,20 @@ def test_relay_control_adapter_fails_when_bound_live_connection_cannot_be_reused
         if client_socket is not None:
             client_socket.close()
         manager.stop()
+
+
+def test_resolve_gurux_object_attribute_value_returns_disconnect_control_properties() -> None:
+    class FakeDisconnectControl:
+        def __init__(self) -> None:
+            self.outputState = False
+            self.controlState = 0
+
+    relay_control = FakeDisconnectControl()
+    relay_control.outputState = False
+    relay_control.controlState = 2
+
+    assert _resolve_gurux_object_attribute_value(relay_control, 2) is False
+    assert _resolve_gurux_object_attribute_value(relay_control, 3) == 2
 
 
 def test_internal_runtime_tcp_meter_ingress_discovery_refuses_without_active_connection(
