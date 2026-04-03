@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.modules.commands.enums import CommandCategory
 from app.modules.commands.models import CommandExecutionAttempt, MeterCommand
 from app.modules.jobs.dependencies import INTERNAL_TOKEN_HEADER
+from app.modules.readings.models import MeterReading, MeterReadingBatch, MeterRegisterSnapshot
 from app.modules.readings.enums import SnapshotType
 from tests.test_runtime_execution_session_heartbeat_foundation import (
     _persist_attempt_execution_metadata_sections,
@@ -88,6 +90,24 @@ def test_runtime_on_demand_read_adapter_executes_for_valid_billing_snapshot_chai
         command.result_summary["runtime_on_demand_read_execution"]["snapshot_type"]
         == SnapshotType.BILLING.value
     )
+    batch_count = db_session.scalar(
+        select(func.count())
+        .select_from(MeterReadingBatch)
+        .where(MeterReadingBatch.related_attempt_id == uuid.UUID(attempt_id))
+    )
+    snapshot_count = db_session.scalar(
+        select(func.count())
+        .select_from(MeterRegisterSnapshot)
+        .where(MeterRegisterSnapshot.meter_id == command.meter_id)
+    )
+    reading_count = db_session.scalar(
+        select(func.count())
+        .select_from(MeterReading)
+        .where(MeterReading.meter_id == command.meter_id)
+    )
+    assert batch_count == 1
+    assert snapshot_count == 1
+    assert reading_count == 1
 
 
 def test_runtime_on_demand_read_adapter_refuses_when_protocol_preparation_artifact_is_missing(
@@ -176,6 +196,12 @@ def test_runtime_on_demand_read_adapter_is_idempotent_for_same_context(
         == second.json()["result"]["on_demand_read_execution_record_id"]
     )
     assert second.json()["result"]["already_recorded"] is True
+    batch_count = db_session.scalar(
+        select(func.count())
+        .select_from(MeterReadingBatch)
+        .where(MeterReadingBatch.related_attempt_id == uuid.UUID(attempt_id))
+    )
+    assert batch_count == 1
 
 
 def test_runtime_on_demand_read_adapter_refuses_for_non_on_demand_read_command_category(

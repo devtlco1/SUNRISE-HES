@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 import app.runtime.services.runtime_relay_control as relay_helpers
 from fastapi import HTTPException, status
@@ -10,10 +12,12 @@ from app.modules.commands.enums import CommandCategory
 from app.modules.commands.models import CommandExecutionAttempt, MeterCommand
 from app.modules.commands.service import serialize_command_attempt, serialize_meter_command
 from app.modules.jobs.service import get_job_run, serialize_job_run
+from app.modules.readings.enums import ReadingBatchStatus, ReadingSourceType, ReadingType
 from app.runtime.adapters import get_runtime_adapter
 from app.runtime.contracts import (
     RuntimeAttemptDispositionResult,
     RuntimeClosureAttestationResult,
+    RuntimeCommandResult,
     RuntimeDeliveryContractResult,
     RuntimeDispatchEnvelopeResult,
     RuntimeExecutionOutcomeResult,
@@ -35,6 +39,8 @@ from app.runtime.contracts import (
     RuntimeProtocolInvocationResult,
     RuntimeProtocolReconciliationResult,
     RuntimePublicationContractResult,
+    RuntimeReadingBatchPayload,
+    RuntimeReadingPayload,
     RuntimeTerminalSettlementResult,
 )
 from app.runtime.schemas import (
@@ -42,6 +48,7 @@ from app.runtime.schemas import (
     RuntimeOnDemandReadExecutionResponse,
 )
 from app.runtime.services.runtime_artifact_utils import merge_runtime_metadata
+from app.runtime.services.ingestion import persist_runtime_result_telemetry
 from app.runtime.services.runtime_plan_builder import build_runtime_plan_for_command
 
 
@@ -200,12 +207,46 @@ def execute_runtime_on_demand_read_adapter(
     on_demand_read_payload = {
         "runtime_on_demand_read_execution": result.model_dump(mode="json")
     }
+    ingestion_result = persist_runtime_result_telemetry(
+        session,
+        meter_id=command.meter_id,
+        command_id=command.id,
+        attempt_id=attempt.id,
+        session_history_id=attempt.session_history_id,
+        result=_to_runtime_command_result(result),
+    )
+    materialization_payload = {
+        "runtime_on_demand_read_materialization": {
+            "materialized": ingestion_result.ingested_batch is not None,
+            "ingested_batch_id": (
+                str(ingestion_result.ingested_batch.id)
+                if ingestion_result.ingested_batch is not None
+                else None
+            ),
+            "persisted_reading_count": (
+                len(ingestion_result.ingested_batch.readings)
+                if ingestion_result.ingested_batch is not None
+                else 0
+            ),
+            "persisted_snapshot_count": (
+                len(ingestion_result.ingested_batch.register_snapshots)
+                if ingestion_result.ingested_batch is not None
+                else 0
+            ),
+        }
+    }
     attempt.execution_metadata = merge_runtime_metadata(
         attempt.execution_metadata,
-        on_demand_read_payload,
+        merge_runtime_metadata(on_demand_read_payload, materialization_payload),
     )
-    command.result_summary = merge_runtime_metadata(command.result_summary, on_demand_read_payload)
-    job_run.result_summary = merge_runtime_metadata(job_run.result_summary, on_demand_read_payload)
+    command.result_summary = merge_runtime_metadata(
+        command.result_summary,
+        merge_runtime_metadata(on_demand_read_payload, materialization_payload),
+    )
+    job_run.result_summary = merge_runtime_metadata(
+        job_run.result_summary,
+        merge_runtime_metadata(on_demand_read_payload, materialization_payload),
+    )
     session.add_all([attempt, command, job_run])
     session.commit()
     session.refresh(attempt)
@@ -217,6 +258,109 @@ def execute_runtime_on_demand_read_adapter(
         related_command=serialize_meter_command(command),
         created_or_existing_attempt=serialize_command_attempt(attempt),
     )
+
+
+def _to_runtime_command_result(
+    result: RuntimeOnDemandReadExecutionResult,
+) -> RuntimeCommandResult:
+    return RuntimeCommandResult(
+        outcome=result.execution_outcome,
+        result_summary=result.adapter_result_summary,
+        response_snapshot=result.adapter_response_snapshot,
+        latest_error_code=result.error_category.value if result.error_category is not None else None,
+        latest_error_message=result.error_detail,
+        reading_batch=_build_runtime_reading_batch_payload(result),
+    )
+
+
+def _build_runtime_reading_batch_payload(
+    result: RuntimeOnDemandReadExecutionResult,
+) -> RuntimeReadingBatchPayload | None:
+    snapshot = result.register_snapshot
+    if snapshot is None:
+        return None
+
+    received_at = _parse_result_timestamp(result.execution_finished_at) or snapshot.captured_at
+    return RuntimeReadingBatchPayload(
+        source_type=ReadingSourceType.COMMAND_RESULT,
+        captured_at=snapshot.captured_at,
+        received_at=received_at,
+        status=ReadingBatchStatus.RECEIVED,
+        reading_context={
+            "runtime_on_demand_read_execution_record_id": result.on_demand_read_execution_record_id,
+            "adapter_key": result.adapter_key,
+            "snapshot_type": result.snapshot_type.value,
+            "live_tcp_ingress": bool(result.adapter_result_summary.get("live_tcp_ingress")),
+        },
+        correlation_id=result.correlation_id,
+        readings=_derive_runtime_readings_from_snapshot(result),
+        register_snapshots=[snapshot],
+    )
+
+
+def _derive_runtime_readings_from_snapshot(
+    result: RuntimeOnDemandReadExecutionResult,
+) -> list[RuntimeReadingPayload]:
+    snapshot = result.register_snapshot
+    if snapshot is None:
+        return []
+
+    readings: list[RuntimeReadingPayload] = []
+    for obis_code, raw_value in snapshot.payload.items():
+        if not isinstance(obis_code, str) or not obis_code.strip():
+            continue
+        parsed_value = _coerce_snapshot_value(raw_value)
+        if parsed_value is None:
+            continue
+        value_numeric, value_text = parsed_value
+        readings.append(
+            RuntimeReadingPayload(
+                obis_code=obis_code.strip(),
+                reading_type=ReadingType.REGISTER,
+                value_numeric=value_numeric,
+                value_text=value_text,
+                unit=None,
+                quality=None,
+                captured_at=snapshot.captured_at,
+                metadata={
+                    "derived_from_register_snapshot": True,
+                    "snapshot_type": snapshot.snapshot_type.value,
+                    "runtime_on_demand_read_execution_record_id": (
+                        result.on_demand_read_execution_record_id
+                    ),
+                },
+            )
+        )
+    return readings
+
+
+def _coerce_snapshot_value(raw_value: object) -> tuple[Decimal | None, str | None] | None:
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, bool):
+        return None, str(raw_value).lower()
+    if isinstance(raw_value, Decimal):
+        return raw_value, None
+    if isinstance(raw_value, int | float):
+        return Decimal(str(raw_value)), None
+    if isinstance(raw_value, str):
+        stripped = raw_value.strip()
+        if not stripped:
+            return None
+        try:
+            return Decimal(stripped), None
+        except InvalidOperation:
+            return None, stripped
+    return None
+
+
+def _parse_result_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _build_runtime_on_demand_read_adapter_request(

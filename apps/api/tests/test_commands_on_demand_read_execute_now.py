@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.commands.enums import CommandExecutionAttemptStatus, CommandStatus
 from app.modules.commands.models import CommandExecutionAttempt, MeterCommand
 from app.modules.jobs.enums import JobRunStatus
 from app.modules.jobs.models import JobRun
+from app.modules.readings.models import MeterReading, MeterReadingBatch, MeterRegisterSnapshot
 from tests.test_commands_foundation import _login_as_super_admin
 from tests.test_commands_on_demand_read_submission import (
     _submit_on_demand_read_command,
@@ -95,6 +97,24 @@ def test_on_demand_read_execute_now_succeeds_from_valid_application_request(
             "on_demand_read_execution_record_id"
         ]
     )
+    batch_count = db_session.scalar(
+        select(func.count())
+        .select_from(MeterReadingBatch)
+        .where(MeterReadingBatch.related_attempt_id == attempt.id)
+    )
+    snapshot_count = db_session.scalar(
+        select(func.count())
+        .select_from(MeterRegisterSnapshot)
+        .where(MeterRegisterSnapshot.meter_id == command.meter_id)
+    )
+    reading_count = db_session.scalar(
+        select(func.count())
+        .select_from(MeterReading)
+        .where(MeterReading.meter_id == command.meter_id)
+    )
+    assert batch_count == 1
+    assert snapshot_count == 1
+    assert reading_count >= 1
 
 
 def test_on_demand_read_execute_now_is_idempotent_for_same_request_context(
@@ -275,5 +295,10 @@ def test_on_demand_read_execute_now_persists_compact_durable_linkage_artifact(
             "runtime_on_demand_read_execution_record_id"
         ]
         == artifact["runtime_on_demand_read_execution_record_id"]
+    )
+    assert attempt.execution_metadata["runtime_on_demand_read_materialization"]["materialized"] is True
+    assert (
+        attempt.execution_metadata["runtime_on_demand_read_materialization"]["persisted_snapshot_count"]
+        == 1
     )
     assert job_run.status == JobRunStatus.SUCCEEDED
