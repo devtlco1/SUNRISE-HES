@@ -647,6 +647,30 @@ class RuntimeTcpMeterIngressIdentityDiscoveryResponse(BaseModel):
     result: RuntimeTcpMeterIngressIdentityDiscoveryResult
 
 
+class RuntimeTcpMeterIngressPersistDiscoveredMeterRequest(BaseModel):
+    protocol_association_profile_id: UUID
+
+
+class RuntimeTcpMeterIngressPersistDiscoveredMeterResult(BaseModel):
+    success: bool
+    active_connection_id: str
+    protocol_association_profile_id: UUID
+    discovered_identity_value: str
+    discovered_identity_obis_code: str | None = None
+    matched_existing_meter: bool
+    meter_id: UUID
+    communication_endpoint_id: UUID
+    assignment_id: UUID
+    created_meter: bool
+    created_endpoint: bool
+    created_assignment: bool
+    diagnostic_message: str
+
+
+class RuntimeTcpMeterIngressPersistDiscoveredMeterResponse(BaseModel):
+    result: RuntimeTcpMeterIngressPersistDiscoveredMeterResult
+
+
 class RedisConsumerGroupBootstrapRequest(BaseModel):
     pass
 

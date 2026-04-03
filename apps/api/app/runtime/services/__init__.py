@@ -127,6 +127,9 @@ from app.runtime.services.runtime_plan_builder import build_runtime_plan_for_com
 from app.runtime.services.tcp_meter_identity_discovery import (
     discover_runtime_tcp_meter_identity,
 )
+from app.runtime.services.tcp_meter_registration import (
+    persist_runtime_tcp_meter_discovered_identity,
+)
 from app.runtime.services.tcp_meter_ingress import (
     bind_runtime_tcp_meter_ingress_connection,
     get_runtime_tcp_meter_ingress_status,
@@ -171,6 +174,7 @@ __all__ = [
     "get_platform_readiness_history",
     "get_platform_startup_readiness",
     "discover_runtime_tcp_meter_identity",
+    "persist_runtime_tcp_meter_discovered_identity",
     "handle_derived_work_job_run",
     "handoff_claimed_redis_dispatch_message_to_runtime",
     "heartbeat_runtime_execution_session",

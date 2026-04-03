@@ -93,6 +93,8 @@ from app.runtime.schemas import (
     RuntimeTcpMeterIngressBindResponse,
     RuntimeTcpMeterIngressIdentityDiscoveryRequest,
     RuntimeTcpMeterIngressIdentityDiscoveryResponse,
+    RuntimeTcpMeterIngressPersistDiscoveredMeterRequest,
+    RuntimeTcpMeterIngressPersistDiscoveredMeterResponse,
     RuntimeTcpMeterIngressStatusResponse,
     RuntimeProfileReadExecutionRequest,
     RuntimeProfileReadExecutionResponse,
@@ -159,6 +161,7 @@ from app.runtime.services import (
     list_dispatch_ready_derived_work,
     list_queue_adapters,
     materialize_follow_up_actions_for_attempt,
+    persist_runtime_tcp_meter_discovered_identity,
     record_runtime_execution_outcome,
     record_platform_current_readiness_event,
     record_platform_readiness_comparison_event,
@@ -963,6 +966,38 @@ def discover_runtime_tcp_meter_identity_endpoint(
             "diagnostic_message": result.diagnostic_message,
             "remote_addr": result.remote_addr,
             "remote_port": result.remote_port,
+        }
+    )
+
+
+@internal_runtime_platform_router.post(
+    "/tcp-meter-ingress/persist-discovered-meter",
+    response_model=RuntimeTcpMeterIngressPersistDiscoveredMeterResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def persist_runtime_tcp_meter_discovered_identity_endpoint(
+    payload: RuntimeTcpMeterIngressPersistDiscoveredMeterRequest,
+    session: Session = Depends(get_db_session),
+) -> RuntimeTcpMeterIngressPersistDiscoveredMeterResponse:
+    result = persist_runtime_tcp_meter_discovered_identity(
+        session,
+        protocol_association_profile_id=payload.protocol_association_profile_id,
+    )
+    return RuntimeTcpMeterIngressPersistDiscoveredMeterResponse(
+        result={
+            "success": result.success,
+            "active_connection_id": result.active_connection_id,
+            "protocol_association_profile_id": result.protocol_association_profile_id,
+            "discovered_identity_value": result.discovered_identity_value,
+            "discovered_identity_obis_code": result.discovered_identity_obis_code,
+            "matched_existing_meter": result.matched_existing_meter,
+            "meter_id": result.meter_id,
+            "communication_endpoint_id": result.communication_endpoint_id,
+            "assignment_id": result.assignment_id,
+            "created_meter": result.created_meter,
+            "created_endpoint": result.created_endpoint,
+            "created_assignment": result.created_assignment,
+            "diagnostic_message": result.diagnostic_message,
         }
     )
 

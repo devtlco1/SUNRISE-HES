@@ -5,14 +5,17 @@ import time
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
+
 from app.modules.commands.enums import CommandCategory
 from app.modules.connectivity.enums import (
     AssociationAuthenticationMode,
     ConnectivityTransportType,
     ProtocolFamily,
 )
-from app.modules.connectivity.models import MeterEndpointAssignment
+from app.modules.connectivity.models import CommunicationEndpoint, MeterEndpointAssignment
 from app.modules.jobs.dependencies import INTERNAL_TOKEN_HEADER
+from app.modules.meters.models import Meter
 from app.runtime.adapters.dlms_cosem import GuruxDlmsAdapterBridge
 from app.runtime.adapters.gurux_tcp_ingress import (
     LiveTcpIdentityDiscoveryExecution,
@@ -404,6 +407,347 @@ def test_internal_runtime_tcp_meter_ingress_discovery_respects_connection_in_use
             )
             assert response.status_code == 409
             assert "already in use" in response.json()["detail"].lower()
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_internal_runtime_tcp_meter_ingress_persist_refuses_without_active_connection(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    _, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    try:
+        response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/persist-discovered-meter",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={"protocol_association_profile_id": protocol_profile_id},
+        )
+        assert response.status_code == 409
+        assert "no active live connection" in response.json()["detail"].lower()
+    finally:
+        manager.stop()
+
+
+def test_internal_runtime_tcp_meter_ingress_persist_matches_existing_meter_without_duplicate(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    existing_meter_id = uuid.UUID(_create_meter_record(client, token))
+    existing_assignment_id, protocol_profile_id = _attach_runtime_connectivity(
+        db_session,
+        str(existing_meter_id),
+    )
+    existing_assignment = db_session.get(MeterEndpointAssignment, uuid.UUID(existing_assignment_id))
+    assert existing_assignment is not None
+    existing_meter = db_session.get(Meter, existing_meter_id)
+    assert existing_meter is not None
+    existing_meter.serial_number = "SN-MATCH-001"
+    db_session.add(existing_meter)
+    db_session.commit()
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setenv("RUNTIME_SECRET_SECRET___METERS_RUNTIME_LOW", "test-runtime-password")
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        def fake_execute_identity_discovery_over_tcp_ingress(*, sock, config, identity_obis_codes=None):
+            assert sock is not None
+            return LiveTcpIdentityDiscoveryExecution(
+                identity_obis_code="0.0.96.1.0.255",
+                identity_value="SN-MATCH-001",
+                identity_values={"0.0.96.1.0.255": "SN-MATCH-001"},
+                protocol_trace={"association_method": "broadcast_snrm_then_aarq"},
+                raw_frames=[{"stage": "fake-discovery"}],
+                bytes_sent=15,
+                bytes_received=31,
+            )
+
+        monkeypatch.setattr(
+            "app.runtime.services.tcp_meter_identity_discovery.execute_identity_discovery_over_tcp_ingress",
+            fake_execute_identity_discovery_over_tcp_ingress,
+        )
+
+        response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/persist-discovered-meter",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={"protocol_association_profile_id": protocol_profile_id},
+        )
+        assert response.status_code == 200
+        payload = response.json()["result"]
+        assert payload["success"] is True
+        assert payload["matched_existing_meter"] is True
+        assert payload["created_meter"] is False
+        assert payload["created_endpoint"] is True
+        assert payload["created_assignment"] is True
+        assert payload["meter_id"] == str(existing_meter_id)
+        assert payload["communication_endpoint_id"] != str(existing_assignment.endpoint_id)
+
+        matched_meter_count = db_session.scalar(
+            select(func.count())
+            .select_from(Meter)
+            .where(func.lower(Meter.serial_number) == "sn-match-001")
+        )
+        assert matched_meter_count == 1
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_internal_runtime_tcp_meter_ingress_persist_creates_new_meter_endpoint_and_assignment(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    seed_meter_id = _create_meter_record(client, token)
+    _, protocol_profile_id = _attach_runtime_connectivity(db_session, seed_meter_id)
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setenv("RUNTIME_SECRET_SECRET___METERS_RUNTIME_LOW", "test-runtime-password")
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        def fake_execute_identity_discovery_over_tcp_ingress(*, sock, config, identity_obis_codes=None):
+            assert sock is not None
+            return LiveTcpIdentityDiscoveryExecution(
+                identity_obis_code="0.0.96.1.0.255",
+                identity_value="SN-NEW-INGRESS-001",
+                identity_values={"0.0.96.1.0.255": "SN-NEW-INGRESS-001"},
+                protocol_trace={"association_method": "broadcast_snrm_then_aarq"},
+                raw_frames=[{"stage": "fake-discovery"}],
+                bytes_sent=18,
+                bytes_received=27,
+            )
+
+        monkeypatch.setattr(
+            "app.runtime.services.tcp_meter_identity_discovery.execute_identity_discovery_over_tcp_ingress",
+            fake_execute_identity_discovery_over_tcp_ingress,
+        )
+
+        response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/persist-discovered-meter",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={"protocol_association_profile_id": protocol_profile_id},
+        )
+        assert response.status_code == 200
+        payload = response.json()["result"]
+        assert payload["success"] is True
+        assert payload["matched_existing_meter"] is False
+        assert payload["created_meter"] is True
+        assert payload["created_endpoint"] is True
+        assert payload["created_assignment"] is True
+        assert payload["discovered_identity_value"] == "SN-NEW-INGRESS-001"
+
+        created_meter = db_session.get(Meter, uuid.UUID(payload["meter_id"]))
+        assert created_meter is not None
+        assert created_meter.serial_number == "SN-NEW-INGRESS-001"
+        assert created_meter.notes is not None
+        assert "auto-registered from live tcp ingress identity discovery" in created_meter.notes.lower()
+
+        created_endpoint = db_session.get(
+            CommunicationEndpoint,
+            uuid.UUID(payload["communication_endpoint_id"]),
+        )
+        assert created_endpoint is not None
+        assert created_endpoint.host == "127.0.0.1"
+
+        created_assignment = db_session.get(
+            MeterEndpointAssignment,
+            uuid.UUID(payload["assignment_id"]),
+        )
+        assert created_assignment is not None
+        assert created_assignment.meter_id == created_meter.id
+        assert created_assignment.endpoint_id == created_endpoint.id
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_internal_runtime_tcp_meter_ingress_persist_is_duplicate_safe_on_repeat_calls(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    seed_meter_id = _create_meter_record(client, token)
+    _, protocol_profile_id = _attach_runtime_connectivity(db_session, seed_meter_id)
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setenv("RUNTIME_SECRET_SECRET___METERS_RUNTIME_LOW", "test-runtime-password")
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        def fake_execute_identity_discovery_over_tcp_ingress(*, sock, config, identity_obis_codes=None):
+            assert sock is not None
+            return LiveTcpIdentityDiscoveryExecution(
+                identity_obis_code="0.0.96.1.0.255",
+                identity_value="SN-REPEAT-001",
+                identity_values={"0.0.96.1.0.255": "SN-REPEAT-001"},
+                protocol_trace={"association_method": "broadcast_snrm_then_aarq"},
+                raw_frames=[{"stage": "fake-discovery"}],
+                bytes_sent=21,
+                bytes_received=29,
+            )
+
+        monkeypatch.setattr(
+            "app.runtime.services.tcp_meter_identity_discovery.execute_identity_discovery_over_tcp_ingress",
+            fake_execute_identity_discovery_over_tcp_ingress,
+        )
+
+        first_response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/persist-discovered-meter",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={"protocol_association_profile_id": protocol_profile_id},
+        )
+        assert first_response.status_code == 200
+        first_payload = first_response.json()["result"]
+        assert first_payload["created_meter"] is True
+        assert first_payload["created_endpoint"] is True
+        assert first_payload["created_assignment"] is True
+
+        second_response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/persist-discovered-meter",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={"protocol_association_profile_id": protocol_profile_id},
+        )
+        assert second_response.status_code == 200
+        second_payload = second_response.json()["result"]
+        assert second_payload["matched_existing_meter"] is True
+        assert second_payload["created_meter"] is False
+        assert second_payload["created_endpoint"] is False
+        assert second_payload["created_assignment"] is False
+        assert second_payload["meter_id"] == first_payload["meter_id"]
+        assert second_payload["communication_endpoint_id"] == first_payload["communication_endpoint_id"]
+        assert second_payload["assignment_id"] == first_payload["assignment_id"]
+
+        meter_count = db_session.scalar(
+            select(func.count())
+            .select_from(Meter)
+            .where(func.lower(Meter.serial_number) == "sn-repeat-001")
+        )
+        assignment_count = db_session.scalar(
+            select(func.count())
+            .select_from(MeterEndpointAssignment)
+            .where(MeterEndpointAssignment.id == uuid.UUID(first_payload["assignment_id"]))
+        )
+        endpoint_count = db_session.scalar(
+            select(func.count())
+            .select_from(CommunicationEndpoint)
+            .where(CommunicationEndpoint.id == uuid.UUID(first_payload["communication_endpoint_id"]))
+        )
+        assert meter_count == 1
+        assert assignment_count == 1
+        assert endpoint_count == 1
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_internal_runtime_tcp_meter_ingress_persist_refuses_when_discovery_has_no_identity(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    _, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setenv("RUNTIME_SECRET_SECRET___METERS_RUNTIME_LOW", "test-runtime-password")
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        def fake_execute_identity_discovery_over_tcp_ingress(*, sock, config, identity_obis_codes=None):
+            assert sock is not None
+            return LiveTcpIdentityDiscoveryExecution(
+                identity_obis_code=None,
+                identity_value=None,
+                identity_values={},
+                protocol_trace={"association_method": "broadcast_snrm_then_aarq"},
+                raw_frames=[{"stage": "fake-discovery"}],
+                bytes_sent=17,
+                bytes_received=18,
+            )
+
+        monkeypatch.setattr(
+            "app.runtime.services.tcp_meter_identity_discovery.execute_identity_discovery_over_tcp_ingress",
+            fake_execute_identity_discovery_over_tcp_ingress,
+        )
+
+        response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/persist-discovered-meter",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={"protocol_association_profile_id": protocol_profile_id},
+        )
+        assert response.status_code == 409
+        assert "usable unique meter identity" in response.json()["detail"].lower()
     finally:
         if client_socket is not None:
             client_socket.close()
