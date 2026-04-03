@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 
 import type { AuthorizedFetch } from "../../operational-shell";
 import { MeterDetailsAuditTab } from "./meter-details-audit-tab";
+import { MeterDetailsCommercialTab } from "./meter-details-commercial-tab";
 
 type MeterDetail = {
   id: string;
@@ -200,7 +201,13 @@ type ExecuteNowResponse = {
   };
 };
 
-type TabKey = "summary" | "connectivity" | "readings" | "audit" | "commands";
+type TabKey =
+  | "summary"
+  | "connectivity"
+  | "commercial"
+  | "readings"
+  | "audit"
+  | "commands";
 type FamilyFilter = "all" | CommandOperationalFamily;
 type RelayOperation = "disconnect" | "reconnect";
 
@@ -1088,6 +1095,17 @@ export function MeterDetailsCommandsTab({
               : "Readings context is currently empty for this meter.",
       },
       {
+        label: "Commercial",
+        value:
+          consumerLinkage?.consumer_display_name ??
+          consumerLinkage?.account_number ??
+          "No linked commercial context",
+        note:
+          consumerLinkage?.linkage_status === "linked"
+            ? `${linkedServicePointCode ?? linkedServicePointId ?? "Service point pending"} • ${consumerLinkage.account_status ?? "Account status pending"}`
+            : "Subscriber/account linkage is currently unavailable for this meter.",
+      },
+      {
         label: "Commands",
         value: latestRecentCommand
           ? formatFamilySummary(latestRecentCommand.family_specific_outcome_summary)
@@ -1104,9 +1122,12 @@ export function MeterDetailsCommandsTab({
       latestIntervalChannel,
       latestReading,
       latestRecentCommand,
+      linkedServicePointCode,
+      linkedServicePointId,
       meter,
       meterId,
       primaryEndpointAssignment,
+      consumerLinkage,
     ],
   );
   const tabCards = useMemo(
@@ -1122,6 +1143,18 @@ export function MeterDetailsCommandsTab({
         label: "Connectivity",
         value: hasConnectivityContext ? "Endpoint + protocol context" : "Connectivity gaps visible",
         note: activeEndpointAssignments.length > 0 ? `${activeEndpointAssignments.length} active endpoint assignments in scope` : "No active endpoint assignment in scope",
+      },
+      {
+        key: "commercial" as const,
+        label: "Consumer / Commercial",
+        value:
+          consumerLinkage?.linkage_status === "linked"
+            ? "Subscriber + account context"
+            : "Commercial linkage gaps visible",
+        note:
+          consumerLinkage?.linkage_status === "linked"
+            ? "Existing subscriber, account, and service context in scope"
+            : "No active subscriber/account linkage recorded",
       },
       {
         key: "readings" as const,
@@ -1609,6 +1642,16 @@ export function MeterDetailsCommandsTab({
             <p className="muted">Connectivity context not available.</p>
           ) : null}
         </section>
+      ) : null}
+
+      {activeTab === "commercial" ? (
+        <MeterDetailsCommercialTab
+          consumerLinkage={consumerLinkage}
+          isLoadingConsumerLinkage={isConsumerLinkageLoading}
+          consumerLinkageError={consumerLinkageError}
+          linkedServicePointId={linkedServicePointId}
+          linkedServicePointCode={linkedServicePointCode}
+        />
       ) : null}
 
       {activeTab === "readings" ? (

@@ -747,7 +747,13 @@ function renderMeterTabInShell() {
 
 async function openMeterWorkspaceTab(
   user: ReturnType<typeof userEvent.setup>,
-  tabName: "Summary" | "Connectivity" | "Readings" | "Audit" | "Commands",
+  tabName:
+    | "Summary"
+    | "Connectivity"
+    | "Consumer / Commercial"
+    | "Readings"
+    | "Audit"
+    | "Commands",
 ) {
   await user.click(
     await screen.findByRole("tab", { name: new RegExp(tabName, "i") }),
@@ -1069,6 +1075,98 @@ describe("MeterDetailsCommandsTab", () => {
       "href",
       "/audit-center",
     );
+  });
+
+  it("renders the consumer commercial tab with linked subscriber, account, and service context", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Consumer / Commercial");
+
+    const commercialPanel = (
+      await screen.findByRole("heading", { name: "Consumer / commercial context" })
+    ).closest("section");
+    expect(commercialPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(commercialPanel as HTMLElement).getByText("Amina Al Balushi"),
+      ).toBeInTheDocument();
+      expect(within(commercialPanel as HTMLElement).getByText("ACC-1001")).toBeInTheDocument();
+      expect(within(commercialPanel as HTMLElement).getByText("SP-1001")).toBeInTheDocument();
+      expect(
+        within(commercialPanel as HTMLElement).getAllByText(/Source Meter Account Assignment/i),
+      ).not.toHaveLength(0);
+    });
+
+    const navigationPanel = screen
+      .getByRole("heading", { name: "Commercial navigation" })
+      .closest("section");
+    expect(navigationPanel).not.toBeNull();
+
+    expect(
+      within(navigationPanel as HTMLElement).getByRole("link", { name: "Open subscriber detail" }),
+    ).toHaveAttribute(
+      "href",
+      "/subscribers/consumer-1",
+    );
+    expect(
+      within(navigationPanel as HTMLElement).getByRole("link", { name: "Open account detail" }),
+    ).toHaveAttribute(
+      "href",
+      "/accounts/account-1",
+    );
+    expect(
+      within(navigationPanel as HTMLElement).getByRole("link", { name: "Open service point detail" }),
+    ).toHaveAttribute("href", "/service-points/sp-1");
+  });
+
+  it("renders a bounded commercial empty state when no subscriber or account is linked", async () => {
+    const { fetchMock } = createMockApi({
+      consumerLinkageResponse: {
+        meter_id: "meter-1",
+        linkage_status: "unlinked",
+        linkage_source: null,
+        consumer_id: null,
+        consumer_display_name: null,
+        consumer_type: null,
+        consumer_external_ref: null,
+        account_id: null,
+        account_number: null,
+        account_status: null,
+        service_point_id: null,
+        service_point_code: null,
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Consumer / Commercial");
+
+    expect(
+      await screen.findByText("No linked subscriber or account is currently attached to this meter"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Commercial Context Empty")).toBeInTheDocument();
+  });
+
+  it("renders a bounded commercial error state when consumer linkage fails", async () => {
+    const { fetchMock } = createMockApi({
+      consumerLinkageStatus: 503,
+      consumerLinkageErrorDetail: "Consumer linkage temporarily unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Consumer / Commercial");
+
+    expect(
+      await screen.findByText("Consumer linkage temporarily unavailable."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Commercial navigation" })).toBeInTheDocument();
   });
 
   it("renders a bounded empty state when no meter-scoped audit rows are available", async () => {
