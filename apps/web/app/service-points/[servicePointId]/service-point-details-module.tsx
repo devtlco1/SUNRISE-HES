@@ -69,6 +69,13 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function formatCoordinates(latitude: number | null, longitude: number | null): string {
+  if (latitude === null || longitude === null) {
+    return "Not available";
+  }
+  return `${latitude}, ${longitude}`;
+}
+
 export function ServicePointDetailsModule({
   servicePointId,
   authorizedFetch,
@@ -104,6 +111,54 @@ export function ServicePointDetailsModule({
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  const primaryLinkedMeter = detail?.linked_meters[0] ?? null;
+  const primaryLinkedSubscriber = detail?.linked_subscribers[0] ?? null;
+  const workspaceCards = detail
+    ? [
+        {
+          label: "Service point identity",
+          value: detail.service_point_code,
+          note: `${detail.is_active ? "Active" : "Inactive"} • ${detail.id}`,
+        },
+        {
+          label: "Premise context",
+          value: formatStatusLabel(detail.premises_type ?? "premise"),
+          note: detail.address_line ?? "No address summary recorded",
+        },
+        {
+          label: "Subscriber context",
+          value: primaryLinkedSubscriber?.full_name ?? "No linked subscriber",
+          note: primaryLinkedSubscriber
+            ? `${formatStatusLabel(primaryLinkedSubscriber.consumer_type)} • ${primaryLinkedSubscriber.account_number ?? "No linked account"}`
+            : "No active subscriber linkage recorded",
+        },
+        {
+          label: "Account context",
+          value:
+            primaryLinkedSubscriber?.account_number ??
+            `${detail.linked_account_count} linked account(s)`,
+          note: primaryLinkedSubscriber?.account_status
+            ? formatStatusLabel(primaryLinkedSubscriber.account_status)
+            : "No linked account status summary",
+        },
+        {
+          label: "Primary meter",
+          value: primaryLinkedMeter?.serial_number ?? "No linked meter",
+          note: primaryLinkedMeter
+            ? `${formatStatusLabel(primaryLinkedMeter.current_status)} • ${primaryLinkedMeter.utility_meter_number ?? "No utility number"}`
+            : "No active meter linkage recorded",
+        },
+        {
+          label: "Coordinates",
+          value: formatCoordinates(detail.latitude, detail.longitude),
+          note:
+            detail.latitude !== null && detail.longitude !== null
+              ? "GIS/location coordinates recorded"
+              : "No coordinate visibility recorded",
+        },
+      ]
+    : [];
 
   return (
     <section className="panel">
@@ -141,9 +196,36 @@ export function ServicePointDetailsModule({
                 </span>
                 <span className="artifact-pill">
                   {detail.latitude !== null && detail.longitude !== null
-                    ? `${detail.latitude}, ${detail.longitude}`
+                    ? formatCoordinates(detail.latitude, detail.longitude)
                     : "No coordinate summary"}
                 </span>
+              </div>
+
+              <div className="artifact-row">
+                {primaryLinkedSubscriber ? (
+                  <Link
+                    className="primary-button"
+                    href={`/subscribers/${primaryLinkedSubscriber.id}`}
+                  >
+                    Open linked subscriber detail
+                  </Link>
+                ) : null}
+                {primaryLinkedSubscriber?.account_id ? (
+                  <Link
+                    className="secondary-button"
+                    href={`/accounts/${primaryLinkedSubscriber.account_id}`}
+                  >
+                    Open linked account detail
+                  </Link>
+                ) : null}
+                {primaryLinkedMeter ? (
+                  <Link
+                    className="secondary-button"
+                    href={`/meters/${primaryLinkedMeter.id}`}
+                  >
+                    Open primary meter detail
+                  </Link>
+                ) : null}
               </div>
             </section>
 
@@ -164,6 +246,26 @@ export function ServicePointDetailsModule({
                 <span className="stat-label">Linked accounts</span>
                 <strong>{detail.linked_account_count}</strong>
               </div>
+            </div>
+          </section>
+
+          <section className="subpanel">
+            <div className="section-heading">
+              <div>
+                <h3>Service point workspace</h3>
+                <p className="muted">
+                  Dense operational and commercial summary for the selected service point.
+                </p>
+              </div>
+            </div>
+            <div className="service-points-overview-grid">
+              {workspaceCards.map((card) => (
+                <div key={card.label} className="stat-card service-points-overview-card">
+                  <span className="stat-label">{card.label}</span>
+                  <strong>{card.value}</strong>
+                  <p className="muted">{card.note}</p>
+                </div>
+              ))}
             </div>
           </section>
 
@@ -219,9 +321,11 @@ export function ServicePointDetailsModule({
                 <p className="muted">No meters linked to this service point.</p>
               ) : null}
               {detail.linked_meters.map((meter) => (
-                <Link key={meter.id} className="meter-list-item" href={`/meters/${meter.id}`}>
+                <div key={meter.id} className="meter-list-item">
                   <div className="command-list-item-header">
-                    <strong>{meter.serial_number}</strong>
+                    <Link href={`/meters/${meter.id}`}>
+                      <strong>{meter.serial_number}</strong>
+                    </Link>
                     <span className={`status-pill ${buildStatusTone(meter.current_status)}`}>
                       {formatStatusLabel(meter.current_status)}
                     </span>
@@ -240,7 +344,20 @@ export function ServicePointDetailsModule({
                     <span>Meter ID {meter.id}</span>
                     <span>Open existing meter detail</span>
                   </div>
-                </Link>
+                  <div className="artifact-row">
+                    <Link className="secondary-button" href={`/meters/${meter.id}`}>
+                      Open meter detail
+                    </Link>
+                    {meter.account_id ? (
+                      <Link
+                        className="secondary-button"
+                        href={`/accounts/${meter.account_id}`}
+                      >
+                        Open linked account detail
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
               ))}
             </div>
           </section>
@@ -262,13 +379,11 @@ export function ServicePointDetailsModule({
                 <p className="muted">No subscribers linked to this service point.</p>
               ) : null}
               {detail.linked_subscribers.map((subscriber) => (
-                <Link
-                  key={subscriber.id}
-                  className="meter-list-item"
-                  href={`/subscribers/${subscriber.id}`}
-                >
+                <div key={subscriber.id} className="meter-list-item">
                   <div className="command-list-item-header">
-                    <strong>{subscriber.full_name}</strong>
+                    <Link href={`/subscribers/${subscriber.id}`}>
+                      <strong>{subscriber.full_name}</strong>
+                    </Link>
                     <span
                       className={`status-pill ${buildStatusTone(
                         subscriber.account_status ?? subscriber.consumer_type,
@@ -293,7 +408,20 @@ export function ServicePointDetailsModule({
                     <span>Subscriber ID {subscriber.id}</span>
                     <span>Open existing subscriber detail</span>
                   </div>
-                </Link>
+                  <div className="artifact-row">
+                    <Link className="secondary-button" href={`/subscribers/${subscriber.id}`}>
+                      Open subscriber detail
+                    </Link>
+                    {subscriber.account_id ? (
+                      <Link
+                        className="secondary-button"
+                        href={`/accounts/${subscriber.account_id}`}
+                      >
+                        Open linked account detail
+                      </Link>
+                    ) : null}
+                  </div>
+                </div>
               ))}
             </div>
           </section>
