@@ -1026,6 +1026,7 @@ async function openMeterWorkspaceTab(
   user: ReturnType<typeof userEvent.setup>,
   tabName:
     | "Summary"
+    | "Configuration"
     | "Connectivity"
     | "GIS"
     | "Consumer / Commercial"
@@ -1190,6 +1191,117 @@ describe("MeterDetailsCommandsTab", () => {
       "href",
       "/connectivity",
     );
+  });
+
+  it("renders the configuration tab with meter model, profile, and protocol context", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Configuration");
+
+    const configurationPanel = screen
+      .getByRole("heading", { name: "Configuration context" })
+      .closest("section");
+    expect(configurationPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(configurationPanel as HTMLElement).getByText("GENERIC / GM-1"),
+      ).toBeInTheDocument();
+      expect(
+        within(configurationPanel as HTMLElement).getByText("default"),
+      ).toBeInTheDocument();
+      expect(
+        within(configurationPanel as HTMLElement).getByText("dlms-default"),
+      ).toBeInTheDocument();
+      expect(
+        within(configurationPanel as HTMLElement).getByText("dlms-profile"),
+      ).toBeInTheDocument();
+      expect(
+        within(configurationPanel as HTMLElement).getByText("Not recorded"),
+      ).toBeInTheDocument();
+    });
+
+    const recordPanel = screen
+      .getByRole("heading", { name: "Operational configuration record" })
+      .closest("section");
+    expect(recordPanel).not.toBeNull();
+    expect(
+      within(recordPanel as HTMLElement).getByRole("link", {
+        name: "Open service point detail",
+      }),
+    ).toHaveAttribute("href", "/service-points/sp-1");
+    expect(
+      within(recordPanel as HTMLElement).getByRole("link", {
+        name: "Open transformer detail",
+      }),
+    ).toHaveAttribute("href", "/transformers-substations/transformer-1");
+  });
+
+  it("renders a bounded configuration gap state when active profile context is unavailable", async () => {
+    const { fetchMock } = createMockApi({
+      meterResponse: {
+        id: "meter-1",
+        serial_number: "SN-1001",
+        utility_meter_number: "UMN-1001",
+        manufacturer_code: "GENERIC",
+        meter_model_code: "GM-1",
+        meter_profile_code: null,
+        communication_profile_code: null,
+        current_status: "commissioned",
+        transformer_id: null,
+        service_point_id: null,
+        last_seen_at: "2026-03-30T11:00:00.000Z",
+      },
+      endpointAssignments: [],
+      protocolProfiles: [],
+      consumerLinkageResponse: {
+        meter_id: "meter-1",
+        linkage_status: "unlinked",
+        linkage_source: null,
+        consumer_id: null,
+        consumer_display_name: null,
+        consumer_type: null,
+        consumer_external_ref: null,
+        account_id: null,
+        account_number: null,
+        account_status: null,
+        service_point_id: null,
+        service_point_code: null,
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Configuration");
+
+    expect(
+      await screen.findByText(
+        "No active profile or endpoint configuration is currently recorded for this meter. The bounded catalog record is still shown below.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Operational configuration record" })).toBeInTheDocument();
+  });
+
+  it("renders a bounded meter configuration error state without disturbing the workspace", async () => {
+    const { fetchMock } = createMockApi({
+      endpointAssignmentsStatus: 503,
+      protocolProfilesStatus: 503,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Configuration");
+
+    expect(
+      await screen.findByText("Unable to load complete meter configuration context."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Configuration context" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Operational configuration record" })).toBeInTheDocument();
   });
 
   it("renders the consumer linkage card when a linked subscriber exists", async () => {

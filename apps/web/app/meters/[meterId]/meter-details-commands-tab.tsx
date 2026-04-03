@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import type { AuthorizedFetch } from "../../operational-shell";
 import { MeterDetailsAuditTab } from "./meter-details-audit-tab";
 import { MeterDetailsCommercialTab } from "./meter-details-commercial-tab";
+import { MeterDetailsConfigurationTab } from "./meter-details-configuration-tab";
 import { MeterDetailsConnectivityTab } from "./meter-details-connectivity-tab";
 import { MeterDetailsEventsTab } from "./meter-details-events-tab";
 import { MeterDetailsGisTab } from "./meter-details-gis-tab";
@@ -207,6 +208,7 @@ type ExecuteNowResponse = {
 
 type TabKey =
   | "summary"
+  | "configuration"
   | "connectivity"
   | "gis"
   | "commercial"
@@ -465,6 +467,9 @@ export function MeterDetailsCommandsTab({
   const [consumerLinkageError, setConsumerLinkageError] = useState<string | null>(
     null,
   );
+  const [configurationContextError, setConfigurationContextError] = useState<string | null>(
+    null,
+  );
   const [readingsContextError, setReadingsContextError] = useState<string | null>(null);
   const [recentCommandsError, setRecentCommandsError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -594,11 +599,21 @@ export function MeterDetailsCommandsTab({
     isBootstrappingPage &&
     endpointAssignments.length === 0 &&
     protocolProfiles.length === 0;
+  const isConfigurationContextLoading =
+    isBootstrappingPage &&
+    meter === null &&
+    endpointAssignments.length === 0 &&
+    protocolProfiles.length === 0;
 
   const hasConnectivityContext =
     primaryEndpointAssignment !== null ||
     defaultProtocolProfile !== null ||
     meter?.communication_profile_code != null;
+  const hasConfigurationContext =
+    meter?.meter_profile_code != null ||
+    meter?.communication_profile_code != null ||
+    primaryEndpointAssignment !== null ||
+    defaultProtocolProfile !== null;
 
   const isConsumerLinkageLoading =
     isBootstrappingPage && consumerLinkage === null && consumerLinkageError === null;
@@ -765,6 +780,7 @@ export function MeterDetailsCommandsTab({
     setIsBootstrappingPage(true);
     setPageError(null);
     setConsumerLinkageError(null);
+    setConfigurationContextError(null);
     setReadingsContextError(null);
 
     try {
@@ -843,6 +859,11 @@ export function MeterDetailsCommandsTab({
             : "Unable to load consumer linkage."
           : null,
       );
+      setConfigurationContextError(
+        assignmentsResult.status === "rejected" || profilesResult.status === "rejected"
+          ? "Unable to load complete meter configuration context."
+          : null,
+      );
       setReadingsContextError(
         channelsResult.status === "rejected" ||
           readingsResult.status === "rejected" ||
@@ -874,6 +895,11 @@ export function MeterDetailsCommandsTab({
       setProtocolProfiles([]);
       setLoadProfileChannels([]);
       setConsumerLinkageError(null);
+      setConfigurationContextError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load meter configuration context.",
+      );
       setReadingsContextError(null);
       setPageError(
         error instanceof Error
@@ -1214,6 +1240,17 @@ export function MeterDetailsCommandsTab({
           : "Meter detail context is still loading.",
       },
       {
+        label: "Configuration",
+        value: meter
+          ? `${meter.manufacturer_code} / ${meter.meter_model_code}`
+          : "Configuration loading",
+        note: defaultProtocolProfile
+          ? `${defaultProtocolProfile.code} • ${meter?.meter_profile_code ?? "No meter profile"}`
+          : hasConfigurationContext
+            ? `${meter?.communication_profile_code ?? "Communication profile only"} • bounded read-only visibility`
+            : "No active meter configuration profile context recorded.",
+      },
+      {
         label: "Connectivity",
         value:
           primaryEndpointAssignment?.endpoint_code ??
@@ -1294,6 +1331,7 @@ export function MeterDetailsCommandsTab({
       meterId,
       primaryEndpointAssignment,
       consumerLinkage,
+      hasConfigurationContext,
     ],
   );
   const tabCards = useMemo(
@@ -1303,6 +1341,14 @@ export function MeterDetailsCommandsTab({
         label: "Summary",
         value: meter ? "Identity + consumer context" : "Meter context loading",
         note: consumerLinkage?.linkage_status === "linked" ? "Linked consumer context available" : "Linked consumer context bounded",
+      },
+      {
+        key: "configuration" as const,
+        label: "Configuration",
+        value: hasConfigurationContext ? "Model + profile context" : "Configuration gaps visible",
+        note: defaultProtocolProfile
+          ? `${defaultProtocolProfile.code} with current protocol context`
+          : meter?.meter_profile_code ?? "No active meter/profile protocol pairing in scope",
       },
       {
         key: "connectivity" as const,
@@ -1363,6 +1409,8 @@ export function MeterDetailsCommandsTab({
       activeEndpointAssignments.length,
       billingSnapshots.length,
       consumerLinkage?.linkage_status,
+      defaultProtocolProfile,
+      hasConfigurationContext,
       hasConnectivityContext,
       hasReadingsContext,
       loadProfileIntervals.length,
@@ -1518,8 +1566,8 @@ export function MeterDetailsCommandsTab({
           <div>
             <h2>Meter workspace</h2>
             <p className="muted">
-              Unified operator foundation for identity, connectivity, readings,
-              and commands using the current meter-scoped truth.
+              Unified operator foundation for identity, configuration, connectivity,
+              readings, and commands using the current meter-scoped truth.
             </p>
           </div>
         </div>
@@ -1749,6 +1797,20 @@ export function MeterDetailsCommandsTab({
             ) : null}
           </section>
         </div>
+      ) : null}
+
+      {activeTab === "configuration" ? (
+        <MeterDetailsConfigurationTab
+          meter={meter}
+          primaryEndpointAssignment={primaryEndpointAssignment}
+          activeEndpointAssignments={activeEndpointAssignments}
+          defaultProtocolProfile={defaultProtocolProfile}
+          activeProtocolProfiles={activeProtocolProfiles}
+          linkedServicePointId={linkedServicePointId}
+          linkedServicePointCode={linkedServicePointCode}
+          isConfigurationContextLoading={isConfigurationContextLoading}
+          configurationContextError={configurationContextError}
+        />
       ) : null}
 
       {activeTab === "connectivity" ? (
