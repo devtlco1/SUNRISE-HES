@@ -169,6 +169,25 @@ type MockConnectivitySessionItem = {
   metadata: Record<string, unknown> | null;
 };
 
+type MockGisLiteEntity = {
+  meter_id: string;
+  meter_serial_number: string;
+  meter_status: string;
+  meter_last_seen_at: string | null;
+  service_point_id: string | null;
+  service_point_code: string | null;
+  address_line: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  has_coordinates: boolean;
+  subscriber_id: string | null;
+  subscriber_display_name: string | null;
+  subscriber_type: string | null;
+  account_id: string | null;
+  account_number: string | null;
+  location_presence: "coordinates_available" | "service_point_only" | "unlinked";
+};
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -204,6 +223,8 @@ function createMockApi({
   registerSnapshotsErrorDetail = "Register snapshots unavailable.",
   loadProfileIntervalsStatus = 200,
   loadProfileIntervalsErrorDetail = "Load profile intervals unavailable.",
+  gisLiteStatus = 200,
+  gisLiteDetail = "Meter GIS context unavailable.",
   consumerLinkageStatus = 200,
   consumerLinkageErrorDetail = "Consumer linkage unavailable.",
   auditLogsStatus = 200,
@@ -319,6 +340,26 @@ function createMockApi({
       value_numeric: "11.50",
       quality: "valid",
       source_batch_id: "batch-3",
+    },
+  ],
+  gisLiteEntities = [
+    {
+      meter_id: "meter-1",
+      meter_serial_number: "SN-1001",
+      meter_status: "commissioned",
+      meter_last_seen_at: "2026-03-30T11:00:00.000Z",
+      service_point_id: "sp-1",
+      service_point_code: "SP-1001",
+      address_line: "Muscat Block A",
+      latitude: 23.588,
+      longitude: 58.3829,
+      has_coordinates: true,
+      subscriber_id: "consumer-1",
+      subscriber_display_name: "Amina Al Balushi",
+      subscriber_type: "residential",
+      account_id: "account-1",
+      account_number: "ACC-1001",
+      location_presence: "coordinates_available",
     },
   ],
   auditLogs = [
@@ -478,6 +519,8 @@ function createMockApi({
   registerSnapshotsErrorDetail?: string;
   loadProfileIntervalsStatus?: number;
   loadProfileIntervalsErrorDetail?: string;
+  gisLiteStatus?: number;
+  gisLiteDetail?: string;
   consumerLinkageStatus?: number;
   consumerLinkageErrorDetail?: string;
   auditLogsStatus?: number;
@@ -493,6 +536,7 @@ function createMockApi({
   readingsItems?: MockMeterReadingItem[];
   registerSnapshots?: MockRegisterSnapshotItem[];
   loadProfileIntervals?: MockLoadProfileIntervalItem[];
+  gisLiteEntities?: MockGisLiteEntity[];
   auditLogs?: MockAuditLogItem[];
   meterEvents?: MockMeterEventItem[];
   meterSessions?: MockConnectivitySessionItem[];
@@ -740,6 +784,21 @@ function createMockApi({
       });
     }
 
+    if (url.includes("/api/v1/gis-lite/entities?")) {
+      if (gisLiteStatus !== 200) {
+        return jsonResponse({ detail: gisLiteDetail }, gisLiteStatus);
+      }
+      const parsedUrl = new URL(url);
+      const meterIdFilter = parsedUrl.searchParams.get("meter_id");
+      const filteredItems = meterIdFilter
+        ? gisLiteEntities.filter((item) => item.meter_id === meterIdFilter)
+        : gisLiteEntities;
+      return jsonResponse({
+        total: filteredItems.length,
+        items: filteredItems,
+      });
+    }
+
     if (url.includes("/api/v1/audit-logs?")) {
       if (auditLogsStatus !== 200) {
         return jsonResponse({ detail: auditLogsDetail }, auditLogsStatus);
@@ -930,6 +989,7 @@ async function openMeterWorkspaceTab(
   tabName:
     | "Summary"
     | "Connectivity"
+    | "GIS"
     | "Consumer / Commercial"
     | "Events"
     | "Readings"
@@ -1257,6 +1317,77 @@ describe("MeterDetailsCommandsTab", () => {
     expect(
       screen.getByRole("link", { name: "Open readings workspace" }),
     ).toHaveAttribute("href", "/readings?meterId=meter-1");
+  });
+
+  it("renders the GIS tab with meter-scoped mapping and network context", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "GIS");
+
+    const gisPanel = (
+      await screen.findByRole("heading", { name: "GIS context" })
+    ).closest("section");
+    expect(gisPanel).not.toBeNull();
+    expect(
+      within(gisPanel as HTMLElement).getAllByText("Coordinates available"),
+    ).not.toHaveLength(0);
+    expect(within(gisPanel as HTMLElement).getByText("23.588, 58.3829")).toBeInTheDocument();
+    expect(within(gisPanel as HTMLElement).getByText("SP-1001")).toBeInTheDocument();
+    expect(within(gisPanel as HTMLElement).getByText("transformer-1")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open GIS Lite surface" })).toHaveAttribute(
+      "href",
+      "/gis-lite",
+    );
+
+    const navigationPanel = screen
+      .getByRole("heading", { name: "Network and location navigation" })
+      .closest("section");
+    expect(navigationPanel).not.toBeNull();
+    expect(
+      within(navigationPanel as HTMLElement).getByRole("link", {
+        name: "Open service point detail",
+      }),
+    ).toHaveAttribute("href", "/service-points/sp-1");
+    expect(
+      within(navigationPanel as HTMLElement).getByRole("link", {
+        name: "Open transformer detail",
+      }),
+    ).toHaveAttribute("href", "/transformers-substations/transformer-1");
+  });
+
+  it("renders a bounded GIS empty state when no meter-scoped GIS entity is available", async () => {
+    const { fetchMock } = createMockApi({ gisLiteEntities: [] });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "GIS");
+
+    expect(await screen.findByText("GIS context not available for this meter yet.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Network and location navigation" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a bounded meter GIS error state without disturbing the workspace", async () => {
+    const { fetchMock } = createMockApi({
+      gisLiteStatus: 503,
+      gisLiteDetail: "Meter GIS context unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "GIS");
+
+    expect(await screen.findByText("Meter GIS context unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "GIS context" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Network and location navigation" }),
+    ).toBeInTheDocument();
   });
 
   it("renders a bounded readings empty state when no meter-scoped readings context is available", async () => {

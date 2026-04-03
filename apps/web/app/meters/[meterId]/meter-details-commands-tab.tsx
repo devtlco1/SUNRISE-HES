@@ -8,6 +8,7 @@ import { MeterDetailsAuditTab } from "./meter-details-audit-tab";
 import { MeterDetailsCommercialTab } from "./meter-details-commercial-tab";
 import { MeterDetailsConnectivityTab } from "./meter-details-connectivity-tab";
 import { MeterDetailsEventsTab } from "./meter-details-events-tab";
+import { MeterDetailsGisTab } from "./meter-details-gis-tab";
 import { MeterDetailsReadingsTab } from "./meter-details-readings-tab";
 
 type MeterDetail = {
@@ -207,6 +208,7 @@ type ExecuteNowResponse = {
 type TabKey =
   | "summary"
   | "connectivity"
+  | "gis"
   | "commercial"
   | "events"
   | "readings"
@@ -1110,6 +1112,19 @@ export function MeterDetailsCommandsTab({
               : "Readings context is currently empty for this meter.",
       },
       {
+        label: "GIS",
+        value:
+          linkedServicePointCode ??
+          meter?.service_point_id ??
+          meter?.transformer_id ??
+          "No GIS context",
+        note: meter?.transformer_id
+          ? `Transformer ${meter.transformer_id} with existing GIS/service-point follow-through`
+          : linkedServicePointCode
+            ? `Linked service point ${linkedServicePointCode}`
+            : "GIS context is currently empty for this meter.",
+      },
+      {
         label: "Commercial",
         value:
           consumerLinkage?.consumer_display_name ??
@@ -1163,6 +1178,18 @@ export function MeterDetailsCommandsTab({
         label: "Connectivity",
         value: hasConnectivityContext ? "Endpoint + protocol context" : "Connectivity gaps visible",
         note: activeEndpointAssignments.length > 0 ? `${activeEndpointAssignments.length} active endpoint assignments in scope` : "No active endpoint assignment in scope",
+      },
+      {
+        key: "gis" as const,
+        label: "GIS",
+        value:
+          linkedServicePointId || meter?.transformer_id
+            ? "Location + network context"
+            : "No current GIS context",
+        note:
+          linkedServicePointId || meter?.transformer_id
+            ? "Existing GIS Lite, service-point, and transformer visibility"
+            : "No service-point or transformer GIS context in scope",
       },
       {
         key: "commercial" as const,
@@ -1610,6 +1637,24 @@ export function MeterDetailsCommandsTab({
           defaultProtocolProfile={defaultProtocolProfile}
           hasConnectivityContext={hasConnectivityContext}
           isConnectivityContextLoading={isConnectivityContextLoading}
+          authorizedFetch={authorizedFetch}
+        />
+      ) : null}
+
+      {activeTab === "gis" ? (
+        <MeterDetailsGisTab
+          meter={
+            meter
+              ? {
+                  id: meter.id,
+                  serial_number: meter.serial_number,
+                  transformer_id: meter.transformer_id,
+                }
+              : null
+          }
+          meterId={meterId}
+          linkedServicePointId={linkedServicePointId}
+          linkedServicePointCode={linkedServicePointCode}
           authorizedFetch={authorizedFetch}
         />
       ) : null}

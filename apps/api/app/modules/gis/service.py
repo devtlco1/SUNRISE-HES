@@ -15,10 +15,18 @@ def list_gis_lite_entities(
     session: Session,
     *,
     limit: int = 50,
+    meter_id: uuid.UUID | None = None,
 ) -> GisLiteEntityListResponse:
-    total = session.scalar(select(func.count()).select_from(Meter)) or 0
+    meter_query = select(Meter)
+    total_query = select(func.count()).select_from(Meter)
+
+    if meter_id is not None:
+        meter_query = meter_query.where(Meter.id == meter_id)
+        total_query = total_query.where(Meter.id == meter_id)
+
+    total = session.scalar(total_query) or 0
     meters = session.scalars(
-        select(Meter).order_by(Meter.serial_number.asc(), Meter.id.asc()).limit(limit)
+        meter_query.order_by(Meter.serial_number.asc(), Meter.id.asc()).limit(limit)
     ).all()
     if not meters:
         return GisLiteEntityListResponse(total=total, items=[])

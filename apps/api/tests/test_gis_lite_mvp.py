@@ -110,3 +110,24 @@ def test_gis_lite_entities_respect_bounded_limit(
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
+
+
+def test_gis_lite_entities_support_meter_scoped_filter(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    first_meter_id = _create_meter_record(client, token)
+    second_meter_id = _create_meter_record(client, token)
+
+    response = client.get(
+        f"/api/v1/gis-lite/entities?limit=20&meter_id={first_meter_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["meter_id"] == first_meter_id
+    assert payload["items"][0]["meter_id"] != second_meter_id
