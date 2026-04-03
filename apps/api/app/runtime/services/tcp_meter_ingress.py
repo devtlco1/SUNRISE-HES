@@ -11,8 +11,12 @@ import uuid
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.modules.connectivity.enums import EndpointAssignmentStatus
+from app.modules.connectivity.models import MeterEndpointAssignment
 
 logger = logging.getLogger(__name__)
 
@@ -373,14 +377,19 @@ def get_runtime_tcp_meter_ingress_status() -> TcpMeterIngressStatusSnapshot:
 
 
 def bind_runtime_tcp_meter_ingress_connection(
+    session: Session,
     *,
     meter_id: UUID,
-    endpoint_id: UUID,
+    endpoint_id: UUID | None,
     protocol_association_profile_id: UUID | None = None,
 ) -> TcpMeterIngressStatusSnapshot:
+    resolved_endpoint_id = endpoint_id or _resolve_runtime_bind_endpoint_id(
+        session,
+        meter_id=meter_id,
+    )
     return _tcp_meter_ingress_manager.bind_active_connection(
         meter_id=meter_id,
-        endpoint_id=endpoint_id,
+        endpoint_id=resolved_endpoint_id,
         protocol_association_profile_id=protocol_association_profile_id,
     )
 
@@ -412,4 +421,42 @@ def borrow_runtime_tcp_meter_ingress_unbound_connection() -> Iterator[
 
 def mark_runtime_tcp_meter_ingress_connection_dead(connection_id: str | None) -> None:
     _tcp_meter_ingress_manager.mark_connection_dead(connection_id)
+
+
+def _resolve_runtime_bind_endpoint_id(
+    session: Session,
+    *,
+    meter_id: UUID,
+) -> UUID:
+    active_assignments = session.scalars(
+        select(MeterEndpointAssignment)
+        .where(
+            MeterEndpointAssignment.meter_id == meter_id,
+            MeterEndpointAssignment.assignment_status == EndpointAssignmentStatus.ACTIVE,
+            MeterEndpointAssignment.unassigned_at.is_(None),
+        )
+        .order_by(
+            MeterEndpointAssignment.is_primary.desc(),
+            MeterEndpointAssignment.assigned_at.desc(),
+        )
+    ).all()
+    if not active_assignments:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Runtime TCP meter ingress bind requires an active endpoint assignment for the meter.",
+        )
+
+    primary_assignments = [assignment for assignment in active_assignments if assignment.is_primary]
+    if len(primary_assignments) == 1:
+        return primary_assignments[0].endpoint_id
+    if len(active_assignments) == 1:
+        return active_assignments[0].endpoint_id
+
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Runtime TCP meter ingress bind found multiple active endpoint assignments for the meter. "
+            "Specify endpoint_id explicitly."
+        ),
+    )
 

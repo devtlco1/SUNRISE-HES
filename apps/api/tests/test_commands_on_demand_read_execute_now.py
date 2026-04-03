@@ -23,25 +23,27 @@ def _execute_on_demand_read_now(
     token: str,
     meter_id: str,
     *,
-    command_template_id: str,
+    command_template_id: str | None = None,
     endpoint_assignment_id: str,
     protocol_association_profile_id: str,
     on_demand_read_operation: str = "read_billing_snapshot",
     idempotency_key: str | None = None,
 ):
+    payload = {
+        "endpoint_assignment_id": endpoint_assignment_id,
+        "protocol_association_profile_id": protocol_association_profile_id,
+        "on_demand_read_operation": on_demand_read_operation,
+        "priority": "high",
+        "idempotency_key": idempotency_key,
+        "notes": "On-demand-read execute now request",
+        "execute_now_reason": "on-demand-read-execute-now",
+    }
+    if command_template_id is not None:
+        payload["command_template_id"] = command_template_id
     return client.post(
         f"/api/v1/meters/{meter_id}/commands/on-demand-read/execute-now",
         headers={"Authorization": f"Bearer {token}"},
-        json={
-            "command_template_id": command_template_id,
-            "endpoint_assignment_id": endpoint_assignment_id,
-            "protocol_association_profile_id": protocol_association_profile_id,
-            "on_demand_read_operation": on_demand_read_operation,
-            "priority": "high",
-            "idempotency_key": idempotency_key,
-            "notes": "On-demand-read execute now request",
-            "execute_now_reason": "on-demand-read-execute-now",
-        },
+        json=payload,
     )
 
 
@@ -115,6 +117,29 @@ def test_on_demand_read_execute_now_succeeds_from_valid_application_request(
     assert batch_count == 1
     assert snapshot_count == 1
     assert reading_count >= 1
+
+
+def test_on_demand_read_execute_now_uses_default_template_when_not_supplied(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    endpoint_assignment_id, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    response = _execute_on_demand_read_now(
+        client,
+        token,
+        meter_id,
+        endpoint_assignment_id=endpoint_assignment_id,
+        protocol_association_profile_id=protocol_profile_id,
+        idempotency_key="on-demand-read-execute-now-default-template-1",
+    )
+
+    assert response.status_code == 200
+    command = db_session.get(MeterCommand, UUID(response.json()["result"]["command_id"]))
+    assert command is not None
+    assert command.command_template.code == "default-on-demand-read-billing-snapshot"
 
 
 def test_on_demand_read_execute_now_is_idempotent_for_same_request_context(

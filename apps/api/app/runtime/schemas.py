@@ -618,7 +618,7 @@ class RuntimeTcpMeterIngressStatusResponse(BaseModel):
 
 class RuntimeTcpMeterIngressBindRequest(BaseModel):
     meter_id: UUID
-    endpoint_id: UUID
+    endpoint_id: UUID | None = None
     protocol_association_profile_id: UUID | None = None
 
 

@@ -922,8 +922,10 @@ def get_runtime_tcp_meter_ingress_status_endpoint() -> RuntimeTcpMeterIngressSta
 )
 def bind_runtime_tcp_meter_ingress_connection_endpoint(
     payload: RuntimeTcpMeterIngressBindRequest,
+    session: Session = Depends(get_db_session),
 ) -> RuntimeTcpMeterIngressBindResponse:
     bind_runtime_tcp_meter_ingress_connection(
+        session,
         meter_id=payload.meter_id,
         endpoint_id=payload.endpoint_id,
         protocol_association_profile_id=payload.protocol_association_profile_id,

@@ -36,7 +36,7 @@ def _submit_on_demand_read_command(
     token: str,
     meter_id: str,
     *,
-    command_template_id: str,
+    command_template_id: str | None = None,
     endpoint_assignment_id: str,
     protocol_association_profile_id: str,
     on_demand_read_operation: str = "read_billing_snapshot",
@@ -44,13 +44,14 @@ def _submit_on_demand_read_command(
     include_operation: bool = True,
 ):
     payload = {
-        "command_template_id": command_template_id,
         "endpoint_assignment_id": endpoint_assignment_id,
         "protocol_association_profile_id": protocol_association_profile_id,
         "priority": "high",
         "idempotency_key": idempotency_key,
         "notes": "On-demand billing snapshot request",
     }
+    if command_template_id is not None:
+        payload["command_template_id"] = command_template_id
     if include_operation:
         payload["on_demand_read_operation"] = on_demand_read_operation
     return client.post(
@@ -92,6 +93,29 @@ def test_submit_on_demand_read_command_with_valid_prerequisites(
     assert payload["normalized_payload"]["on_demand_read_operation"] == "read_billing_snapshot"
     assert payload["normalized_payload"]["on_demand_read"]["snapshot_type"] == "billing"
     assert payload["normalized_payload"]["on_demand_read"]["command_category"] == "on_demand_read"
+
+
+def test_submit_on_demand_read_command_uses_stable_default_template_when_not_supplied(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    endpoint_assignment_id, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    response = _submit_on_demand_read_command(
+        client,
+        token,
+        meter_id,
+        endpoint_assignment_id=endpoint_assignment_id,
+        protocol_association_profile_id=protocol_profile_id,
+        idempotency_key="on-demand-read-default-template-1",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["command_template_code"] == "default-on-demand-read-billing-snapshot"
+    assert payload["command_template_name"] == "Default On-Demand Billing Snapshot"
 
 
 def test_submit_on_demand_read_command_refuses_non_compatible_template(

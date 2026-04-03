@@ -15,6 +15,7 @@ from app.modules.commands.enums import (
     CommandOperationalFamily,
     CommandPriority,
     CommandStatus,
+    CommandTargetScope,
     OnDemandReadCommandOperation,
     RelayControlCommandOperation,
 )
@@ -321,6 +322,8 @@ RELAY_CONTROL_TARGET_CLASS_ID = 70
 RELAY_CONTROL_TARGET_OBIS_CODE = "0.0.96.3.10.255"
 ON_DEMAND_READ_SNAPSHOT_TYPE = SnapshotType.BILLING
 ON_DEMAND_READ_RUNTIME_OPERATION = OnDemandReadCommandOperation.READ_BILLING_SNAPSHOT.value
+DEFAULT_ON_DEMAND_READ_TEMPLATE_CODE = "default-on-demand-read-billing-snapshot"
+DEFAULT_ON_DEMAND_READ_TEMPLATE_NAME = "Default On-Demand Billing Snapshot"
 
 
 def submit_relay_control_command(
@@ -486,17 +489,7 @@ def submit_on_demand_read_command(
     if meter is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meter not found.")
 
-    template = get_command_template(session, payload.command_template_id)
-    if template.category != CommandCategory.ON_DEMAND_READ:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Selected template is not compatible with the on-demand-read command submission slice.",
-        )
-    if not template.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot request a command from an inactive template.",
-        )
+    template = _resolve_on_demand_read_template(session, payload.command_template_id)
 
     if payload.idempotency_key:
         existing = session.scalar(
@@ -550,7 +543,7 @@ def submit_on_demand_read_command(
         session,
         meter_id=meter_id,
         payload=MeterCommandCreate(
-            command_template_id=payload.command_template_id,
+            command_template_id=template.id,
             priority=payload.priority,
             scheduled_at=payload.scheduled_at,
             correlation_id=payload.correlation_id,
@@ -571,6 +564,62 @@ def submit_on_demand_read_command(
         commit=commit,
     )
     return command
+
+
+def _resolve_on_demand_read_template(
+    session: Session,
+    template_id: uuid.UUID | None,
+) -> CommandTemplate:
+    if template_id is not None:
+        template = get_command_template(session, template_id)
+        if template.category != CommandCategory.ON_DEMAND_READ:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Selected template is not compatible with the on-demand-read command submission slice.",
+            )
+        if not template.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot request a command from an inactive template.",
+            )
+        return template
+
+    template = session.scalar(
+        select(CommandTemplate).where(
+            func.lower(CommandTemplate.code) == DEFAULT_ON_DEMAND_READ_TEMPLATE_CODE.lower()
+        )
+    )
+    if template is not None:
+        if template.category != CommandCategory.ON_DEMAND_READ:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Default on-demand-read template code is reserved for the on-demand-read family.",
+            )
+        if not template.is_active:
+            template.is_active = True
+            session.add(template)
+            session.flush()
+        return template
+
+    template = CommandTemplate(
+        code=DEFAULT_ON_DEMAND_READ_TEMPLATE_CODE,
+        name=DEFAULT_ON_DEMAND_READ_TEMPLATE_NAME,
+        category=CommandCategory.ON_DEMAND_READ,
+        target_scope=CommandTargetScope.METER,
+        description="Stable default template for bounded live billing snapshot reads.",
+        payload_schema={
+            "on_demand_read_operation": {
+                "type": "string",
+                "enum": [OnDemandReadCommandOperation.READ_BILLING_SNAPSHOT.value],
+            }
+        },
+        timeout_seconds=120,
+        max_retries=0,
+        is_active=True,
+    )
+    session.add(template)
+    session.flush()
+    return template
 
 
 def _normalize_on_demand_read_submission(

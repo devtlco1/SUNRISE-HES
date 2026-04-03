@@ -101,7 +101,7 @@ class RelayControlCommandCreate(BaseModel):
 
 
 class OnDemandReadCommandCreate(BaseModel):
-    command_template_id: UUID
+    command_template_id: UUID | None = None
     on_demand_read_operation: OnDemandReadCommandOperation
     endpoint_assignment_id: UUID
     protocol_association_profile_id: UUID

@@ -147,6 +147,55 @@ def test_internal_runtime_tcp_meter_ingress_routes_surface_status_and_binding(
         manager.stop()
 
 
+def test_internal_runtime_tcp_meter_ingress_bind_resolves_primary_assignment_when_endpoint_omitted(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = uuid.UUID(_create_meter_record(client, token))
+    endpoint_assignment_id, protocol_profile_id = _attach_runtime_connectivity(
+        db_session,
+        str(meter_id),
+    )
+    assignment = db_session.get(MeterEndpointAssignment, uuid.UUID(endpoint_assignment_id))
+    assert assignment is not None
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        bind_response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/bind-active-connection",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={
+                "meter_id": str(meter_id),
+                "protocol_association_profile_id": protocol_profile_id,
+            },
+        )
+        assert bind_response.status_code == 200
+        payload = bind_response.json()["result"]
+        assert payload["bound_meter_id"] == str(meter_id)
+        assert payload["bound_endpoint_id"] == str(assignment.endpoint_id)
+        assert payload["bound_protocol_association_profile_id"] == protocol_profile_id
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
 def test_on_demand_read_adapter_uses_bound_live_tcp_ingress_connection(monkeypatch) -> None:
     manager = tcp_meter_ingress.TcpMeterIngressManager(
         enabled=True,
