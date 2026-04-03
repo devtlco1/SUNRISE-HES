@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.context import RequestAuditContext, get_request_context
 from app.modules.audit.helpers import build_audit_payload
 from app.modules.audit.models import AuditLog
+from app.modules.audit.schemas import AuditLogListResponse, AuditLogResponse
+from app.modules.users.models import User
 
 
 def record_audit_event(
@@ -46,3 +50,93 @@ def record_audit_event(
     session.commit()
     session.refresh(audit_log)
     return audit_log
+
+
+def list_audit_logs(
+    session: Session,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+    action: str | None = None,
+    actor: str | None = None,
+    entity_type: str | None = None,
+    outcome: str | None = None,
+    from_created_at: datetime | None = None,
+    to_created_at: datetime | None = None,
+) -> AuditLogListResponse:
+    filters = _build_audit_log_filters(
+        action=action,
+        actor=actor,
+        entity_type=entity_type,
+        outcome=outcome,
+        from_created_at=from_created_at,
+        to_created_at=to_created_at,
+    )
+    base_statement = (
+        select(
+            AuditLog,
+            User.username.label("actor_username"),
+            User.full_name.label("actor_full_name"),
+        )
+        .outerjoin(User, AuditLog.actor_user_id == User.id)
+        .where(*filters)
+    )
+    total = session.scalar(
+        select(func.count()).select_from(base_statement.with_only_columns(AuditLog.id).subquery())
+    ) or 0
+    rows = session.execute(
+        base_statement.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return AuditLogListResponse(
+        total=total,
+        items=[
+            AuditLogResponse(
+                id=audit_log.id,
+                created_at=audit_log.created_at,
+                actor_user_id=audit_log.actor_user_id,
+                actor_username=actor_username,
+                actor_full_name=actor_full_name,
+                action=audit_log.action,
+                entity_type=audit_log.entity_type,
+                entity_id=audit_log.entity_id,
+                request_id=audit_log.request_id,
+                ip_address=audit_log.ip_address,
+                description=audit_log.description,
+                payload=audit_log.payload,
+            )
+            for audit_log, actor_username, actor_full_name in rows
+        ],
+    )
+
+
+def _build_audit_log_filters(
+    *,
+    action: str | None,
+    actor: str | None,
+    entity_type: str | None,
+    outcome: str | None,
+    from_created_at: datetime | None,
+    to_created_at: datetime | None,
+) -> list[Any]:
+    filters: list[Any] = []
+    if action:
+        filters.append(AuditLog.action.ilike(f"%{action.strip()}%"))
+    if actor:
+        actor_value = actor.strip()
+        filters.append(
+            or_(
+                User.username.ilike(f"%{actor_value}%"),
+                User.full_name.ilike(f"%{actor_value}%"),
+            )
+        )
+    if entity_type:
+        filters.append(AuditLog.entity_type.ilike(f"%{entity_type.strip()}%"))
+    if outcome:
+        filters.append(AuditLog.payload.op("->>")("outcome") == outcome.strip())
+    if from_created_at is not None:
+        filters.append(AuditLog.created_at >= from_created_at)
+    if to_created_at is not None:
+        filters.append(AuditLog.created_at <= to_created_at)
+    return filters

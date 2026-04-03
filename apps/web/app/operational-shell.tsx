@@ -74,6 +74,7 @@ function OperationalShellInner({
         { href: "/commands", label: "Commands" },
         { href: "/connectivity", label: "Connectivity" },
         { href: "/jobs-events-alerts", label: "Jobs / Events / Alerts" },
+        { href: "/audit-center", label: "Audit Center" },
       ],
     },
     {

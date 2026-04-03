@@ -6,6 +6,12 @@ DEFAULT_PERMISSION_DEFINITIONS = [
         "description": "Read the currently authenticated user profile.",
     },
     {
+        "code": "audit.read",
+        "resource": "audit",
+        "action": "read",
+        "description": "View persisted audit logs and traceability history.",
+    },
+    {
         "code": "users.read",
         "resource": "users",
         "action": "read",
@@ -220,6 +226,7 @@ DEFAULT_ROLE_DEFINITIONS = [
         "is_system": True,
         "permission_codes": [
             "auth.me",
+            "audit.read",
             "users.read",
             "users.write",
             "roles.read",
@@ -261,6 +268,7 @@ DEFAULT_ROLE_DEFINITIONS = [
         "is_system": True,
         "permission_codes": [
             "auth.me",
+            "audit.read",
             "users.read",
             "roles.read",
             "device_catalog.read",

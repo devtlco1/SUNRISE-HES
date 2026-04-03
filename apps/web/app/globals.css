@@ -543,6 +543,12 @@ a {
   grid-template-columns: 1.2fr 1fr;
 }
 
+.audit-center-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 0.95fr 1.25fr;
+}
+
 .commands-overview-panel {
   background:
     linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(15, 23, 42, 0.16)),
@@ -564,6 +570,12 @@ a {
 .jobs-overview-panel {
   background:
     linear-gradient(180deg, rgba(244, 114, 182, 0.08), rgba(15, 23, 42, 0.16)),
+    rgba(2, 6, 23, 0.24);
+}
+
+.audit-center-overview-panel {
+  background:
+    linear-gradient(180deg, rgba(56, 189, 248, 0.08), rgba(15, 23, 42, 0.16)),
     rgba(2, 6, 23, 0.24);
 }
 
@@ -659,6 +671,12 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+.audit-center-overview-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 .subscribers-overview-grid {
   display: grid;
   gap: 0.9rem;
@@ -708,6 +726,12 @@ a {
 }
 
 .jobs-overview-card p {
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.audit-center-overview-card p {
   margin: 0.55rem 0 0;
   font-size: 0.9rem;
   line-height: 1.5;
@@ -1037,13 +1061,30 @@ a {
   border: 1px dashed rgba(148, 163, 184, 0.24);
 }
 
+.audit-center-empty-state {
+  border-radius: 18px;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px dashed rgba(148, 163, 184, 0.24);
+}
+
 .readings-empty-state h3 {
   margin: 0;
   font-size: 1.3rem;
   letter-spacing: -0.02em;
 }
 
+.audit-center-empty-state h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+}
+
 .readings-empty-state .muted {
+  margin: 0.65rem 0 0;
+}
+
+.audit-center-empty-state .muted {
   margin: 0.65rem 0 0;
 }
 
@@ -1415,7 +1456,8 @@ a {
   .gis-module-layout,
   .infrastructure-module-layout,
   .subscribers-module-layout,
-  .jobs-activity-layout {
+  .jobs-activity-layout,
+  .audit-center-layout {
     grid-template-columns: 1fr;
   }
 }
