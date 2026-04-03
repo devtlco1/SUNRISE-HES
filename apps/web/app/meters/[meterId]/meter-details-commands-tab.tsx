@@ -8,6 +8,7 @@ import { MeterDetailsAuditTab } from "./meter-details-audit-tab";
 import { MeterDetailsCommercialTab } from "./meter-details-commercial-tab";
 import { MeterDetailsConnectivityTab } from "./meter-details-connectivity-tab";
 import { MeterDetailsEventsTab } from "./meter-details-events-tab";
+import { MeterDetailsReadingsTab } from "./meter-details-readings-tab";
 
 type MeterDetail = {
   id: string;
@@ -403,6 +404,7 @@ export function MeterDetailsCommandsTab({
   const [consumerLinkageError, setConsumerLinkageError] = useState<string | null>(
     null,
   );
+  const [readingsContextError, setReadingsContextError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -701,6 +703,7 @@ export function MeterDetailsCommandsTab({
     setIsBootstrappingPage(true);
     setPageError(null);
     setConsumerLinkageError(null);
+    setReadingsContextError(null);
 
     try {
       const meterResponse = await authorizedFetch<MeterDetail>(`/api/v1/meters/${meterId}`);
@@ -778,6 +781,14 @@ export function MeterDetailsCommandsTab({
             : "Unable to load consumer linkage."
           : null,
       );
+      setReadingsContextError(
+        channelsResult.status === "rejected" ||
+          readingsResult.status === "rejected" ||
+          snapshotsResult.status === "rejected" ||
+          intervalsResult.status === "rejected"
+          ? "Unable to load complete meter readings context."
+          : null,
+      );
 
       if (
         templatesResult.status === "rejected" ||
@@ -801,6 +812,7 @@ export function MeterDetailsCommandsTab({
       setProtocolProfiles([]);
       setLoadProfileChannels([]);
       setConsumerLinkageError(null);
+      setReadingsContextError(null);
       setPageError(
         error instanceof Error
           ? error.message
@@ -1617,103 +1629,16 @@ export function MeterDetailsCommandsTab({
       ) : null}
 
       {activeTab === "readings" ? (
-        <div className="detail-stack">
-          <section className="subpanel meter-summary-panel">
-            <div className="section-heading">
-              <div>
-                <h2>Readings context</h2>
-                <p className="muted">
-                  Latest raw readings, billing snapshots, and interval cues already
-                  available for this meter.
-                </p>
-              </div>
-            </div>
-
-            {isReadingsContextLoading ? (
-              <p className="muted">Loading readings context...</p>
-            ) : null}
-
-            {!isReadingsContextLoading && hasReadingsContext ? (
-              <div className="meter-summary-grid">
-                <div className="stat-card">
-                  <span className="stat-label">Latest raw reading</span>
-                  <strong>
-                    {latestReading ? formatReadingValue(latestReading) : "Not available"}
-                  </strong>
-                  <p className="muted">
-                    {latestReading
-                      ? `${latestReading.obis_code} • ${formatDateTime(
-                          latestReading.captured_at,
-                        )}`
-                      : "No raw reading recorded."}
-                  </p>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Latest billing snapshot</span>
-                  <strong>
-                    {latestBillingSnapshot
-                      ? formatBillingPrimaryValue(latestBillingSnapshot.payload)
-                      : "Not available"}
-                  </strong>
-                  <p className="muted">
-                    {latestBillingSnapshot
-                      ? formatBillingSummary(latestBillingSnapshot.payload)
-                      : "No billing snapshot recorded."}
-                  </p>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Latest interval</span>
-                  <strong>
-                    {latestInterval
-                      ? formatIntervalValue(latestInterval, latestIntervalChannel)
-                      : "Not available"}
-                  </strong>
-                  <p className="muted">
-                    {latestInterval
-                      ? `${latestIntervalChannel?.channel_code ?? latestInterval.channel_id} • ${formatIntervalWindow(
-                          latestInterval,
-                        )}`
-                      : "No interval row recorded."}
-                  </p>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-label">Active load-profile channels</span>
-                  <strong>{activeLoadProfileChannels.length}</strong>
-                  <p className="muted">
-                    {activeLoadProfileChannels.length > 0
-                      ? activeLoadProfileChannels
-                          .slice(0, 3)
-                          .map((channel) => channel.channel_code)
-                          .join(", ")
-                      : "No active load-profile channel context."}
-                  </p>
-                </div>
-              </div>
-            ) : null}
-
-            {!isReadingsContextLoading && !hasReadingsContext ? (
-              <p className="muted">Readings context not available for this meter yet.</p>
-            ) : null}
-          </section>
-
-          <section className="subpanel meter-summary-panel">
-            <div className="section-heading">
-              <div>
-                <h2>Reading follow-through</h2>
-                <p className="muted">
-                  Use the shared readings workspace to inspect the full reading and
-                  interval history for this meter.
-                </p>
-              </div>
-            </div>
-
-            <div className="artifact-row">
-              <Link className="primary-button" href={`/readings?meterId=${meterId}`}>
-                Open readings workspace
-              </Link>
-            </div>
-          </section>
-        </div>
+        <MeterDetailsReadingsTab
+          meter={meter ? { id: meter.id, serial_number: meter.serial_number } : null}
+          meterId={meterId}
+          meterReadings={meterReadings}
+          billingSnapshots={billingSnapshots}
+          loadProfileIntervals={loadProfileIntervals}
+          loadProfileChannels={loadProfileChannels}
+          isLoadingReadingsContext={isReadingsContextLoading}
+          readingsContextError={readingsContextError}
+        />
       ) : null}
 
       {activeTab === "audit" ? (

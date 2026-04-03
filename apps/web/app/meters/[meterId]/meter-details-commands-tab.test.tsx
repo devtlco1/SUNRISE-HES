@@ -196,6 +196,14 @@ function createMockApi({
   endpointAssignmentsErrorDetail = "Endpoint assignments unavailable.",
   protocolProfilesStatus = 200,
   protocolProfilesErrorDetail = "Protocol profiles unavailable.",
+  loadProfileChannelsStatus = 200,
+  loadProfileChannelsErrorDetail = "Load profile channels unavailable.",
+  readingsStatus = 200,
+  readingsErrorDetail = "Meter readings unavailable.",
+  registerSnapshotsStatus = 200,
+  registerSnapshotsErrorDetail = "Register snapshots unavailable.",
+  loadProfileIntervalsStatus = 200,
+  loadProfileIntervalsErrorDetail = "Load profile intervals unavailable.",
   consumerLinkageStatus = 200,
   consumerLinkageErrorDetail = "Consumer linkage unavailable.",
   auditLogsStatus = 200,
@@ -462,6 +470,14 @@ function createMockApi({
   endpointAssignmentsErrorDetail?: string;
   protocolProfilesStatus?: number;
   protocolProfilesErrorDetail?: string;
+  loadProfileChannelsStatus?: number;
+  loadProfileChannelsErrorDetail?: string;
+  readingsStatus?: number;
+  readingsErrorDetail?: string;
+  registerSnapshotsStatus?: number;
+  registerSnapshotsErrorDetail?: string;
+  loadProfileIntervalsStatus?: number;
+  loadProfileIntervalsErrorDetail?: string;
   consumerLinkageStatus?: number;
   consumerLinkageErrorDetail?: string;
   auditLogsStatus?: number;
@@ -676,6 +692,12 @@ function createMockApi({
     }
 
     if (url.endsWith("/api/v1/meters/meter-1/load-profile-channels")) {
+      if (loadProfileChannelsStatus !== 200) {
+        return jsonResponse(
+          { detail: loadProfileChannelsErrorDetail },
+          loadProfileChannelsStatus,
+        );
+      }
       return jsonResponse({
         total: loadProfileChannels.length,
         items: loadProfileChannels,
@@ -683,6 +705,9 @@ function createMockApi({
     }
 
     if (url.includes("/api/v1/meters/meter-1/readings")) {
+      if (readingsStatus !== 200) {
+        return jsonResponse({ detail: readingsErrorDetail }, readingsStatus);
+      }
       return jsonResponse({
         total: readingsItems.length,
         items: readingsItems,
@@ -690,6 +715,12 @@ function createMockApi({
     }
 
     if (url.includes("/api/v1/meters/meter-1/register-snapshots")) {
+      if (registerSnapshotsStatus !== 200) {
+        return jsonResponse(
+          { detail: registerSnapshotsErrorDetail },
+          registerSnapshotsStatus,
+        );
+      }
       return jsonResponse({
         total: registerSnapshots.length,
         items: registerSnapshots,
@@ -697,6 +728,12 @@ function createMockApi({
     }
 
     if (url.includes("/api/v1/meters/meter-1/load-profile-intervals")) {
+      if (loadProfileIntervalsStatus !== 200) {
+        return jsonResponse(
+          { detail: loadProfileIntervalsErrorDetail },
+          loadProfileIntervalsStatus,
+        );
+      }
       return jsonResponse({
         total: loadProfileIntervals.length,
         items: loadProfileIntervals,
@@ -1178,7 +1215,7 @@ describe("MeterDetailsCommandsTab", () => {
     expect(await screen.findByText("TCP Primary")).toBeInTheDocument();
   });
 
-  it("renders the readings tab with latest reading, billing, and interval context", async () => {
+  it("renders the readings tab with latest reading, freshness, and billing interval follow-through", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -1192,12 +1229,72 @@ describe("MeterDetailsCommandsTab", () => {
     expect(readingsPanel).not.toBeNull();
     expect(within(readingsPanel as HTMLElement).getByText("1552.41 kWh")).toBeInTheDocument();
     expect(
+      within(readingsPanel as HTMLElement).getByText(/Fresh within|Recent within|Stale for/i),
+    ).toBeInTheDocument();
+    expect(
       within(readingsPanel as HTMLElement).getByText(/Total Import Kwh: 1552.41/i),
     ).toBeInTheDocument();
     expect(within(readingsPanel as HTMLElement).getByText("11.50 kWh")).toBeInTheDocument();
     expect(
+      within(readingsPanel as HTMLElement).getByText("Raw readings / billing snapshots / interval rows"),
+    ).toBeInTheDocument();
+
+    const rawReadingsPanel = screen
+      .getByRole("heading", { name: "Recent raw readings" })
+      .closest("section");
+    expect(rawReadingsPanel).not.toBeNull();
+    expect(within(rawReadingsPanel as HTMLElement).getByText("1.0.1.8.0.255")).toBeInTheDocument();
+    expect(within(rawReadingsPanel as HTMLElement).getByText(/Quality Validated/i)).toBeInTheDocument();
+
+    const followThroughPanel = screen
+      .getByRole("heading", { name: "Billing and interval follow-through" })
+      .closest("section");
+    expect(followThroughPanel).not.toBeNull();
+    expect(
+      within(followThroughPanel as HTMLElement).getByText(/Total Import Kwh: 1552.41/i),
+    ).toBeInTheDocument();
+    expect(within(followThroughPanel as HTMLElement).getByText(/import-wh/i)).toBeInTheDocument();
+    expect(
       screen.getByRole("link", { name: "Open readings workspace" }),
     ).toHaveAttribute("href", "/readings?meterId=meter-1");
+  });
+
+  it("renders a bounded readings empty state when no meter-scoped readings context is available", async () => {
+    const { fetchMock } = createMockApi({
+      loadProfileChannels: [],
+      readingsItems: [],
+      registerSnapshots: [],
+      loadProfileIntervals: [],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Readings");
+
+    expect(await screen.findByText("Readings context not available for this meter yet.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No raw readings are currently recorded for this meter"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Billing and interval follow-through" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a bounded meter readings error state without disturbing the workspace", async () => {
+    const { fetchMock } = createMockApi({
+      readingsStatus: 503,
+      readingsErrorDetail: "Meter readings unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Readings");
+
+    expect(await screen.findByText("Unable to load complete meter readings context.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Readings context" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent raw readings" })).toBeInTheDocument();
   });
 
   it("renders the audit tab with meter-scoped audit rows", async () => {
