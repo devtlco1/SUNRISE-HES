@@ -1,17 +1,75 @@
 # sunrise-hes-platform
 
-Production-grade monorepo scaffold for a utility-focused Head-End System (HES) / Advanced Metering Infrastructure (AMI) platform.
+Production-grade monorepo for a utility-focused Head-End System (HES) / Advanced Metering Infrastructure (AMI) platform.
 
-This repository is intentionally feature-light at the start. It provides the architectural foundation, service boundaries, developer tooling, and Docker-based local environment needed to build a long-life, auditable, GIS-ready platform that can grow toward 35,000+ smart meters.
+The platform has moved beyond the initial scaffold stage. It now includes bounded backend domain foundations, durable orchestration and telemetry persistence, and a validated single-meter live runtime path that has been exercised against real field hardware. The long-term design still targets a clean, auditable, production-minded system that can grow toward 35,000+ smart meters without rewriting the core boundaries.
 
 ## Architecture Overview
 
-- `apps/api`: FastAPI backend, SQLAlchemy 2 setup, Alembic migrations, API routes, and platform service skeletons
-- `apps/web`: Next.js + TypeScript operations web app scaffold
-- `apps/worker`: placeholder worker service for future queue-driven job execution
+- `apps/api`: FastAPI backend with bounded modules for auth/RBAC, audit logging, meters, connectivity, commands, jobs, readings/events, and runtime ingress execution
+- `apps/web`: Next.js + TypeScript operations web app scaffold and dashboard groundwork
+- `apps/worker`: placeholder worker service for future queue-driven orchestration and queue processing
 - `packages/shared-python`: shared Python contracts and utilities
 - `packages/shared-types`: shared TypeScript types for frontend/backend contracts
 - `docker-compose.yml`: local development stack with API, web, PostGIS, and Redis
+
+## Current Platform Status
+
+The backend foundations currently implemented include:
+
+- auth / JWT / RBAC foundation with bootstrap super-admin flow
+- audit logging foundation for security-sensitive and admin-sensitive operations
+- meter registry foundation with manufacturers, models, firmware, communication profiles, meter profiles, meters, and status history
+- connectivity foundation with communication endpoints, endpoint assignments, protocol association profiles, credentials, and session history
+- commands foundation with command templates, durable meter commands, append-only execution attempts, and command operational read models
+- jobs and scheduler foundations with durable job definitions, job runs, retry queue cues, claim semantics, and internal prepare-for-execution orchestration
+- readings / register snapshots / interval-load-profile / event-ingestion foundations
+- runtime execution foundations covering claim, lease, invocation gates, session heartbeat, protocol planning, and durable runtime artifact chains
+
+## Validated Live Runtime Baseline
+
+The current production-minded live runtime baseline is intentionally bounded to the existing single-meter path and is now validated on a real meter session:
+
+`connect -> discover -> register -> bind -> read -> persist readings -> relay disconnect/reconnect`
+
+Current live validation status:
+
+- live TCP ingress listener is active and reusable through the bounded bind/unbind foundation
+- identity discovery before bind is working
+- discovered meter persistence and endpoint/profile continuity are working
+- live on-demand read over the bound ingress path is working and persists durable reading artifacts
+- live relay disconnect and reconnect over the bound ingress path are working and report succeeded outcomes on fresh execute-now requests
+
+This live path is intentionally narrow:
+
+- single active bound live meter session
+- no multi-meter orchestration yet
+- no UI-driven field workflows yet
+- no broad bulk execution flows yet
+
+## Backend Domains
+
+The API already contains durable module foundations under `apps/api/app/modules` for:
+
+- `auth`
+- `users`
+- `audit`
+- `meters`
+- `connectivity`
+- `commands`
+- `jobs`
+- `readings`
+- `events`
+
+The runtime execution and live ingress services live under `apps/api/app/runtime` and currently cover:
+
+- runtime execution claim / lease / invocation gate / session heartbeat
+- runtime protocol planning and adapter boundaries
+- bounded live TCP meter ingress foundation
+- live identity discovery before bind
+- live meter persistence from discovered identity
+- live on-demand read execution
+- live relay-control execution
 
 ## Technology Baseline
 
@@ -66,6 +124,15 @@ make format-api
 make typecheck-api
 ```
 
+Useful direct API test paths from `apps/api`:
+
+```bash
+docker compose run --rm api pytest tests/test_runtime_tcp_meter_ingress_foundation.py
+docker compose run --rm api pytest tests/test_commands_on_demand_read_execute_now.py
+docker compose run --rm api pytest tests/test_commands_relay_control_execute_now.py
+docker compose run --rm api pytest tests/test_commands_relay_control_status_readback.py
+```
+
 ## Reproducible Real Command Seed
 
 Use the tracked seed workflow below whenever a local DB reset removes the dev/demo command context needed for truthful relay-control and on-demand-read execution.
@@ -92,7 +159,7 @@ SUNRISE_SEED_USERNAME=admin
 SUNRISE_SEED_PASSWORD=ChangeThisPassword123!
 ```
 
-The current local runtime path is safe for dev/demo/test use because the execute-now flow runs through the bounded Gurux stub adapter rather than field hardware.
+The current local runtime path is safe for dev/demo/test use because local execute-now flows still use the bounded Gurux stub adapter rather than field hardware. The real live meter validation path is currently a separately operated VPS-bound single-meter baseline.
 
 To verify that the seeded context is still present without reseeding it, run:
 
@@ -128,7 +195,7 @@ This script delegates to the same stable local operational readiness flow and re
 
 ## Focused Runtime Tests
 
-The preferred local path for the runtime placeholder foundation suite is Docker-backed, because those tests expect both PostgreSQL and Redis to be available.
+The preferred local path for the runtime foundation suites is Docker-backed, because those tests expect both PostgreSQL and Redis to be available.
 
 1. Copy the environment templates if you have not already:
 
@@ -183,19 +250,18 @@ If you prefer to run the focused suite from a local Python environment instead o
 
 The Docker-backed path is the supported default because it matches the repository's existing local service topology and avoids host-specific database and Redis setup drift.
 
-## Initial Scaffold Notes
+## Operational Notes
 
-- The API exposes only a root endpoint and a health endpoint.
-- Alembic is configured but no business migrations exist yet.
-- PostGIS is available from the first day to support GIS-aware assets and topology later.
-- Redis is included as the coordination and queue foundation for future polling, command execution, retry, and orchestration workflows.
-- Protocol support for IEC 62056-21, HDLC, DLMS/COSEM, and Gurux-compatible adapters is intentionally deferred until the platform boundaries are finalized.
+- PostGIS is part of the baseline from day one for GIS-aware asset and topology work.
+- Redis remains the coordination and queue foundation for retry, claim, lease, and future worker orchestration.
+- The current live field path is intentionally bounded and production-minded rather than broad or fully automated.
+- Idempotency keys matter for truthful operator validation: a reused execute-now request can correctly return a previously recorded durable result rather than creating a fresh live execution.
+- Fresh field validation should always use a new idempotency key when verifying live relay or read execution.
 
-## Suggested Next Step
+## Current Suggested Next Step
 
-Define the first bounded contexts and persistence model, then add the initial SQLAlchemy entities and Alembic migrations for:
+Treat the now-working single-meter live path as the operational baseline and extend it with the next smallest bounded backend slice:
 
-- tenants / utilities
-- sites / feeders / transformers
-- meters / communication endpoints
-- job scheduling / audit trail / event history
+- bounded live profile-capture / load-profile execution over the same bound TCP ingress path
+- preserve the current single-meter live bind/read/relay baseline without refactoring it
+- keep the work backend-only and production-minded
