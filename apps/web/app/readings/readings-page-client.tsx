@@ -10,9 +10,9 @@ export function ReadingsPageClient({
 }) {
   return (
     <OperationalShell
-      eyebrow="Operational Pages"
-      title="Readings Overview MVP"
-      description="Phase 2 entry slice for bounded readings visibility, starting with a shell-aligned overview and billing reads for the current meter scope."
+      eyebrow="Operational Reports"
+      title="Reports Workspace"
+      description="Shell-aligned reporting surface for bounded readings visibility, review queues, and meter-level report context using the existing readings contracts."
     >
       {({ authorizedFetch }) => (
         <ReadingsModule authorizedFetch={authorizedFetch} initialMeterId={initialMeterId} />

@@ -922,28 +922,28 @@ export function ReadingsModule({
   const overviewCards = useMemo(
     () => [
       {
-        label: "Meters in current result set",
+        label: "Meters in current report set",
         value: String(filteredMeters.length),
         note: meterSearchQuery.trim()
           ? `${filteredMeters.length} of ${totalMeters} meters match the current filter`
           : `${totalMeters} meters currently in scope`,
       },
       {
-        label: "Meters with recent signal",
+        label: "Signal-backed contexts",
         value: String(filteredMeters.filter((meter) => meter.last_seen_at !== null).length),
         note: meterSearchQuery.trim()
           ? "Based on the current filtered meter list"
           : "Based on the current bounded meter list",
       },
       {
-        label: "Selected meter focus",
+        label: "Focused report subject",
         value: selectedMeter?.serial_number ?? "No selection",
         note: selectedMeter
           ? `${selectedMeterStatusLabel} • ${selectedMeterSignalLabel}`
           : "Choose a meter to inspect readings",
       },
       {
-        label: "Billing-read context",
+        label: "Billing report context",
         value: latestBillingContextLabel,
         note: selectedMeter
           ? latestBillingSnapshot
@@ -986,7 +986,7 @@ export function ReadingsModule({
           : "No interval reads recorded for the current selection",
       },
       {
-        label: "Validation issues in focus",
+        label: "Validation queue in focus",
         value: String(validationIssues.length),
         note: selectedMeter
           ? validationIssues.length > 0
@@ -995,7 +995,7 @@ export function ReadingsModule({
           : "No selected meter validation context",
       },
       {
-        label: "Missing reads in focus",
+        label: "Recovery queue in focus",
         value: String(missingReadsIssues.length),
         note: selectedMeter
           ? missingReadsIssues.length > 0
@@ -1027,6 +1027,69 @@ export function ReadingsModule({
     ],
   );
 
+  const reportSectionCards = useMemo(
+    () => [
+      {
+        title: "Billing report",
+        value: billingSnapshots.length > 0 ? formatCountLabel(billingSnapshots.length, "snapshot", "snapshots") : "Awaiting billing reads",
+        note: latestBillingSnapshot
+          ? `Latest value ${latestBillingPrimaryValue}`
+          : "No billing snapshot recorded for the current focus.",
+        href: "#billing-reads-section",
+        actionLabel: "Open billing report",
+      },
+      {
+        title: "Interval report",
+        value:
+          loadProfileIntervals.length > 0
+            ? formatCountLabel(loadProfileIntervals.length, "interval", "intervals")
+            : "Awaiting interval reads",
+        note: latestInterval
+          ? `${latestIntervalValueLabel} across ${intervalChannelsSummary}`
+          : "No interval report rows recorded for the current focus.",
+        href: "#interval-reads-section",
+        actionLabel: "Open interval report",
+      },
+      {
+        title: "Validation queue",
+        value:
+          validationIssues.length > 0
+            ? formatCountLabel(validationIssues.length, "open issue", "open issues")
+            : "No open issues",
+        note:
+          validationIssues.length > 0
+            ? "Derived from current billing and interval-read context."
+            : "Validation checks are clear for the current focus.",
+        href: "#validation-center-section",
+        actionLabel: "Open validation queue",
+      },
+      {
+        title: "Recovery queue",
+        value:
+          missingReadsIssues.length > 0
+            ? formatCountLabel(missingReadsIssues.length, "open issue", "open issues")
+            : "No recovery items",
+        note:
+          missingReadsIssues.length > 0
+            ? "Bounded recovery actions remain available from the current queue."
+            : "No recovery handoff items derived for the current focus.",
+        href: "#missing-reads-recovery-section",
+        actionLabel: "Open recovery queue",
+      },
+    ],
+    [
+      billingSnapshots.length,
+      intervalChannelsSummary,
+      latestBillingPrimaryValue,
+      latestBillingSnapshot,
+      latestInterval,
+      latestIntervalValueLabel,
+      loadProfileIntervals.length,
+      missingReadsIssues.length,
+      validationIssues.length,
+    ],
+  );
+
   return (
     <section className="panel">
       {pageError ? <p className="error-banner">{pageError}</p> : null}
@@ -1036,10 +1099,11 @@ export function ReadingsModule({
         <section className="subpanel readings-overview-panel">
           <div className="section-heading">
             <div>
-              <h2>Readings operations center</h2>
+              <h2>Reports workspace</h2>
               <p className="muted">
-                Phase 2 entry slice for meter readings visibility, starting with a bounded
-                overview and billing-read scanability over the existing readings contracts.
+                Shell-aligned operational reporting for meter readings, interval visibility,
+                validation queues, and bounded recovery actions over the existing readings
+                contracts.
               </p>
             </div>
             <span className="artifact-pill">
@@ -1062,6 +1126,21 @@ export function ReadingsModule({
                     <strong>{card.value}</strong>
                     <p className="muted">{card.note}</p>
                   </div>
+                ))}
+              </div>
+
+              <div className="readings-report-strip">
+                {reportSectionCards.map((card) => (
+                  <section key={card.title} className="readings-report-strip-card">
+                    <div className="readings-report-strip-header">
+                      <span className="stat-label">{card.title}</span>
+                      <Link className="nav-link readings-report-strip-link" href={card.href}>
+                        {card.actionLabel}
+                      </Link>
+                    </div>
+                    <strong>{card.value}</strong>
+                    <p className="muted">{card.note}</p>
+                  </section>
                 ))}
               </div>
 
@@ -1096,13 +1175,39 @@ export function ReadingsModule({
           <section className="subpanel">
             <div className="section-heading">
               <div>
-                <h2>Meters in readings scope</h2>
+                <h2>Report scope</h2>
                 <p className="muted">
-                  Start from the bounded meter list, then inspect recent readings and
-                  billing snapshots for one meter at a time.
+                  Start from the bounded meter list, narrow the report scope, then open one
+                  meter report pack at a time.
                 </p>
               </div>
             </div>
+
+            <div className="readings-scope-toolbar">
+              <div className="readings-scope-summary">
+                <div className="stat-card">
+                  <span className="stat-label">Current scope</span>
+                  <strong>
+                    {meterSearchQuery.trim()
+                      ? formatCountLabel(filteredMeters.length, "filtered meter", "filtered meters")
+                      : formatCountLabel(totalMeters, "meter", "meters")}
+                  </strong>
+                  <p className="muted">
+                    {meterSearchQuery.trim()
+                      ? "Filtered report scope is active."
+                      : "Full bounded report scope is active."}
+                  </p>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Focus status</span>
+                  <strong>{selectedMeter ? `Focused on ${selectedMeter.serial_number}` : "Awaiting focus"}</strong>
+                  <p className="muted">
+                    {selectedMeter
+                      ? "Selection drives all report sections and review queues."
+                      : "Choose a meter to open the report pack."}
+                  </p>
+                </div>
+              </div>
 
             <div className="inline-form">
               <label className="field">
@@ -1115,6 +1220,7 @@ export function ReadingsModule({
                   value={meterSearchQuery}
                 />
               </label>
+            </div>
             </div>
 
             {isLoadingOverview ? <p className="muted">Loading readings-focused meters...</p> : null}
@@ -1189,10 +1295,10 @@ export function ReadingsModule({
           <section className="subpanel">
             <div className="section-heading">
               <div>
-                <h2>Billing reads</h2>
+                <h2>Selected report pack</h2>
                 <p className="muted">
-                  Bounded billing snapshot visibility for the selected meter using the
-                  existing register snapshot and reading-batch contracts.
+                  Review the current meter’s billing, interval, validation, recovery, and
+                  raw-reading sections without changing the existing data contracts.
                 </p>
               </div>
             </div>
@@ -1845,11 +1951,15 @@ export function ReadingsModule({
                 </section>
               </div>
             ) : (
-              <p className="muted">
-                {meters.length > 0 && filteredMeters.length === 0
-                  ? "Adjust or clear the meter filter to restore a selected meter."
-                  : "Select a meter to inspect its readings overview and billing reads."}
-              </p>
+              <section className="readings-empty-state">
+                <p className="eyebrow">Report Focus Required</p>
+                <h3>Choose a meter to open its report pack</h3>
+                <p className="muted">
+                  {meters.length > 0 && filteredMeters.length === 0
+                    ? "Adjust or clear the meter filter to restore a report focus."
+                    : "Select a meter to inspect billing reads, interval reads, validation findings, and recovery actions."}
+                </p>
+              </section>
             )}
           </section>
         </div>

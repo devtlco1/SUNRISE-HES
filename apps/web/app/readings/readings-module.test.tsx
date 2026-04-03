@@ -262,9 +262,9 @@ function createMockApi({
 function renderReadingsModuleInShell(initialMeterId?: string | null) {
   render(
     <OperationalShell
-      eyebrow="Operational Pages"
-      title="Readings Overview MVP"
-      description="Bounded readings module"
+      eyebrow="Operational Reports"
+      title="Reports Workspace"
+      description="Shell-aligned reporting surface"
     >
       {({ authorizedFetch }) => (
         <ReadingsModule authorizedFetch={authorizedFetch} initialMeterId={initialMeterId} />
@@ -291,17 +291,26 @@ describe("ReadingsModule", () => {
     renderReadingsModuleInShell();
 
     expect(await screen.findByRole("link", { name: "Readings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Reports Workspace" })).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "Readings operations center" }),
+      await screen.findByRole("heading", { name: "Reports workspace" }),
     ).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getAllByText("Billing-read context")).not.toHaveLength(0);
+      expect(screen.getAllByText("Billing report context")).not.toHaveLength(0);
       expect(screen.getByText("Recent raw readings loaded")).toBeInTheDocument();
       expect(screen.getAllByText("Total Import: 123.456")).not.toHaveLength(0);
       expect(screen.getAllByText("Received")).not.toHaveLength(0);
     });
 
+    expect(screen.getByText("Billing report")).toBeInTheDocument();
+    expect(screen.getByText("Interval report")).toBeInTheDocument();
+    expect(screen.getByText("Validation queue")).toBeInTheDocument();
+    expect(screen.getByText("Recovery queue")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open billing report" })).toHaveAttribute(
+      "href",
+      "#billing-reads-section",
+    );
     expect(
       screen.getAllByRole("link", { name: "Open meter detail" })[0],
     ).toHaveAttribute("href", "/meters/meter-1");
@@ -309,9 +318,11 @@ describe("ReadingsModule", () => {
       "href",
       "/meters/meter-1",
     );
-    expect(screen.getByText("Selected meter focus")).toBeInTheDocument();
+    expect(screen.getByText("Focused report subject")).toBeInTheDocument();
     expect(screen.getByText("Selected meter SN-1001")).toBeInTheDocument();
     expect(screen.getByText("Overview reflects current billing context")).toBeInTheDocument();
+    expect(screen.getByText("Report scope")).toBeInTheDocument();
+    expect(screen.getByText("Selected report pack")).toBeInTheDocument();
     expect(screen.getByText("Current billing context")).toBeInTheDocument();
     expect(screen.getByText(/Latest billing snapshot captured/)).toBeInTheDocument();
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
@@ -327,7 +338,7 @@ describe("ReadingsModule", () => {
     expect(screen.getByText("Quality")).toBeInTheDocument();
     expect(screen.getByText("Validation center")).toBeInTheDocument();
     expect(screen.getByText("1 open validation issues")).toBeInTheDocument();
-    expect(screen.getByText("Validation issues in focus")).toBeInTheDocument();
+    expect(screen.getByText("Validation queue in focus")).toBeInTheDocument();
     expect(screen.getByText("Interval Quality Flagged")).toBeInTheDocument();
     expect(screen.getAllByText("Warning")).not.toHaveLength(0);
     expect(screen.getByText("Open")).toBeInTheDocument();
@@ -342,7 +353,7 @@ describe("ReadingsModule", () => {
         "No missing reads or recovery issues match the current bounded selected-meter scope.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Missing reads in focus")).toBeInTheDocument();
+    expect(screen.getByText("Recovery queue in focus")).toBeInTheDocument();
     expect(screen.getAllByText("Latest billing read")).not.toHaveLength(0);
     expect(screen.getByText("Received at")).toBeInTheDocument();
     expect(screen.getAllByText("Latest batch Received")).not.toHaveLength(0);
@@ -374,7 +385,7 @@ describe("ReadingsModule", () => {
     });
     await user.click(inspectButtons[1]);
 
-    const billingPanel = screen.getByRole("heading", { name: "Billing reads" }).closest("section");
+    const billingPanel = screen.getByRole("heading", { name: "Selected report pack" }).closest("section");
     expect(billingPanel).not.toBeNull();
 
     await waitFor(() => {
@@ -524,8 +535,9 @@ describe("ReadingsModule", () => {
       expect(
         screen.getByText("No meters match the current filter. Clear the search to inspect billing reads."),
       ).toBeInTheDocument();
+      expect(screen.getByText("Choose a meter to open its report pack")).toBeInTheDocument();
       expect(
-        screen.getByText("Adjust or clear the meter filter to restore a selected meter."),
+        screen.getByText("Adjust or clear the meter filter to restore a report focus."),
       ).toBeInTheDocument();
     });
   });

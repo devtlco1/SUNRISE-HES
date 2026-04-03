@@ -615,6 +615,44 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+.readings-report-strip {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.readings-report-strip-card {
+  border-radius: 18px;
+  padding: 1rem 1.05rem;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(168, 85, 247, 0.16);
+}
+
+.readings-report-strip-card strong {
+  display: block;
+  margin-top: 0.55rem;
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.readings-report-strip-card p {
+  margin: 0.6rem 0 0;
+  line-height: 1.5;
+}
+
+.readings-report-strip-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.readings-report-strip-link {
+  min-height: auto;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.78rem;
+}
+
 .jobs-overview-grid {
   display: grid;
   gap: 0.9rem;
@@ -776,6 +814,18 @@ a {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+}
+
+.readings-scope-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.readings-scope-summary {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .connectivity-list-item.selected {
@@ -978,6 +1028,23 @@ a {
   background:
     linear-gradient(180deg, rgba(168, 85, 247, 0.08), rgba(15, 23, 42, 0.18)),
     rgba(2, 6, 23, 0.24);
+}
+
+.readings-empty-state {
+  border-radius: 18px;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px dashed rgba(148, 163, 184, 0.24);
+}
+
+.readings-empty-state h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+}
+
+.readings-empty-state .muted {
+  margin: 0.65rem 0 0;
 }
 
 .jobs-activity-hero {
