@@ -35,6 +35,25 @@ def _handoff_relay_control_to_runtime(
     )
 
 
+def _execute_runtime_relay_control_adapter(
+    client,
+    attempt_id: str,
+    *,
+    session_identifier: str,
+    executor_identifier: str = "worker-runtime-1",
+):
+    return client.post(
+        f"/api/v1/internal/command-attempts/{attempt_id}/execute-relay-control-adapter",
+        headers={INTERNAL_TOKEN_HEADER: settings.internal_api_token},
+        json={
+            "executor_identifier": executor_identifier,
+            "session_identifier": session_identifier,
+            "request_id": f"relay-control-runtime-execute:{attempt_id}",
+            "execution_reason": "relay-control-runtime-retry",
+        },
+    )
+
+
 def _create_bootstrapped_relay_control_command(
     client,
     db_session: Session,
@@ -292,3 +311,48 @@ def test_relay_control_runtime_handoff_persists_durable_artifact_mapping(
         job_run.result_summary["relay_control_runtime_handoff"]["handoff_identifier"]
         == artifact["handoff_identifier"]
     )
+
+
+def test_runtime_relay_control_execution_does_not_require_placeholder_selection_capability(
+    client,
+    db_session: Session,
+) -> None:
+    command_id, attempt_id = _create_bootstrapped_relay_control_command(
+        client,
+        db_session,
+        command_template_code="relay-control-runtime-no-placeholder-capability",
+        category="remote_disconnect",
+        relay_operation="disconnect",
+        idempotency_key="relay-control-runtime-no-placeholder-capability-1",
+    )
+
+    handoff = _handoff_relay_control_to_runtime(
+        client,
+        command_id,
+        handoff_identifier="relay-control-runtime-no-placeholder-capability-1",
+    )
+    assert handoff.status_code == 200
+    session_identifier = handoff.json()["result"]["session_identifier"]
+
+    attempt = db_session.get(CommandExecutionAttempt, UUID(attempt_id))
+    assert attempt is not None
+    execution_metadata = dict(attempt.execution_metadata or {})
+    selection = dict(execution_metadata["runtime_protocol_adapter_selection"])
+    selection["supported_placeholder_capabilities"] = []
+    execution_metadata["runtime_protocol_adapter_selection"] = selection
+    execution_metadata.pop("runtime_relay_control_execution", None)
+    attempt.execution_metadata = execution_metadata
+    db_session.add(attempt)
+    db_session.commit()
+
+    replay = _execute_runtime_relay_control_adapter(
+        client,
+        attempt_id,
+        session_identifier=session_identifier,
+    )
+
+    assert replay.status_code == 200
+    payload = replay.json()["result"]
+    assert payload["status"] == "completed"
+    assert payload["relay_operation"] == "disconnect"
+    assert payload["already_recorded"] is False

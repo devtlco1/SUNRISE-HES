@@ -25,7 +25,6 @@ from app.runtime.contracts import (
     RuntimeFollowUpMaterializationResult,
     RuntimeOperationalClosureResult,
     RuntimePostProcessingBridgeResult,
-    RuntimeProtocolAdapterCapability,
     RuntimeProtocolAdapterSelectionResult,
     RuntimeProtocolDispatchRequestResult,
     RuntimeProtocolExecutionIntentResult,
@@ -279,15 +278,6 @@ def execute_runtime_relay_control_adapter(
             status_code=status.HTTP_409_CONFLICT,
             detail="Runtime protocol adapter selection is owned by another executor.",
         )
-    if (
-        RuntimeProtocolAdapterCapability.SUPPORTS_PLACEHOLDER_RELAY_CONTROL
-        not in selection.supported_placeholder_capabilities
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Runtime protocol adapter selection does not authorize the relay control vertical slice.",
-        )
-
     dispatch_request = _load_runtime_protocol_dispatch_request(attempt.execution_metadata)
     if dispatch_request is None:
         raise HTTPException(
