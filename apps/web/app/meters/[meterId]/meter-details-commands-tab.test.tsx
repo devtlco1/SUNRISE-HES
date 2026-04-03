@@ -133,6 +133,22 @@ type MockLoadProfileIntervalItem = {
   source_batch_id: string | null;
 };
 
+type MockMeterEventItem = {
+  id: string;
+  meter_id: string | null;
+  related_batch_id: string | null;
+  related_attempt_id: string | null;
+  event_code: string;
+  event_name: string | null;
+  severity: string;
+  event_state: string;
+  occurred_at: string;
+  received_at: string;
+  raw_payload: Record<string, unknown> | null;
+  normalized_payload: Record<string, unknown> | null;
+  correlation_id: string | null;
+};
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -164,6 +180,8 @@ function createMockApi({
   consumerLinkageErrorDetail = "Consumer linkage unavailable.",
   auditLogsStatus = 200,
   auditLogsDetail = "Meter audit history unavailable.",
+  meterEventsStatus = 200,
+  meterEventsDetail = "Meter events unavailable.",
   endpointAssignments = [
     {
       id: "assignment-1",
@@ -323,6 +341,43 @@ function createMockApi({
       },
     },
   ],
+  meterEvents = [
+    {
+      id: "event-meter-1",
+      meter_id: "meter-1",
+      related_batch_id: "batch-event-1",
+      related_attempt_id: null,
+      event_code: "tamper_open",
+      event_name: "Tamper Open",
+      severity: "critical",
+      event_state: "open",
+      occurred_at: "2026-03-30T11:20:00.000Z",
+      received_at: "2026-03-30T11:20:30.000Z",
+      raw_payload: null,
+      normalized_payload: {
+        phase: "A",
+        source: "tamper_switch",
+      },
+      correlation_id: "corr-event-1",
+    },
+    {
+      id: "event-meter-2",
+      meter_id: "meter-1",
+      related_batch_id: null,
+      related_attempt_id: "attempt-event-2",
+      event_code: "power_restore",
+      event_name: "Power Restore",
+      severity: "info",
+      event_state: "closed",
+      occurred_at: "2026-03-30T10:20:00.000Z",
+      received_at: "2026-03-30T10:20:10.000Z",
+      raw_payload: null,
+      normalized_payload: {
+        restoration_reason: "voltage_normalized",
+      },
+      correlation_id: null,
+    },
+  ],
   consumerLinkageResponse = {
     meter_id: "meter-1",
     linkage_status: "linked",
@@ -349,6 +404,8 @@ function createMockApi({
   consumerLinkageErrorDetail?: string;
   auditLogsStatus?: number;
   auditLogsDetail?: string;
+  meterEventsStatus?: number;
+  meterEventsDetail?: string;
   endpointAssignments?: MockEndpointAssignment[];
   protocolProfiles?: MockProtocolProfile[];
   templateItems?: MockCommandTemplate[];
@@ -357,6 +414,7 @@ function createMockApi({
   registerSnapshots?: MockRegisterSnapshotItem[];
   loadProfileIntervals?: MockLoadProfileIntervalItem[];
   auditLogs?: MockAuditLogItem[];
+  meterEvents?: MockMeterEventItem[];
   consumerLinkageResponse?: MockConsumerLinkage;
 } = {}) {
   const requests: RequestLog[] = [];
@@ -602,6 +660,16 @@ function createMockApi({
       });
     }
 
+    if (url.includes("/api/v1/meters/meter-1/ingested-events?")) {
+      if (meterEventsStatus !== 200) {
+        return jsonResponse({ detail: meterEventsDetail }, meterEventsStatus);
+      }
+      return jsonResponse({
+        total: meterEvents.length,
+        items: meterEvents,
+      });
+    }
+
     if (url.includes("/api/v1/meters/meter-1/commands/recent")) {
       const parsedUrl = new URL(url);
       const family = parsedUrl.searchParams.get("family");
@@ -751,6 +819,7 @@ async function openMeterWorkspaceTab(
     | "Summary"
     | "Connectivity"
     | "Consumer / Commercial"
+    | "Events"
     | "Readings"
     | "Audit"
     | "Commands",
@@ -1167,6 +1236,69 @@ describe("MeterDetailsCommandsTab", () => {
       await screen.findByText("Consumer linkage temporarily unavailable."),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Commercial navigation" })).toBeInTheDocument();
+  });
+
+  it("renders the events tab with meter-scoped event history", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Events");
+
+    const eventsPanel = (
+      await screen.findByRole("heading", { name: "Meter event feed" })
+    ).closest("section");
+    expect(eventsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(within(eventsPanel as HTMLElement).getByText("Tamper Open")).toBeInTheDocument();
+      expect(within(eventsPanel as HTMLElement).getByText("Power Restore")).toBeInTheDocument();
+      expect(within(eventsPanel as HTMLElement).getAllByText("Critical")).not.toHaveLength(0);
+      expect(within(eventsPanel as HTMLElement).getAllByText("Open")).not.toHaveLength(0);
+      expect(
+        within(eventsPanel as HTMLElement).getByText(/Phase A • Source tamper_switch/i),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("link", { name: "Open jobs / events / alerts" })).toHaveAttribute(
+      "href",
+      "/jobs-events-alerts",
+    );
+    expect(
+      within(eventsPanel as HTMLElement).getAllByRole("link", { name: "Open activity detail" })[0],
+    ).toHaveAttribute("href", "/jobs-events-alerts/activity/event/event-meter-1");
+  });
+
+  it("renders a bounded empty state when no meter-scoped events are available", async () => {
+    const { fetchMock } = createMockApi({
+      meterEvents: [],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Events");
+
+    expect(
+      await screen.findByText("No ingested events are currently tied to this meter"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Meter Events Empty")).toBeInTheDocument();
+  });
+
+  it("renders a bounded meter events error state when event history fails", async () => {
+    const { fetchMock } = createMockApi({
+      meterEventsStatus: 503,
+      meterEventsDetail: "Meter events unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Events");
+
+    expect(await screen.findByText("Meter events unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Meter events visibility" })).toBeInTheDocument();
   });
 
   it("renders a bounded empty state when no meter-scoped audit rows are available", async () => {

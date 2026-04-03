@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import type { AuthorizedFetch } from "../../operational-shell";
 import { MeterDetailsAuditTab } from "./meter-details-audit-tab";
 import { MeterDetailsCommercialTab } from "./meter-details-commercial-tab";
+import { MeterDetailsEventsTab } from "./meter-details-events-tab";
 
 type MeterDetail = {
   id: string;
@@ -205,6 +206,7 @@ type TabKey =
   | "summary"
   | "connectivity"
   | "commercial"
+  | "events"
   | "readings"
   | "audit"
   | "commands";
@@ -1106,6 +1108,11 @@ export function MeterDetailsCommandsTab({
             : "Subscriber/account linkage is currently unavailable for this meter.",
       },
       {
+        label: "Events",
+        value: "Meter event visibility",
+        note: "Alert and event history available in the existing monitoring surface.",
+      },
+      {
         label: "Commands",
         value: latestRecentCommand
           ? formatFamilySummary(latestRecentCommand.family_specific_outcome_summary)
@@ -1155,6 +1162,12 @@ export function MeterDetailsCommandsTab({
           consumerLinkage?.linkage_status === "linked"
             ? "Existing subscriber, account, and service context in scope"
             : "No active subscriber/account linkage recorded",
+      },
+      {
+        key: "events" as const,
+        label: "Events",
+        value: "Event and alert visibility",
+        note: "Existing ingested meter events and alert-like history",
       },
       {
         key: "readings" as const,
@@ -1652,6 +1665,10 @@ export function MeterDetailsCommandsTab({
           linkedServicePointId={linkedServicePointId}
           linkedServicePointCode={linkedServicePointCode}
         />
+      ) : null}
+
+      {activeTab === "events" ? (
+        <MeterDetailsEventsTab authorizedFetch={authorizedFetch} meterId={meterId} />
       ) : null}
 
       {activeTab === "readings" ? (
