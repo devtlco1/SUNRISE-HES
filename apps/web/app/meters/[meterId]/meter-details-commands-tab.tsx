@@ -251,6 +251,65 @@ function formatFamilySummary(item: Record<string, string | null>): string {
   return "No operational summary yet";
 }
 
+function formatCommandFamilyLabel(value: CommandOperationalFamily): string {
+  switch (value) {
+    case "profile_capture":
+      return "Profile capture";
+    case "relay_control":
+      return "Relay control";
+    case "on_demand_read":
+      return "On-demand read";
+  }
+}
+
+function formatCommandCategoryLabel(value: string): string {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatStatusLabel(value: string | null): string {
+  if (!value) {
+    return "Not recorded";
+  }
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusTone(value: string | null): "positive" | "warning" | "danger" | "neutral" {
+  const normalized = value?.toLowerCase() ?? "";
+  if (
+    normalized.includes("succeed") ||
+    normalized.includes("complete") ||
+    normalized.includes("acknowledged") ||
+    normalized.includes("active")
+  ) {
+    return "positive";
+  }
+  if (
+    normalized.includes("fail") ||
+    normalized.includes("error") ||
+    normalized.includes("cancel") ||
+    normalized.includes("reject")
+  ) {
+    return "danger";
+  }
+  if (
+    normalized.includes("pending") ||
+    normalized.includes("queued") ||
+    normalized.includes("running") ||
+    normalized.includes("progress")
+  ) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 function formatConnectivityFreshnessHint(lastSeenAt: string | null): string {
   return lastSeenAt
     ? "Recent connectivity signal recorded"
@@ -407,6 +466,7 @@ export function MeterDetailsCommandsTab({
     null,
   );
   const [readingsContextError, setReadingsContextError] = useState<string | null>(null);
+  const [recentCommandsError, setRecentCommandsError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -828,7 +888,7 @@ export function MeterDetailsCommandsTab({
   const loadRecentCommands = useCallback(
     async (preferredCommandId?: string) => {
       setIsLoadingRecentCommands(true);
-      setPageError(null);
+      setRecentCommandsError(null);
 
       try {
         const familyQuery =
@@ -853,7 +913,9 @@ export function MeterDetailsCommandsTab({
           return response.items[0]?.command_id ?? null;
         });
       } catch (error) {
-        setPageError(
+        setRecentCommands([]);
+        setSelectedCommandId(null);
+        setRecentCommandsError(
           error instanceof Error
             ? error.message
             : "Unable to load recent meter commands.",
@@ -1070,9 +1132,78 @@ export function MeterDetailsCommandsTab({
     onDemandReadProtocolProfileId !== "";
 
   const latestRecentCommand = recentCommands[0] ?? null;
+  const selectedRecentCommand =
+    recentCommands.find((item) => item.command_id === selectedCommandId) ??
+    latestRecentCommand;
   const linkedServicePointId =
     consumerLinkage?.service_point_id ?? meter?.service_point_id ?? null;
   const linkedServicePointCode = consumerLinkage?.service_point_code ?? null;
+  const commandOverviewCards = useMemo(
+    () => [
+      {
+        label: "Visible commands",
+        value: String(recentCommands.length),
+        note: `${recentFamilyFilter === "all" ? "All supported families" : formatCommandFamilyLabel(recentFamilyFilter)} in the current bounded result set`,
+      },
+      {
+        label: "Latest command",
+        value: latestRecentCommand?.command_template_code ?? "No recent command",
+        note: latestRecentCommand
+          ? `${formatCommandFamilyLabel(latestRecentCommand.command_family)} • ${formatDateTime(
+              latestRecentCommand.created_at,
+            )}`
+          : "No recent supported commands recorded for this meter",
+      },
+      {
+        label: "Latest lifecycle",
+        value: latestRecentCommand
+          ? formatStatusLabel(latestRecentCommand.command_status)
+          : "Not available",
+        note: latestRecentCommand
+          ? formatFamilySummary(latestRecentCommand.family_specific_outcome_summary)
+          : "No command outcome summary recorded",
+      },
+      {
+        label: "Selected command",
+        value: selectedRecentCommand?.command_template_code ?? "No selection",
+        note: selectedRecentCommand
+          ? `${formatStatusLabel(selectedRecentCommand.latest_command_execution_attempt_status)} latest attempt`
+          : "Choose a command below to inspect bounded detail",
+      },
+      {
+        label: "Selected target",
+        value: selectedCommandDetail?.meter_id ?? meterId,
+        note: selectedCommandDetail
+          ? `${formatCommandCategoryLabel(selectedCommandDetail.command_category)} • ${formatDateTime(
+              selectedCommandDetail.latest_updated_at,
+            )}`
+          : "Meter-scoped command detail remains bounded to the current meter",
+      },
+      {
+        label: "Execution artifacts",
+        value: selectedCommandDetail
+          ? [
+              selectedCommandDetail.execute_now_artifact_present ? "execute-now" : null,
+              selectedCommandDetail.orchestration_artifact_present ? "orchestration" : null,
+              selectedCommandDetail.terminalization_artifact_present ? "terminalization" : null,
+            ]
+              .filter(Boolean)
+              .join(", ") || "No artifacts"
+          : "Awaiting selection",
+        note: selectedCommandDetail
+          ? "Current detail reflects the selected command projection"
+          : "Artifacts appear after a recent command is selected",
+      },
+    ],
+    [
+      latestRecentCommand,
+      meterId,
+      recentCommands.length,
+      recentFamilyFilter,
+      selectedCommandDetail,
+      selectedRecentCommand,
+    ],
+  );
   const workspaceCards = useMemo(
     () => [
       {
@@ -1691,6 +1822,70 @@ export function MeterDetailsCommandsTab({
       ) : null}
 
       {activeTab === "commands" ? (
+        <div className="detail-stack">
+            <section className="subpanel audit-center-overview-panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Command operations center</h2>
+                  <p className="muted">
+                    Meter-scoped command history, bounded execution detail, and existing
+                    execute-now actions using the current commands read model.
+                  </p>
+                </div>
+                <div className="artifact-row">
+                  <span className="artifact-pill">
+                    {recentCommands.length} command{recentCommands.length === 1 ? "" : "s"} in scope
+                  </span>
+                  <Link className="secondary-button" href={`/commands?meterId=${meterId}`}>
+                    Open commands workspace
+                  </Link>
+                </div>
+              </div>
+
+              {recentCommandsError ? <p className="error-banner">{recentCommandsError}</p> : null}
+              {isBootstrappingPage || isLoadingRecentCommands ? (
+                <p className="muted">Loading command operations context...</p>
+              ) : null}
+
+              {!isBootstrappingPage && !isLoadingRecentCommands ? (
+                <div className="detail-stack">
+                  <div className="meter-summary-grid">
+                    {commandOverviewCards.map((card) => (
+                      <div key={card.label} className="stat-card">
+                        <span className="stat-label">{card.label}</span>
+                        <strong>{card.value}</strong>
+                        <p className="muted">{card.note}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="artifact-row">
+                    <span
+                      className={`status-pill ${buildStatusTone(
+                        selectedRecentCommand?.command_status ?? null,
+                      )}`}
+                    >
+                      {selectedRecentCommand
+                        ? formatStatusLabel(selectedRecentCommand.command_status)
+                        : "No current selection"}
+                    </span>
+                    <span className="artifact-pill">
+                      {selectedRecentCommand
+                        ? `${formatCommandFamilyLabel(selectedRecentCommand.command_family)} • ${formatFamilySummary(
+                            selectedRecentCommand.family_specific_outcome_summary,
+                          )}`
+                        : "Select a recent command to inspect bounded lifecycle detail"}
+                    </span>
+                    <span className="artifact-pill">
+                      {selectedRecentCommand
+                        ? `Created ${formatDateTime(selectedRecentCommand.created_at)}`
+                        : "No command timestamp in scope"}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
         <div className="commands-tab-layout">
             <section className="subpanel">
               <div className="section-heading">
@@ -1717,6 +1912,7 @@ export function MeterDetailsCommandsTab({
                 </label>
               </div>
 
+              {recentCommandsError ? <p className="error-banner">{recentCommandsError}</p> : null}
               {isBootstrappingPage || isLoadingRecentCommands ? (
                 <p className="muted">Loading recent commands...</p>
               ) : null}
@@ -1739,10 +1935,20 @@ export function MeterDetailsCommandsTab({
                   >
                     <div className="command-list-item-header">
                       <strong>{command.command_template_code}</strong>
-                      <span className="status-pill">{command.command_status}</span>
+                      <span className={`status-pill ${buildStatusTone(command.command_status)}`}>
+                        {formatStatusLabel(command.command_status)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-badges">
+                      <span className="artifact-pill">
+                        {formatCommandFamilyLabel(command.command_family)}
+                      </span>
+                      <span className="artifact-pill">
+                        {formatCommandCategoryLabel(command.command_category)}
+                      </span>
                     </div>
                     <div className="command-list-item-meta">
-                      <span>{command.command_family}</span>
+                      <span>Meter {command.meter_id}</span>
                       <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
                     </div>
                     <div className="command-list-item-meta">
@@ -1769,18 +1975,63 @@ export function MeterDetailsCommandsTab({
 
               {selectedCommandDetail ? (
                 <div className="detail-stack">
+                  <section className="commands-detail-hero">
+                    <div className="commands-detail-title-row">
+                      <div>
+                        <p className="eyebrow">Selected Command</p>
+                        <h3>{selectedCommandDetail.command_template_code}</h3>
+                        <p className="muted">
+                          {formatCommandFamilyLabel(selectedCommandDetail.command_family)} routed
+                          through the current{" "}
+                          {formatCommandCategoryLabel(selectedCommandDetail.command_category).toLowerCase()}{" "}
+                          path for meter {selectedCommandDetail.meter_id}.
+                        </p>
+                      </div>
+                      <span
+                        className={`status-pill ${buildStatusTone(
+                          selectedCommandDetail.command_status,
+                        )}`}
+                      >
+                        {formatStatusLabel(selectedCommandDetail.command_status)}
+                      </span>
+                    </div>
+
+                    <div className="command-list-item-badges">
+                      <span className="artifact-pill">
+                        Created {formatDateTime(selectedCommandDetail.created_at)}
+                      </span>
+                      <span className="artifact-pill">
+                        Updated {formatDateTime(selectedCommandDetail.latest_updated_at)}
+                      </span>
+                      <span className="artifact-pill">
+                        Outcome:{" "}
+                        {formatFamilySummary(
+                          selectedCommandDetail.family_specific_outcome_summary,
+                        )}
+                      </span>
+                    </div>
+                  </section>
+
                   <div className="detail-grid">
                     <div className="stat-card">
                       <span className="stat-label">Family</span>
-                      <strong>{selectedCommandDetail.command_family}</strong>
+                      <strong>{formatCommandFamilyLabel(selectedCommandDetail.command_family)}</strong>
                     </div>
                     <div className="stat-card">
                       <span className="stat-label">Category</span>
-                      <strong>{selectedCommandDetail.command_category}</strong>
+                      <strong>{formatCommandCategoryLabel(selectedCommandDetail.command_category)}</strong>
                     </div>
                     <div className="stat-card">
                       <span className="stat-label">Status</span>
-                      <strong>{selectedCommandDetail.command_status}</strong>
+                      <strong>{formatStatusLabel(selectedCommandDetail.command_status)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Created at</span>
+                      <strong>{formatDateTime(selectedCommandDetail.created_at)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Last updated</span>
+                      <strong>{formatDateTime(selectedCommandDetail.latest_updated_at)}</strong>
                     </div>
                     <div className="stat-card">
                       <span className="stat-label">Runtime execution record</span>
@@ -1792,8 +2043,9 @@ export function MeterDetailsCommandsTab({
                     <div className="stat-card">
                       <span className="stat-label">Latest attempt</span>
                       <strong>
-                        {selectedCommandDetail.latest_command_execution_attempt_status ??
-                          "No attempt"}
+                        {formatStatusLabel(
+                          selectedCommandDetail.latest_command_execution_attempt_status,
+                        )}
                       </strong>
                     </div>
                     <div className="stat-card">
@@ -2087,6 +2339,7 @@ export function MeterDetailsCommandsTab({
                 </form>
               </div>
             </section>
+        </div>
         </div>
       ) : null}
     </section>

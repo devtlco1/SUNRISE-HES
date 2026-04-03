@@ -188,6 +188,24 @@ type MockGisLiteEntity = {
   location_presence: "coordinates_available" | "service_point_only" | "unlinked";
 };
 
+type MockRecentCommandItem = {
+  command_id: string;
+  command_family: "profile_capture" | "relay_control" | "on_demand_read";
+  command_category: string;
+  command_status: string;
+  meter_id: string;
+  command_template_code: string;
+  latest_command_execution_attempt_id: string | null;
+  latest_command_execution_attempt_status: string | null;
+  runtime_execution_record_id: string | null;
+  family_specific_outcome_summary: Record<string, string | null>;
+  orchestration_artifact_present: boolean;
+  terminalization_artifact_present: boolean;
+  execute_now_artifact_present: boolean;
+  created_at: string;
+  latest_updated_at: string;
+};
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -225,6 +243,11 @@ function createMockApi({
   loadProfileIntervalsErrorDetail = "Load profile intervals unavailable.",
   gisLiteStatus = 200,
   gisLiteDetail = "Meter GIS context unavailable.",
+  recentCommandsItems,
+  recentCommandsStatus = 200,
+  recentCommandsDetail = "Recent meter commands unavailable.",
+  commandDetailStatus = 200,
+  commandDetailDetail = "Command detail unavailable.",
   consumerLinkageStatus = 200,
   consumerLinkageErrorDetail = "Consumer linkage unavailable.",
   auditLogsStatus = 200,
@@ -523,6 +546,10 @@ function createMockApi({
   gisLiteDetail?: string;
   consumerLinkageStatus?: number;
   consumerLinkageErrorDetail?: string;
+  recentCommandsStatus?: number;
+  recentCommandsDetail?: string;
+  commandDetailStatus?: number;
+  commandDetailDetail?: string;
   auditLogsStatus?: number;
   auditLogsDetail?: string;
   meterEventsStatus?: number;
@@ -537,13 +564,15 @@ function createMockApi({
   registerSnapshots?: MockRegisterSnapshotItem[];
   loadProfileIntervals?: MockLoadProfileIntervalItem[];
   gisLiteEntities?: MockGisLiteEntity[];
+  recentCommandsItems?: MockRecentCommandItem[];
   auditLogs?: MockAuditLogItem[];
   meterEvents?: MockMeterEventItem[];
   meterSessions?: MockConnectivitySessionItem[];
   consumerLinkageResponse?: MockConsumerLinkage;
 } = {}) {
   const requests: RequestLog[] = [];
-  const recentCommands = [
+  const recentCommands = (
+    recentCommandsItems ?? [
     {
       command_id: "cmd-profile-1",
       command_family: "profile_capture",
@@ -602,7 +631,8 @@ function createMockApi({
       created_at: "2026-03-30T08:00:00.000Z",
       latest_updated_at: "2026-03-30T08:02:00.000Z",
     },
-  ];
+  ]
+  ).map((item: MockRecentCommandItem) => ({ ...item }));
 
   const detailById: Record<string, Record<string, unknown>> = {
     "cmd-profile-1": {
@@ -842,12 +872,17 @@ function createMockApi({
     }
 
     if (url.includes("/api/v1/meters/meter-1/commands/recent")) {
+      if (recentCommandsStatus !== 200) {
+        return jsonResponse({ detail: recentCommandsDetail }, recentCommandsStatus);
+      }
       const parsedUrl = new URL(url);
       const family = parsedUrl.searchParams.get("family");
       const items =
         family === null
           ? recentCommands
-          : recentCommands.filter((item) => item.command_family === family);
+          : recentCommands.filter(
+              (item: MockRecentCommandItem) => item.command_family === family,
+            );
 
       return jsonResponse({
         meter_id: "meter-1",
@@ -859,6 +894,9 @@ function createMockApi({
     }
 
     if (url.includes("/api/v1/commands/") && url.endsWith("/detail")) {
+      if (commandDetailStatus !== 200) {
+        return jsonResponse({ detail: commandDetailDetail }, commandDetailStatus);
+      }
       const commandId = url.split("/api/v1/commands/")[1].replace("/detail", "");
       return jsonResponse({ result: detailById[commandId] });
     }
@@ -1020,10 +1058,16 @@ describe("MeterDetailsCommandsTab", () => {
     renderMeterTabInShell();
     await openMeterWorkspaceTab(user, "Commands");
 
+    expect(await screen.findByRole("heading", { name: "Command operations center" })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Current meter" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open commands workspace" })).toHaveAttribute(
+      "href",
+      "/commands?meterId=meter-1",
+    );
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
     expect(screen.getAllByText("relay-disconnect-template")).not.toHaveLength(0);
     expect(screen.getAllByText("on-demand-read-template")).not.toHaveLength(0);
+    expect(screen.getAllByText("Succeeded")).not.toHaveLength(0);
   });
 
   it("renders the operational summary panel with current meter context", async () => {
@@ -1926,6 +1970,36 @@ describe("MeterDetailsCommandsTab", () => {
         ),
       ).toBeInTheDocument();
     });
+  });
+
+  it("renders a bounded command history empty state when no recent meter commands are available", async () => {
+    const { fetchMock } = createMockApi({ recentCommandsItems: [] });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
+
+    expect(await screen.findByText("No supported commands recorded for this meter yet.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Select a recent command to load bounded command detail."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a bounded meter commands history error state without disturbing execute-now actions", async () => {
+    const { fetchMock } = createMockApi({
+      recentCommandsStatus: 503,
+      recentCommandsDetail: "Recent meter commands unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
+
+    expect(await screen.findAllByText("Recent meter commands unavailable.")).not.toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "Command operations center" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Execute now" })).toBeInTheDocument();
   });
 
   it("triggers the existing profile capture execute-now path and refreshes the selected detail", async () => {
