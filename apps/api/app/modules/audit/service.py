@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -60,6 +61,7 @@ def list_audit_logs(
     action: str | None = None,
     actor: str | None = None,
     entity_type: str | None = None,
+    entity_id: UUID | None = None,
     outcome: str | None = None,
     from_created_at: datetime | None = None,
     to_created_at: datetime | None = None,
@@ -68,6 +70,7 @@ def list_audit_logs(
         action=action,
         actor=actor,
         entity_type=entity_type,
+        entity_id=entity_id,
         outcome=outcome,
         from_created_at=from_created_at,
         to_created_at=to_created_at,
@@ -116,6 +119,7 @@ def _build_audit_log_filters(
     action: str | None,
     actor: str | None,
     entity_type: str | None,
+    entity_id: UUID | None,
     outcome: str | None,
     from_created_at: datetime | None,
     to_created_at: datetime | None,
@@ -133,6 +137,8 @@ def _build_audit_log_filters(
         )
     if entity_type:
         filters.append(AuditLog.entity_type.ilike(f"%{entity_type.strip()}%"))
+    if entity_id is not None:
+        filters.append(AuditLog.entity_id == entity_id)
     if outcome:
         filters.append(AuditLog.payload.op("->>")("outcome") == outcome.strip())
     if from_created_at is not None:

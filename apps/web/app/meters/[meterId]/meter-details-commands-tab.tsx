@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { AuthorizedFetch } from "../../operational-shell";
+import { MeterDetailsAuditTab } from "./meter-details-audit-tab";
 
 type MeterDetail = {
   id: string;
@@ -199,7 +200,7 @@ type ExecuteNowResponse = {
   };
 };
 
-type TabKey = "summary" | "connectivity" | "readings" | "commands";
+type TabKey = "summary" | "connectivity" | "readings" | "audit" | "commands";
 type FamilyFilter = "all" | CommandOperationalFamily;
 type RelayOperation = "disconnect" | "reconnect";
 
@@ -1129,6 +1130,12 @@ export function MeterDetailsCommandsTab({
         note: `${meterReadings.length} raw • ${billingSnapshots.length} billing • ${loadProfileIntervals.length} interval`,
       },
       {
+        key: "audit" as const,
+        label: "Audit",
+        value: "Meter-scoped traceability",
+        note: "Existing audit_logs history for direct meter activity",
+      },
+      {
         key: "commands" as const,
         label: "Commands",
         value: `${recentCommands.length} recent command${recentCommands.length === 1 ? "" : "s"}`,
@@ -1704,8 +1711,12 @@ export function MeterDetailsCommandsTab({
         </div>
       ) : null}
 
-        {activeTab === "commands" ? (
-          <div className="commands-tab-layout">
+      {activeTab === "audit" ? (
+        <MeterDetailsAuditTab authorizedFetch={authorizedFetch} meterId={meterId} />
+      ) : null}
+
+      {activeTab === "commands" ? (
+        <div className="commands-tab-layout">
             <section className="subpanel">
               <div className="section-heading">
                 <div>
@@ -2101,8 +2112,8 @@ export function MeterDetailsCommandsTab({
                 </form>
               </div>
             </section>
-          </div>
-        ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

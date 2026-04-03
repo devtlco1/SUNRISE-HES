@@ -11,6 +11,29 @@ type RequestLog = {
   body: Record<string, unknown> | null;
 };
 
+type MockAuditLogItem = {
+  id: string;
+  created_at: string;
+  actor_user_id: string | null;
+  actor_username: string | null;
+  actor_full_name: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  request_id: string | null;
+  ip_address: string | null;
+  description: string | null;
+  payload: {
+    outcome: string;
+    http: {
+      method: string | null;
+      path: string | null;
+      user_agent: string | null;
+    };
+    details: Record<string, unknown> | null;
+  } | null;
+};
+
 type MockMeterResponse = {
   id: string;
   serial_number: string;
@@ -139,6 +162,8 @@ function createMockApi({
   protocolProfilesErrorDetail = "Protocol profiles unavailable.",
   consumerLinkageStatus = 200,
   consumerLinkageErrorDetail = "Consumer linkage unavailable.",
+  auditLogsStatus = 200,
+  auditLogsDetail = "Meter audit history unavailable.",
   endpointAssignments = [
     {
       id: "assignment-1",
@@ -248,6 +273,56 @@ function createMockApi({
       source_batch_id: "batch-3",
     },
   ],
+  auditLogs = [
+    {
+      id: "audit-meter-1",
+      created_at: "2026-03-30T11:10:00.000Z",
+      actor_user_id: "user-1",
+      actor_username: "ops.user",
+      actor_full_name: "Ops User",
+      action: "meters.update",
+      entity_type: "meters",
+      entity_id: "meter-1",
+      request_id: "req-meter-1",
+      ip_address: "127.0.0.1",
+      description: "Meter communication profile updated.",
+      payload: {
+        outcome: "success",
+        http: {
+          method: "PATCH",
+          path: "/api/v1/meters/meter-1",
+          user_agent: "vitest",
+        },
+        details: {
+          field: "communication_profile_code",
+        },
+      },
+    },
+    {
+      id: "audit-meter-2",
+      created_at: "2026-03-30T10:40:00.000Z",
+      actor_user_id: "user-2",
+      actor_username: "ops.audit",
+      actor_full_name: "Ops Audit",
+      action: "meters.status.change",
+      entity_type: "meters",
+      entity_id: "meter-1",
+      request_id: "req-meter-2",
+      ip_address: "127.0.0.2",
+      description: "Meter status changed to commissioned.",
+      payload: {
+        outcome: "success",
+        http: {
+          method: "POST",
+          path: "/api/v1/meters/meter-1/status",
+          user_agent: "vitest",
+        },
+        details: {
+          status: "commissioned",
+        },
+      },
+    },
+  ],
   consumerLinkageResponse = {
     meter_id: "meter-1",
     linkage_status: "linked",
@@ -272,6 +347,8 @@ function createMockApi({
   protocolProfilesErrorDetail?: string;
   consumerLinkageStatus?: number;
   consumerLinkageErrorDetail?: string;
+  auditLogsStatus?: number;
+  auditLogsDetail?: string;
   endpointAssignments?: MockEndpointAssignment[];
   protocolProfiles?: MockProtocolProfile[];
   templateItems?: MockCommandTemplate[];
@@ -279,6 +356,7 @@ function createMockApi({
   readingsItems?: MockMeterReadingItem[];
   registerSnapshots?: MockRegisterSnapshotItem[];
   loadProfileIntervals?: MockLoadProfileIntervalItem[];
+  auditLogs?: MockAuditLogItem[];
   consumerLinkageResponse?: MockConsumerLinkage;
 } = {}) {
   const requests: RequestLog[] = [];
@@ -502,6 +580,28 @@ function createMockApi({
       });
     }
 
+    if (url.includes("/api/v1/audit-logs?")) {
+      if (auditLogsStatus !== 200) {
+        return jsonResponse({ detail: auditLogsDetail }, auditLogsStatus);
+      }
+
+      const parsedUrl = new URL(url);
+      const entityTypeFilter = parsedUrl.searchParams.get("entity_type")?.toLowerCase() ?? "";
+      const entityIdFilter = parsedUrl.searchParams.get("entity_id") ?? "";
+      const filteredItems = auditLogs.filter((item) => {
+        const entityTypeMatch =
+          entityTypeFilter.length === 0 ||
+          item.entity_type.toLowerCase().includes(entityTypeFilter);
+        const entityIdMatch = entityIdFilter.length === 0 || item.entity_id === entityIdFilter;
+        return entityTypeMatch && entityIdMatch;
+      });
+
+      return jsonResponse({
+        total: filteredItems.length,
+        items: filteredItems,
+      });
+    }
+
     if (url.includes("/api/v1/meters/meter-1/commands/recent")) {
       const parsedUrl = new URL(url);
       const family = parsedUrl.searchParams.get("family");
@@ -647,7 +747,7 @@ function renderMeterTabInShell() {
 
 async function openMeterWorkspaceTab(
   user: ReturnType<typeof userEvent.setup>,
-  tabName: "Summary" | "Connectivity" | "Readings" | "Commands",
+  tabName: "Summary" | "Connectivity" | "Readings" | "Audit" | "Commands",
 ) {
   await user.click(
     await screen.findByRole("tab", { name: new RegExp(tabName, "i") }),
@@ -944,6 +1044,53 @@ describe("MeterDetailsCommandsTab", () => {
     ).toHaveAttribute("href", "/readings?meterId=meter-1");
   });
 
+  it("renders the audit tab with meter-scoped audit rows", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Audit");
+
+    const auditPanel = (
+      await screen.findByRole("heading", { name: "Meter audit feed" })
+    ).closest("section");
+    expect(auditPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(auditPanel as HTMLElement).getByText("Meter communication profile updated."),
+      ).toBeInTheDocument();
+      expect(within(auditPanel as HTMLElement).getByText("Ops User")).toBeInTheDocument();
+      expect(within(auditPanel as HTMLElement).getAllByText("Success")).not.toHaveLength(0);
+    });
+
+    expect(screen.getByRole("link", { name: "Open audit center" })).toHaveAttribute(
+      "href",
+      "/audit-center",
+    );
+  });
+
+  it("renders a bounded empty state when no meter-scoped audit rows are available", async () => {
+    const { fetchMock } = createMockApi({
+      auditLogs: [],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Audit");
+
+    expect(
+      await screen.findByText("No audit records are currently tied to this meter"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Meter-scoped traceability will appear here when persisted audit rows reference this meter entity directly.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders the action readiness panel for the existing execute-now flows", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
@@ -1152,6 +1299,21 @@ describe("MeterDetailsCommandsTab", () => {
       within(connectivityPanel as HTMLElement).queryByText("Connectivity context not available."),
     ).not.toBeInTheDocument();
     expect(screen.getAllByText("SN-1001")).not.toHaveLength(0);
+  });
+
+  it("renders a bounded meter audit error state without disturbing the workspace", async () => {
+    const { fetchMock } = createMockApi({
+      auditLogsStatus: 503,
+      auditLogsDetail: "Meter audit history unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Audit");
+
+    expect(await screen.findByText("Meter audit history unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Meter audit traceability" })).toBeInTheDocument();
   });
 
   it("loads bounded command detail when a recent command is selected", async () => {

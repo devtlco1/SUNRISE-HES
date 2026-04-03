@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -21,6 +22,7 @@ def list_audit_logs_endpoint(
     action: str | None = Query(default=None),
     actor: str | None = Query(default=None),
     entity_type: str | None = Query(default=None),
+    entity_id: UUID | None = Query(default=None),
     outcome: str | None = Query(default=None),
     from_created_at: datetime | None = Query(default=None),
     to_created_at: datetime | None = Query(default=None),
@@ -34,6 +36,7 @@ def list_audit_logs_endpoint(
         action=action,
         actor=actor,
         entity_type=entity_type,
+        entity_id=entity_id,
         outcome=outcome,
         from_created_at=from_created_at,
         to_created_at=to_created_at,
