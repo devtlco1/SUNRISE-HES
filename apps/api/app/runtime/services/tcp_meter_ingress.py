@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import logging
 import socket
 import threading
+import time
 import uuid
 from uuid import UUID
 
@@ -421,6 +422,30 @@ def borrow_runtime_tcp_meter_ingress_unbound_connection() -> Iterator[
 
 def mark_runtime_tcp_meter_ingress_connection_dead(connection_id: str | None) -> None:
     _tcp_meter_ingress_manager.mark_connection_dead(connection_id)
+
+
+def bind_runtime_tcp_meter_ingress_active_connection_if_available(
+    *,
+    meter_id: UUID,
+    endpoint_id: UUID,
+    protocol_association_profile_id: UUID | None = None,
+    wait_seconds: float = 5.0,
+    poll_interval_seconds: float = 0.25,
+) -> TcpMeterIngressStatusSnapshot | None:
+    deadline = time.monotonic() + max(0.0, float(wait_seconds))
+    while True:
+        try:
+            return _tcp_meter_ingress_manager.bind_active_connection(
+                meter_id=meter_id,
+                endpoint_id=endpoint_id,
+                protocol_association_profile_id=protocol_association_profile_id,
+            )
+        except HTTPException as exc:
+            if exc.status_code != status.HTTP_409_CONFLICT:
+                raise
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(max(0.01, float(poll_interval_seconds)))
 
 
 def _resolve_runtime_bind_endpoint_id(

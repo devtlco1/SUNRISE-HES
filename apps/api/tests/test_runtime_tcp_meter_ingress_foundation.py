@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import socket
 import sys
 import time
 import uuid
 from datetime import UTC, datetime
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 from sqlalchemy import func, select
 
@@ -56,6 +57,204 @@ def _wait_until(predicate, *, timeout_seconds: float = 2.0) -> None:
             return
         time.sleep(0.05)
     raise AssertionError("Timed out waiting for runtime TCP meter ingress condition.")
+
+
+def _build_live_on_demand_read_request(
+    *,
+    meter_id: uuid.UUID,
+    endpoint_id: uuid.UUID,
+    profile_id: uuid.UUID,
+    port: int = 8766,
+) -> RuntimeOnDemandReadAdapterRequest:
+    return RuntimeOnDemandReadAdapterRequest(
+        adapter_key="gurux-dlms-bridge",
+        protocol_family=ProtocolFamily.DLMS_COSEM,
+        operation=RuntimeOnDemandReadOperation.READ_BILLING_SNAPSHOT,
+        command_category=CommandCategory.ON_DEMAND_READ,
+        execution_context=RuntimeExecutionContext(
+            command_id=uuid.uuid4(),
+            job_run_id=uuid.uuid4(),
+            command_attempt_id=uuid.uuid4(),
+            correlation_id="corr-live-tcp",
+            worker_identifier="worker-runtime-live-tcp",
+            request_id="request-live-tcp",
+            triggered_at=datetime.now(UTC),
+        ),
+        target=MeterRuntimeTarget(
+            meter_id=meter_id,
+            serial_number="meter-live-001",
+            utility_meter_number="utility-live-001",
+            meter_profile_id=None,
+            manufacturer_code="SUN",
+            meter_model_code="ST34",
+            meter_model_name="Sunrise Test Meter",
+            endpoint_assignment_id=uuid.uuid4(),
+            endpoint_id=endpoint_id,
+            endpoint_code="live-endpoint",
+            protocol_association_profile_id=profile_id,
+        ),
+        transport=RuntimeTransportConfig(
+            endpoint_transport_type=ConnectivityTransportType.TCP_IP,
+            host="127.0.0.1",
+            port=port,
+        ),
+        security=RuntimeSecurityMaterialRefs(
+            authentication_mode=AssociationAuthenticationMode.NONE,
+        ),
+        protocol_profile_code="dlms-live-tcp",
+        iec62056_21_enabled=True,
+        iec_device_address=None,
+        iec_baud_rate=300,
+        client_address=1,
+        server_address=1,
+        server_address_size=4,
+        protocol_settings={"tcp_start_protocol": "iec", "use_broadcast_snrm_first": True},
+        protocol_defaults=None,
+        request_payload={"obis": ["1.0.1.8.0.255"]},
+        normalized_payload={"obis": ["1.0.1.8.0.255"]},
+        dispatch_envelope_record_id="dispatch-live-tcp",
+        trace_references={
+            "session_identifier": "session-live-tcp",
+            "delivery_contract_record_id": "delivery-live-tcp",
+            "envelope_record_id": "envelope-live-tcp",
+            "publication_contract_record_id": "publication-live-tcp",
+            "attestation_record_id": "attestation-live-tcp",
+            "settlement_record_id": "settlement-live-tcp",
+            "reconciliation_record_id": "reconciliation-live-tcp",
+            "interpretation_record_id": "interpretation-live-tcp",
+            "observation_record_id": "observation-live-tcp",
+            "invocation_result_record_id": "invocation-live-tcp",
+            "dispatch_request_record_id": "dispatch-request-live-tcp",
+            "selection_record_id": "selection-live-tcp",
+            "intent_record_id": "intent-live-tcp",
+            "closure_record_id": "closure-live-tcp",
+            "materialization_record_id": "materialization-live-tcp",
+            "post_processing_record_id": "post-processing-live-tcp",
+            "disposition_record_id": "disposition-live-tcp",
+            "outcome_record_id": "outcome-live-tcp",
+        },
+        lineage=RuntimeExecutionSessionLineage(
+            dispatch_request_identity="dispatch-identity-live-tcp",
+            queue_message_id="queue-live-tcp",
+            claim_token="claim-live-tcp",
+            intended_worker_path="runtime-live-tcp",
+        ),
+    )
+
+
+def _build_live_profile_read_request(
+    *,
+    meter_id: uuid.UUID,
+    endpoint_id: uuid.UUID,
+    profile_id: uuid.UUID,
+    port: int = 8766,
+) -> RuntimeProfileReadAdapterRequest:
+    return RuntimeProfileReadAdapterRequest(
+        adapter_key="gurux-dlms-bridge",
+        protocol_family=ProtocolFamily.DLMS_COSEM,
+        operation=RuntimeProfileReadOperation.CAPTURE_LOAD_PROFILE,
+        command_category=CommandCategory.PROFILE_CAPTURE,
+        execution_context=RuntimeExecutionContext(
+            command_id=uuid.uuid4(),
+            job_run_id=uuid.uuid4(),
+            command_attempt_id=uuid.uuid4(),
+            correlation_id="corr-live-profile",
+            worker_identifier="worker-runtime-live-profile",
+            request_id="request-live-profile",
+            triggered_at=datetime.now(UTC),
+        ),
+        target=MeterRuntimeTarget(
+            meter_id=meter_id,
+            serial_number="meter-live-profile-001",
+            utility_meter_number="utility-live-profile-001",
+            meter_profile_id=None,
+            manufacturer_code="SUN",
+            meter_model_code="ST34",
+            meter_model_name="Sunrise Test Meter",
+            endpoint_assignment_id=uuid.uuid4(),
+            endpoint_id=endpoint_id,
+            endpoint_code="live-profile-endpoint",
+            protocol_association_profile_id=profile_id,
+        ),
+        transport=RuntimeTransportConfig(
+            endpoint_transport_type=ConnectivityTransportType.TCP_IP,
+            host="127.0.0.1",
+            port=port,
+        ),
+        security=RuntimeSecurityMaterialRefs(
+            authentication_mode=AssociationAuthenticationMode.NONE,
+        ),
+        request_payload={
+            "capture_load_profile": {
+                "interval_start": "2026-03-27T00:00:00+00:00",
+                "interval_end": "2026-03-27T00:15:00+00:00",
+                "channel_ids": ["00000000-0000-0000-0000-000000000123"],
+                "channels": [
+                    {
+                        "channel_id": "00000000-0000-0000-0000-000000000123",
+                        "channel_code": "kwh_import",
+                        "obis_code": "1.0.1.8.0.255",
+                        "interval_seconds": 900,
+                        "unit": "kWh",
+                    }
+                ],
+            }
+        },
+        normalized_payload={
+            "profile_read_operation": "capture_load_profile",
+            "capture_load_profile": {
+                "interval_start": "2026-03-27T00:00:00+00:00",
+                "interval_end": "2026-03-27T00:15:00+00:00",
+                "channel_ids": ["00000000-0000-0000-0000-000000000123"],
+                "channel_count": 1,
+                "channels": [
+                    {
+                        "channel_id": "00000000-0000-0000-0000-000000000123",
+                        "channel_code": "kwh_import",
+                        "obis_code": "1.0.1.8.0.255",
+                        "interval_seconds": 900,
+                        "unit": "kWh",
+                    }
+                ],
+            },
+        },
+        dispatch_envelope_record_id="dispatch-live-profile",
+        trace_references={
+            "session_identifier": "session-live-profile",
+            "delivery_contract_record_id": "delivery-live-profile",
+            "envelope_record_id": "envelope-live-profile",
+            "publication_contract_record_id": "publication-live-profile",
+            "attestation_record_id": "attestation-live-profile",
+            "settlement_record_id": "settlement-live-profile",
+            "reconciliation_record_id": "reconciliation-live-profile",
+            "interpretation_record_id": "interpretation-live-profile",
+            "observation_record_id": "observation-live-profile",
+            "invocation_result_record_id": "invocation-live-profile",
+            "dispatch_request_record_id": "dispatch-request-live-profile",
+            "selection_record_id": "selection-live-profile",
+            "intent_record_id": "intent-live-profile",
+            "closure_record_id": "closure-live-profile",
+            "materialization_record_id": "materialization-live-profile",
+            "post_processing_record_id": "post-processing-live-profile",
+            "disposition_record_id": "disposition-live-profile",
+            "outcome_record_id": "outcome-live-profile",
+        },
+        lineage=RuntimeExecutionSessionLineage(
+            dispatch_request_identity="dispatch-identity-live-profile",
+            queue_message_id="queue-live-profile",
+            claim_token="claim-live-profile",
+            intended_worker_path="runtime-live-profile",
+        ),
+        protocol_profile_code="dlms-live-profile",
+        iec62056_21_enabled=True,
+        iec_device_address=None,
+        iec_baud_rate=300,
+        client_address=1,
+        server_address=1,
+        server_address_size=4,
+        protocol_settings={"tcp_start_protocol": "iec", "use_broadcast_snrm_first": True},
+        protocol_defaults=None,
+    )
 
 
 def test_tcp_meter_ingress_manager_tracks_listener_connection_and_binding() -> None:
@@ -522,6 +721,69 @@ def test_profile_read_adapter_uses_bound_live_tcp_ingress_connection(monkeypatch
         manager.stop()
 
 
+def test_on_demand_read_adapter_retries_after_rebound_handshake_failure(monkeypatch) -> None:
+    meter_id = uuid.uuid4()
+    endpoint_id = uuid.uuid4()
+    profile_id = uuid.uuid4()
+    first_socket = object()
+    second_socket = object()
+    borrow_calls = [
+        SimpleNamespace(connection_id="conn-first", socket=first_socket),
+        SimpleNamespace(connection_id="conn-second", socket=second_socket),
+    ]
+    marked_dead: list[str] = []
+    rebound_binds: list[tuple[uuid.UUID, uuid.UUID, uuid.UUID]] = []
+
+    @contextmanager
+    def fake_borrow_runtime_tcp_meter_ingress_connection(*, meter_id, endpoint_id):
+        yield borrow_calls.pop(0) if borrow_calls else None
+
+    def fake_execute_billing_snapshot_over_tcp_ingress(*, sock, config, obis_codes):
+        if sock is first_socket:
+            raise ConnectionResetError(104, "Connection reset by peer")
+        return LiveTcpOnDemandReadExecution(
+            register_snapshot_payload={"1.0.1.8.0.255": "456.789"},
+            protocol_trace={"start_protocol": config.start_protocol},
+            raw_frames=[{"stage": "fake-rebound"}],
+            bytes_sent=18,
+            bytes_received=42,
+        )
+
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.borrow_runtime_tcp_meter_ingress_connection",
+        fake_borrow_runtime_tcp_meter_ingress_connection,
+    )
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.execute_billing_snapshot_over_tcp_ingress",
+        fake_execute_billing_snapshot_over_tcp_ingress,
+    )
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.mark_runtime_tcp_meter_ingress_connection_dead",
+        lambda connection_id: marked_dead.append(connection_id),
+    )
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.bind_runtime_tcp_meter_ingress_active_connection_if_available",
+        lambda *, meter_id, endpoint_id, protocol_association_profile_id, wait_seconds, poll_interval_seconds: rebound_binds.append(
+            (meter_id, endpoint_id, protocol_association_profile_id)
+        )
+        or object(),
+    )
+
+    result = GuruxDlmsAdapterBridge().execute_on_demand_read(
+        _build_live_on_demand_read_request(
+            meter_id=meter_id,
+            endpoint_id=endpoint_id,
+            profile_id=profile_id,
+        )
+    )
+
+    assert result.execution_outcome.value == "succeeded"
+    assert result.register_snapshot is not None
+    assert result.register_snapshot.payload["1.0.1.8.0.255"] == "456.789"
+    assert marked_dead == ["conn-first"]
+    assert rebound_binds == [(meter_id, endpoint_id, profile_id)]
+
+
 def test_profile_read_adapter_fails_when_bound_live_connection_cannot_be_reused(
     monkeypatch,
 ) -> None:
@@ -673,6 +935,96 @@ def test_profile_read_adapter_fails_when_bound_live_connection_cannot_be_reused(
         if client_socket is not None:
             client_socket.close()
         manager.stop()
+
+
+def test_profile_read_adapter_retries_after_rebound_handshake_failure(monkeypatch) -> None:
+    meter_id = uuid.uuid4()
+    endpoint_id = uuid.uuid4()
+    profile_id = uuid.uuid4()
+    first_socket = object()
+    second_socket = object()
+    borrow_calls = [
+        SimpleNamespace(connection_id="conn-first", socket=first_socket),
+        SimpleNamespace(connection_id="conn-second", socket=second_socket),
+    ]
+    marked_dead: list[str] = []
+    rebound_binds: list[tuple[uuid.UUID, uuid.UUID, uuid.UUID]] = []
+
+    @contextmanager
+    def fake_borrow_runtime_tcp_meter_ingress_connection(*, meter_id, endpoint_id):
+        yield borrow_calls.pop(0) if borrow_calls else None
+
+    def fake_execute_capture_load_profile_over_tcp_ingress(
+        *, sock, config, profile_obis_code, interval_start, interval_end, channels
+    ):
+        if sock is first_socket:
+            raise RuntimeError("IEC TCP identification failed (no response to /?!).")
+        return LiveTcpProfileReadExecution(
+            invocation_status="accepted",
+            profile_read_batch_payload={
+                "source_type": "command_result",
+                "captured_at": interval_end.isoformat(),
+                "received_at": interval_end.isoformat(),
+                "status": "received",
+                "load_profile_intervals": [
+                    {
+                        "channel_id": str(channels[0]["channel_id"]),
+                        "interval_start": interval_start.isoformat(),
+                        "interval_end": interval_end.isoformat(),
+                        "value_numeric": "11.5",
+                    }
+                ],
+            },
+            error_detail=None,
+            protocol_trace={"start_protocol": config.start_protocol},
+            raw_frames=[{"stage": "fake-profile-rebound"}],
+            bytes_sent=24,
+            bytes_received=44,
+        )
+
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.borrow_runtime_tcp_meter_ingress_connection",
+        fake_borrow_runtime_tcp_meter_ingress_connection,
+    )
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.execute_capture_load_profile_over_tcp_ingress",
+        fake_execute_capture_load_profile_over_tcp_ingress,
+    )
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.mark_runtime_tcp_meter_ingress_connection_dead",
+        lambda connection_id: marked_dead.append(connection_id),
+    )
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.bind_runtime_tcp_meter_ingress_active_connection_if_available",
+        lambda *, meter_id, endpoint_id, protocol_association_profile_id, wait_seconds, poll_interval_seconds: rebound_binds.append(
+            (meter_id, endpoint_id, protocol_association_profile_id)
+        )
+        or object(),
+    )
+    monkeypatch.setattr(
+        "app.runtime.adapters.dlms_cosem.get_runtime_tcp_meter_ingress_status",
+        lambda: SimpleNamespace(
+            connected=True,
+            bound_meter_id=meter_id,
+            bound_endpoint_id=endpoint_id,
+            connection_in_use=False,
+        ),
+    )
+
+    result = GuruxDlmsAdapterBridge().execute_profile_read(
+        _build_live_profile_read_request(
+            meter_id=meter_id,
+            endpoint_id=endpoint_id,
+            profile_id=profile_id,
+        )
+    )
+
+    assert result.execution_outcome.value == "succeeded"
+    assert result.profile_read_batch is not None
+    assert len(result.profile_read_batch.load_profile_intervals) == 1
+    assert str(result.profile_read_batch.load_profile_intervals[0].value_numeric) == "11.5"
+    assert marked_dead == ["conn-first"]
+    assert rebound_binds == [(meter_id, endpoint_id, profile_id)]
 
 
 def test_relay_control_adapter_uses_bound_live_tcp_ingress_connection(monkeypatch) -> None:

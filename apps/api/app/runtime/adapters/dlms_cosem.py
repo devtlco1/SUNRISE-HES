@@ -56,10 +56,51 @@ from app.runtime.contracts import (
 )
 from app.runtime.services.runtime_secret_refs import resolve_runtime_secret_ref
 from app.runtime.services.tcp_meter_ingress import (
+    bind_runtime_tcp_meter_ingress_active_connection_if_available,
     borrow_runtime_tcp_meter_ingress_connection,
     get_runtime_tcp_meter_ingress_status,
     mark_runtime_tcp_meter_ingress_connection_dead,
 )
+
+
+LIVE_TCP_INGRESS_REBOUND_RETRY_WAIT_SECONDS = 5.0
+LIVE_TCP_INGRESS_REBOUND_RETRY_POLL_SECONDS = 0.25
+
+
+def _is_live_tcp_ingress_rebound_retryable_error(exc: Exception) -> bool:
+    if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+        return True
+    detail = str(exc).lower()
+    return "iec tcp identification failed" in detail or "ua parse failed" in detail
+
+
+def _retry_live_tcp_ingress_operation_once(
+    *,
+    meter_id,
+    endpoint_id,
+    protocol_association_profile_id,
+    execute_with_socket,
+):
+    rebound_status = bind_runtime_tcp_meter_ingress_active_connection_if_available(
+        meter_id=meter_id,
+        endpoint_id=endpoint_id,
+        protocol_association_profile_id=protocol_association_profile_id,
+        wait_seconds=LIVE_TCP_INGRESS_REBOUND_RETRY_WAIT_SECONDS,
+        poll_interval_seconds=LIVE_TCP_INGRESS_REBOUND_RETRY_POLL_SECONDS,
+    )
+    if rebound_status is None:
+        return None
+    with borrow_runtime_tcp_meter_ingress_connection(
+        meter_id=meter_id,
+        endpoint_id=endpoint_id,
+    ) as borrowed_connection:
+        if borrowed_connection is None:
+            return None
+        try:
+            return execute_with_socket(borrowed_connection.socket)
+        except Exception:
+            mark_runtime_tcp_meter_ingress_connection_dead(borrowed_connection.connection_id)
+            raise
 
 
 class DlmsCosemRuntimeAdapter(BaseRuntimeAdapter):
@@ -859,6 +900,16 @@ def _execute_live_tcp_on_demand_read_if_available(
     if request.transport.endpoint_transport_type != ConnectivityTransportType.TCP_IP:
         return None
 
+    config = _build_live_tcp_dlms_session_config(request)
+    obis_codes = _resolve_on_demand_read_obis_codes(request)
+
+    def _execute_with_socket(sock):
+        return execute_billing_snapshot_over_tcp_ingress(
+            sock=sock,
+            config=config,
+            obis_codes=obis_codes,
+        )
+
     with borrow_runtime_tcp_meter_ingress_connection(
         meter_id=request.target.meter_id,
         endpoint_id=request.target.endpoint_id,
@@ -866,17 +917,24 @@ def _execute_live_tcp_on_demand_read_if_available(
         if borrowed_connection is None:
             return None
 
-        config = _build_live_tcp_dlms_session_config(request)
-        obis_codes = _resolve_on_demand_read_obis_codes(request)
+        first_error: Exception | None = None
         try:
-            return execute_billing_snapshot_over_tcp_ingress(
-                sock=borrowed_connection.socket,
-                config=config,
-                obis_codes=obis_codes,
-            )
-        except Exception:
+            return _execute_with_socket(borrowed_connection.socket)
+        except Exception as exc:
             mark_runtime_tcp_meter_ingress_connection_dead(borrowed_connection.connection_id)
-            raise
+            if not _is_live_tcp_ingress_rebound_retryable_error(exc):
+                raise
+            first_error = exc
+        rebound_execution = _retry_live_tcp_ingress_operation_once(
+            meter_id=request.target.meter_id,
+            endpoint_id=request.target.endpoint_id,
+            protocol_association_profile_id=request.target.protocol_association_profile_id,
+            execute_with_socket=_execute_with_socket,
+        )
+        if rebound_execution is not None:
+            return rebound_execution
+        if first_error is not None:
+            raise first_error
 
 
 def _execute_live_tcp_profile_read_if_available(
@@ -894,6 +952,32 @@ def _execute_live_tcp_profile_read_if_available(
         and ingress_status.bound_meter_id == request.target.meter_id
         and ingress_status.bound_endpoint_id == request.target.endpoint_id
     )
+    config = _build_live_tcp_dlms_session_config(request)
+    capture_load_profile = (
+        request.normalized_payload or request.request_payload or {}
+    ).get("capture_load_profile", {})
+    channels = (
+        capture_load_profile.get("channels", [])
+        if isinstance(capture_load_profile, dict)
+        else []
+    )
+
+    def _execute_with_socket(sock):
+        return execute_capture_load_profile_over_tcp_ingress(
+            sock=sock,
+            config=config,
+            profile_obis_code=invocation_request.profile_obis_code,
+            interval_start=min(
+                interval.interval_start
+                for interval in normalized_request.expected_profile_batch.load_profile_intervals
+            ),
+            interval_end=max(
+                interval.interval_end
+                for interval in normalized_request.expected_profile_batch.load_profile_intervals
+            ),
+            channels=[item for item in channels if isinstance(item, dict)],
+        )
+
     with borrow_runtime_tcp_meter_ingress_connection(
         meter_id=request.target.meter_id,
         endpoint_id=request.target.endpoint_id,
@@ -928,34 +1012,24 @@ def _execute_live_tcp_profile_read_if_available(
                 )
             return None
 
-        capture_load_profile = (
-            request.normalized_payload or request.request_payload or {}
-        ).get("capture_load_profile", {})
-        channels = (
-            capture_load_profile.get("channels", [])
-            if isinstance(capture_load_profile, dict)
-            else []
-        )
+        first_error: Exception | None = None
         try:
-            return execute_capture_load_profile_over_tcp_ingress(
-                sock=borrowed_connection.socket,
-                config=_build_live_tcp_dlms_session_config(request),
-                profile_obis_code=invocation_request.profile_obis_code,
-                interval_start=min(
-                    interval.interval_start
-                    for interval in normalized_request.expected_profile_batch.load_profile_intervals
-                ),
-                interval_end=max(
-                    interval.interval_end
-                    for interval in normalized_request.expected_profile_batch.load_profile_intervals
-                ),
-                channels=[
-                    item for item in channels if isinstance(item, dict)
-                ],
-            )
-        except Exception:
+            return _execute_with_socket(borrowed_connection.socket)
+        except Exception as exc:
             mark_runtime_tcp_meter_ingress_connection_dead(borrowed_connection.connection_id)
-            raise
+            if not _is_live_tcp_ingress_rebound_retryable_error(exc):
+                raise
+            first_error = exc
+        rebound_execution = _retry_live_tcp_ingress_operation_once(
+            meter_id=request.target.meter_id,
+            endpoint_id=request.target.endpoint_id,
+            protocol_association_profile_id=request.target.protocol_association_profile_id,
+            execute_with_socket=_execute_with_socket,
+        )
+        if rebound_execution is not None:
+            return rebound_execution
+        if first_error is not None:
+            raise first_error
 
 
 def _build_runtime_profile_read_execution_from_live_tcp(
