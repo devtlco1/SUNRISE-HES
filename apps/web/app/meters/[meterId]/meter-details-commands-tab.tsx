@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import type { AuthorizedFetch } from "../../operational-shell";
 import { MeterDetailsAuditTab } from "./meter-details-audit-tab";
 import { MeterDetailsCommercialTab } from "./meter-details-commercial-tab";
+import { MeterDetailsConnectivityTab } from "./meter-details-connectivity-tab";
 import { MeterDetailsEventsTab } from "./meter-details-events-tab";
 
 type MeterDetail = {
@@ -1581,80 +1582,24 @@ export function MeterDetailsCommandsTab({
       ) : null}
 
       {activeTab === "connectivity" ? (
-        <section className="subpanel meter-summary-panel">
-          <div className="section-heading">
-            <div>
-              <h2>Connectivity context</h2>
-              <p className="muted">
-                Current endpoint and protocol context for this meter&apos;s
-                operational path.
-              </p>
-            </div>
-          </div>
-
-          {isConnectivityContextLoading ? (
-            <p className="muted">Loading connectivity context...</p>
-          ) : null}
-
-          {!isConnectivityContextLoading && hasConnectivityContext ? (
-            <div className="meter-summary-grid">
-              <div className="stat-card">
-                <span className="stat-label">Primary endpoint</span>
-                <strong>
-                  {primaryEndpointAssignment?.endpoint_display_name ??
-                    primaryEndpointAssignment?.endpoint_code ??
-                    "No active endpoint"}
-                </strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Endpoint code</span>
-                <strong>
-                  {primaryEndpointAssignment?.endpoint_code ?? "No active endpoint"}
-                </strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Endpoint assignment status</span>
-                <strong>
-                  {primaryEndpointAssignment?.assignment_status ?? "Not assigned"}
-                </strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Primary assignment</span>
-                <strong>
-                  {primaryEndpointAssignment
-                    ? primaryEndpointAssignment.is_primary
-                      ? "Primary"
-                      : "Secondary"
-                    : "Not available"}
-                </strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Communication profile</span>
-                <strong>{meter?.communication_profile_code ?? "Not available"}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Protocol profile</span>
-                <strong>{defaultProtocolProfile?.code ?? "Not available"}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Protocol family</span>
-                <strong>
-                  {defaultProtocolProfile?.protocol_family ?? "Not available"}
-                </strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Connectivity freshness</span>
-                <strong>
-                  {formatConnectivityFreshnessHint(meter?.last_seen_at ?? null)}
-                </strong>
-              </div>
-            </div>
-          ) : null}
-
-          {!isConnectivityContextLoading && !hasConnectivityContext ? (
-            <p className="muted">Connectivity context not available.</p>
-          ) : null}
-        </section>
+        <MeterDetailsConnectivityTab
+          meterId={meterId}
+          meter={
+            meter
+              ? {
+                  id: meter.id,
+                  communication_profile_code: meter.communication_profile_code,
+                  last_seen_at: meter.last_seen_at,
+                  current_status: meter.current_status,
+                }
+              : null
+          }
+          primaryEndpointAssignment={primaryEndpointAssignment}
+          defaultProtocolProfile={defaultProtocolProfile}
+          hasConnectivityContext={hasConnectivityContext}
+          isConnectivityContextLoading={isConnectivityContextLoading}
+          authorizedFetch={authorizedFetch}
+        />
       ) : null}
 
       {activeTab === "commercial" ? (

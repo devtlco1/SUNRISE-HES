@@ -149,6 +149,26 @@ type MockMeterEventItem = {
   correlation_id: string | null;
 };
 
+type MockConnectivitySessionItem = {
+  id: string;
+  meter_id: string | null;
+  endpoint_id: string | null;
+  protocol_association_profile_id: string | null;
+  started_at: string;
+  ended_at: string | null;
+  status: string;
+  session_purpose: string;
+  request_id: string | null;
+  correlation_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  bytes_sent: number | null;
+  bytes_received: number | null;
+  transport_latency_ms: number | null;
+  handshake_stage: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -182,6 +202,8 @@ function createMockApi({
   auditLogsDetail = "Meter audit history unavailable.",
   meterEventsStatus = 200,
   meterEventsDetail = "Meter events unavailable.",
+  meterSessionsStatus = 200,
+  meterSessionsDetail = "Connectivity session history unavailable.",
   endpointAssignments = [
     {
       id: "assignment-1",
@@ -378,6 +400,46 @@ function createMockApi({
       correlation_id: null,
     },
   ],
+  meterSessions = [
+    {
+      id: "session-1",
+      meter_id: "meter-1",
+      endpoint_id: "endpoint-1",
+      protocol_association_profile_id: "protocol-profile-1",
+      started_at: "2026-03-30T11:10:00.000Z",
+      ended_at: "2026-03-30T11:12:00.000Z",
+      status: "succeeded",
+      session_purpose: "on_demand_read",
+      request_id: "req-session-1",
+      correlation_id: "corr-session-1",
+      error_code: null,
+      error_message: null,
+      bytes_sent: 512,
+      bytes_received: 1024,
+      transport_latency_ms: 180,
+      handshake_stage: "association",
+      metadata: null,
+    },
+    {
+      id: "session-2",
+      meter_id: "meter-1",
+      endpoint_id: "endpoint-1",
+      protocol_association_profile_id: "protocol-profile-1",
+      started_at: "2026-03-30T09:30:00.000Z",
+      ended_at: "2026-03-30T09:31:00.000Z",
+      status: "failed",
+      session_purpose: "profile_capture",
+      request_id: "req-session-2",
+      correlation_id: null,
+      error_code: "ASSOCIATION_REJECTED",
+      error_message: "Association rejected",
+      bytes_sent: 120,
+      bytes_received: 64,
+      transport_latency_ms: null,
+      handshake_stage: "association",
+      metadata: null,
+    },
+  ],
   consumerLinkageResponse = {
     meter_id: "meter-1",
     linkage_status: "linked",
@@ -406,6 +468,8 @@ function createMockApi({
   auditLogsDetail?: string;
   meterEventsStatus?: number;
   meterEventsDetail?: string;
+  meterSessionsStatus?: number;
+  meterSessionsDetail?: string;
   endpointAssignments?: MockEndpointAssignment[];
   protocolProfiles?: MockProtocolProfile[];
   templateItems?: MockCommandTemplate[];
@@ -415,6 +479,7 @@ function createMockApi({
   loadProfileIntervals?: MockLoadProfileIntervalItem[];
   auditLogs?: MockAuditLogItem[];
   meterEvents?: MockMeterEventItem[];
+  meterSessions?: MockConnectivitySessionItem[];
   consumerLinkageResponse?: MockConsumerLinkage;
 } = {}) {
   const requests: RequestLog[] = [];
@@ -667,6 +732,16 @@ function createMockApi({
       return jsonResponse({
         total: meterEvents.length,
         items: meterEvents,
+      });
+    }
+
+    if (url.includes("/api/v1/meters/meter-1/sessions?")) {
+      if (meterSessionsStatus !== 200) {
+        return jsonResponse({ detail: meterSessionsDetail }, meterSessionsStatus);
+      }
+      return jsonResponse({
+        total: meterSessions.length,
+        items: meterSessions,
       });
     }
 
@@ -925,7 +1000,7 @@ describe("MeterDetailsCommandsTab", () => {
     expect(await screen.findByText("meter-1")).toBeInTheDocument();
   });
 
-  it("renders the connectivity context panel with current endpoint and protocol state", async () => {
+  it("renders the connectivity tab with current endpoint, freshness, and recent session history", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -945,29 +1020,35 @@ describe("MeterDetailsCommandsTab", () => {
         within(connectivityPanel as HTMLElement).getByText("TCP Primary"),
       ).toBeInTheDocument();
       expect(
-        within(connectivityPanel as HTMLElement).getByText("tcp-primary"),
-      ).toBeInTheDocument();
+        within(connectivityPanel as HTMLElement).getAllByText("Succeeded"),
+      ).not.toHaveLength(0);
       expect(
-        within(connectivityPanel as HTMLElement).getByText("active"),
-      ).toBeInTheDocument();
-      expect(
-        within(connectivityPanel as HTMLElement).getByText("Primary"),
-      ).toBeInTheDocument();
-      expect(
-        within(connectivityPanel as HTMLElement).getByText("dlms-default"),
+        within(connectivityPanel as HTMLElement).getByText("Active • Primary assignment"),
       ).toBeInTheDocument();
       expect(
         within(connectivityPanel as HTMLElement).getByText("dlms-profile"),
       ).toBeInTheDocument();
       expect(
-        within(connectivityPanel as HTMLElement).getByText("dlms_cosem"),
+        within(connectivityPanel as HTMLElement).getAllByText("Recent connectivity signal recorded"),
+      ).not.toHaveLength(0);
+      expect(
+        within(connectivityPanel as HTMLElement).getByText("Association"),
       ).toBeInTheDocument();
       expect(
-        within(connectivityPanel as HTMLElement).getByText(
-          "Recent connectivity signal recorded",
-        ),
-      ).toBeInTheDocument();
+        within(connectivityPanel as HTMLElement).getAllByText(/On Demand Read/i),
+      ).not.toHaveLength(0);
     });
+
+    const sessionsPanel = screen
+      .getByRole("heading", { name: "Recent session history" })
+      .closest("section");
+    expect(sessionsPanel).not.toBeNull();
+    expect(within(sessionsPanel as HTMLElement).getByText("Succeeded")).toBeInTheDocument();
+    expect(within(sessionsPanel as HTMLElement).getByText("Association rejected")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open connectivity surface" })).toHaveAttribute(
+      "href",
+      "/connectivity",
+    );
   });
 
   it("renders the consumer linkage card when a linked subscriber exists", async () => {
@@ -1422,6 +1503,7 @@ describe("MeterDetailsCommandsTab", () => {
       },
       endpointAssignments: [],
       protocolProfiles: [],
+      meterSessions: [],
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -1434,6 +1516,12 @@ describe("MeterDetailsCommandsTab", () => {
         screen.getByText("Connectivity context not available."),
       ).toBeInTheDocument();
     });
+    expect(
+      screen.getByRole("heading", { name: "Recent session history" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("No connectivity sessions are currently recorded for this meter"),
+    ).toBeInTheDocument();
   });
 
   it("renders bounded action readiness states when prerequisites are missing", async () => {
@@ -1520,15 +1608,30 @@ describe("MeterDetailsCommandsTab", () => {
     expect(connectivityPanel).not.toBeNull();
 
     expect(
-      within(connectivityPanel as HTMLElement).getByText("dlms-default"),
-    ).toBeInTheDocument();
-    expect(
       within(connectivityPanel as HTMLElement).getByText("dlms-profile"),
     ).toBeInTheDocument();
     expect(
       within(connectivityPanel as HTMLElement).queryByText("Connectivity context not available."),
     ).not.toBeInTheDocument();
     expect(screen.getAllByText("SN-1001")).not.toHaveLength(0);
+  });
+
+  it("renders a bounded meter connectivity session error state without disturbing the workspace", async () => {
+    const { fetchMock } = createMockApi({
+      meterSessionsStatus: 503,
+      meterSessionsDetail: "Connectivity session history unavailable.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Connectivity");
+
+    expect(
+      await screen.findByText("Connectivity session history unavailable."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Connectivity context" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent session history" })).toBeInTheDocument();
   });
 
   it("renders a bounded meter audit error state without disturbing the workspace", async () => {
