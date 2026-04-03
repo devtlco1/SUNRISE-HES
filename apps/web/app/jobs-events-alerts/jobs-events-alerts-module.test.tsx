@@ -314,6 +314,55 @@ describe("JobsEventsAlertsModule", () => {
     ).toHaveAttribute("href", "/meters/meter-1");
   });
 
+  it("renders a dedicated failed runs workspace with failure, retry, and remediation visibility", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const failedRunsPanel = (
+      await screen.findByRole("heading", { name: "Failed runs workspace" })
+    ).closest("section");
+    expect(failedRunsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(failedRunsPanel as HTMLElement).getByText("Visible failed runs"),
+      ).toBeInTheDocument();
+      expect(
+        within(failedRunsPanel as HTMLElement).getByText("Retryable failed runs"),
+      ).toBeInTheDocument();
+      expect(
+        within(failedRunsPanel as HTMLElement).getByText("Retry budget exhausted"),
+      ).toBeInTheDocument();
+      expect(
+        within(failedRunsPanel as HTMLElement).getByText("Latest failed transition"),
+      ).toBeInTheDocument();
+      expect(
+        within(failedRunsPanel as HTMLElement).getByText(/Failed .*2026/),
+      ).toBeInTheDocument();
+      expect(
+        within(failedRunsPanel as HTMLElement).getByText(
+          "2 retry slots remaining in the current bounded runtime budget.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(failedRunsPanel as HTMLElement).getByText("AUTH_FAILED"),
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      within(failedRunsPanel as HTMLElement).getByRole("button", {
+        name: "Inspect failed run",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(failedRunsPanel as HTMLElement).getByRole("link", {
+        name: "Open retry detail",
+      }),
+    ).toHaveAttribute("href", "/jobs-events-alerts/activity/job_run/job-run-1?retryEntrySource=jobs_retry_queue");
+  });
+
   it("shows a round-trip cue on the retry queue after returning from activity detail", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
@@ -489,6 +538,9 @@ describe("JobsEventsAlertsModule", () => {
     expect(summaryPanel).not.toBeNull();
 
     await waitFor(() => {
+      expect(
+        within(summaryPanel as HTMLElement).getByText("AUTH_FAILED"),
+      ).toBeInTheDocument();
       expect(within(summaryPanel as HTMLElement).getByText("worker-1")).toBeInTheDocument();
       expect(
         within(summaryPanel as HTMLElement).getByText("job-correlation-1"),
@@ -496,6 +548,11 @@ describe("JobsEventsAlertsModule", () => {
       expect(within(summaryPanel as HTMLElement).getByText("Started")).toBeInTheDocument();
       expect(within(summaryPanel as HTMLElement).getByText("Completed")).toBeInTheDocument();
       expect(within(summaryPanel as HTMLElement).getByText("30 sec")).toBeInTheDocument();
+      expect(
+        within(summaryPanel as HTMLElement).getByText(
+          "2 retry slots remaining in the current bounded runtime budget.",
+        ),
+      ).toBeInTheDocument();
       expect(
         within(summaryPanel as HTMLElement).getAllByText("Association rejected").length,
       ).toBeGreaterThan(0);
@@ -512,6 +569,7 @@ describe("JobsEventsAlertsModule", () => {
       await screen.findByText("Loading jobs, events, and alerts overview..."),
     ).toBeInTheDocument();
     expect(screen.getByText("Loading job runs workspace...")).toBeInTheDocument();
+    expect(screen.getByText("Loading failed runs workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading job runs and retry queue...")).toBeInTheDocument();
     expect(screen.getByText("Loading recent operational activity...")).toBeInTheDocument();
   });
@@ -535,17 +593,26 @@ describe("JobsEventsAlertsModule", () => {
     const jobRunsPanel = screen
       .getByRole("heading", { name: "Job runs workspace" })
       .closest("section");
+    const failedRunsPanel = screen
+      .getByRole("heading", { name: "Failed runs workspace" })
+      .closest("section");
     const activityPanel = screen
       .getByRole("heading", { name: "Recent operational activity" })
       .closest("section");
     expect(alertsPanel).not.toBeNull();
     expect(retryPanel).not.toBeNull();
     expect(jobRunsPanel).not.toBeNull();
+    expect(failedRunsPanel).not.toBeNull();
     expect(activityPanel).not.toBeNull();
 
     await waitFor(() => {
       expect(
         within(jobRunsPanel as HTMLElement).getByText("No recent job runs are currently visible."),
+      ).toBeInTheDocument();
+      expect(
+        within(failedRunsPanel as HTMLElement).getByText(
+          "No failed job runs are currently visible.",
+        ),
       ).toBeInTheDocument();
       expect(
         within(retryPanel as HTMLElement).getByText(

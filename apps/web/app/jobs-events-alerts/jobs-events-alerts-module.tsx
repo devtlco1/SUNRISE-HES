@@ -248,6 +248,23 @@ function buildJobRunTimingSummary(jobRun: JobRunItem): string {
   return `Scheduled ${formatDateTime(jobRun.scheduled_for)}`;
 }
 
+function buildJobRunFailureTimestamp(jobRun: JobRunItem): string {
+  return jobRun.cancelled_at ?? jobRun.completed_at ?? jobRun.started_at ?? jobRun.available_at;
+}
+
+function buildJobRunFailureSummary(jobRun: JobRunItem): string {
+  if (jobRun.cancelled_at) {
+    return `Cancelled ${formatDateTime(jobRun.cancelled_at)}`;
+  }
+  if (jobRun.completed_at) {
+    return `Failed ${formatDateTime(jobRun.completed_at)}`;
+  }
+  if (jobRun.started_at) {
+    return `Started ${formatDateTime(jobRun.started_at)}`;
+  }
+  return `Available ${formatDateTime(jobRun.available_at)}`;
+}
+
 function buildJobRunOutcomeSummary(jobRun: JobRunItem): string {
   if (jobRun.latest_error_message) {
     return jobRun.latest_error_message;
@@ -607,6 +624,28 @@ export function JobsEventsAlertsModule({
       ).length,
     [jobRuns],
   );
+  const failedJobRunItems = useMemo(
+    () =>
+      [...(jobRuns ?? [])]
+        .filter((jobRun) => isRetryWorthyStatus(jobRun.status))
+        .sort(
+          (left, right) =>
+            new Date(buildJobRunFailureTimestamp(right)).getTime() -
+            new Date(buildJobRunFailureTimestamp(left)).getTime(),
+        ),
+    [jobRuns],
+  );
+  const retryableFailedJobRuns = useMemo(
+    () =>
+      failedJobRunItems.filter((jobRun) => jobRun.retry_count < jobRun.max_retries).length,
+    [failedJobRunItems],
+  );
+  const exhaustedFailedJobRuns = useMemo(
+    () =>
+      failedJobRunItems.filter((jobRun) => jobRun.retry_count >= jobRun.max_retries).length,
+    [failedJobRunItems],
+  );
+  const latestFailedJobRun = failedJobRunItems[0] ?? null;
 
   const overviewCards = useMemo(
     () => [
@@ -713,6 +752,132 @@ export function JobsEventsAlertsModule({
                   <strong>{card.value}</strong>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Failed runs workspace</h2>
+              <p className="muted">
+                Troubleshooting view for failed, timed-out, and cancelled job runs using the
+                current execution and retry context already loaded into this workspace.
+              </p>
+            </div>
+            <span className="artifact-pill">
+              {failedJobRunItems.length} failed run{failedJobRunItems.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {isLoadingActivity ? (
+            <p className="muted">Loading failed runs workspace...</p>
+          ) : (
+            <div className="detail-stack">
+              <div className="jobs-overview-grid">
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Visible failed runs</span>
+                  <strong>{String(failedJobRunItems.length)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Retryable failed runs</span>
+                  <strong>{String(retryableFailedJobRuns)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Retry budget exhausted</span>
+                  <strong>{String(exhaustedFailedJobRuns)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Latest failed transition</span>
+                  <strong>
+                    {formatDateTime(
+                      latestFailedJobRun ? buildJobRunFailureTimestamp(latestFailedJobRun) : null,
+                    )}
+                  </strong>
+                </div>
+              </div>
+
+              <p className="muted">
+                Review the latest failure state, retry posture, and recorded outcome before
+                drilling into the existing activity detail or remediation paths.
+              </p>
+
+              <div className="command-list">
+                {failedJobRunItems.length === 0 ? (
+                  <p className="muted">No failed job runs are currently visible.</p>
+                ) : null}
+
+                {failedJobRunItems.map((jobRun) => (
+                  <article key={jobRun.id} className="command-list-item">
+                    <div className="command-list-item-header">
+                      <strong>
+                        {jobRun.related_command?.command_template_code ??
+                          `Job run ${jobRun.id.slice(0, 8)}`}
+                      </strong>
+                      <span className={`status-pill ${buildStatusTone(jobRun.status)}`}>
+                        {formatStatusLabel(jobRun.status)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-badges">
+                      <span className="artifact-pill">Job run</span>
+                      <span className="artifact-pill">
+                        {jobRun.latest_error_code ?? "No error code"}
+                      </span>
+                      <span className="artifact-pill">
+                        {jobRun.worker_identifier ?? "No worker claim"}
+                      </span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>{buildJobRunFailureSummary(jobRun)}</span>
+                      <span>Duration {buildJobRunDurationLabel(jobRun)}</span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>{buildJobRunOutcomeSummary(jobRun)}</span>
+                      <span>{formatRetrySummary(jobRun.retry_count, jobRun.max_retries)}</span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>
+                        Retries {jobRun.retry_count}/{jobRun.max_retries}
+                      </span>
+                      <span>{jobRun.correlation_id ?? "No correlation ID"}</span>
+                    </div>
+                    <div className="artifact-row">
+                      <button
+                        className="secondary-button"
+                        onClick={() => setSelectedActivityId(jobRun.id)}
+                        type="button"
+                      >
+                        Inspect failed run
+                      </button>
+                      <Link
+                        className="secondary-button"
+                        href={buildActivityDetailHref("job_run", jobRun.id)}
+                      >
+                        Open job run detail
+                      </Link>
+                      <Link
+                        className="secondary-button"
+                        href={buildRetryQueueActivityDetailHref("job_run", jobRun.id)}
+                      >
+                        Open retry detail
+                      </Link>
+                      {jobRun.related_command_id ? (
+                        <Link className="secondary-button" href="/commands">
+                          Open commands page
+                        </Link>
+                      ) : null}
+                      {jobRun.target_meter_id ? (
+                        <Link
+                          className="secondary-button"
+                          href={`/meters/${jobRun.target_meter_id}`}
+                        >
+                          Open meter detail
+                        </Link>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
           )}
         </section>
@@ -1154,6 +1319,10 @@ export function JobsEventsAlertsModule({
                 {selectedJobRun ? (
                   <>
                     <div className="stat-card">
+                      <span className="stat-label">Failure code</span>
+                      <strong>{selectedJobRun.latest_error_code ?? "Not available"}</strong>
+                    </div>
+                    <div className="stat-card">
                       <span className="stat-label">Worker</span>
                       <strong>{selectedJobRun.worker_identifier ?? "Not available"}</strong>
                     </div>
@@ -1172,6 +1341,10 @@ export function JobsEventsAlertsModule({
                     <div className="stat-card">
                       <span className="stat-label">Duration</span>
                       <strong>{buildJobRunDurationLabel(selectedJobRun)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Retry posture</span>
+                      <strong>{formatRetrySummary(selectedJobRun.retry_count, selectedJobRun.max_retries)}</strong>
                     </div>
                     <div className="stat-card">
                       <span className="stat-label">Outcome</span>
