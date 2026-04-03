@@ -16,8 +16,10 @@ from app.runtime.adapters.base import BaseRuntimeAdapter
 from app.runtime.adapters.gurux_tcp_ingress import (
     LiveTcpDlmsSessionConfig,
     LiveTcpOnDemandReadExecution,
+    LiveTcpProfileReadExecution,
     LiveTcpRelayControlExecution,
     execute_billing_snapshot_over_tcp_ingress,
+    execute_capture_load_profile_over_tcp_ingress,
     execute_relay_control_over_tcp_ingress,
 )
 from app.runtime.contracts import (
@@ -718,6 +720,25 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
         invocation_request = _build_gurux_capture_load_profile_invocation_request(
             normalized_request
         )
+        live_execution = _execute_live_tcp_profile_read_if_available(
+            request,
+            normalized_request=normalized_request,
+            invocation_request=invocation_request,
+        )
+        trace_references = request.trace_references
+        interval_count = len(validated_target.expected_profile_batch.load_profile_intervals)
+        if live_execution is not None:
+            return _build_runtime_profile_read_execution_from_live_tcp(
+                request=request,
+                now=now,
+                gurux_operation=gurux_operation,
+                validated_target=validated_target,
+                normalized_request=normalized_request,
+                invocation_request=invocation_request,
+                live_execution=live_execution,
+                interval_count=interval_count,
+                trace_references=trace_references,
+            )
         invocation_response = _invoke_gurux_capture_load_profile_stub(
             invocation_request,
             mock_execution=mock_execution,
@@ -731,9 +752,6 @@ class GuruxDlmsAdapterBridge(DlmsCosemRuntimeAdapter):
             requested_outcome=requested_outcome,
             error_detail=error_detail,
         )
-
-        trace_references = request.trace_references
-        interval_count = len(validated_target.expected_profile_batch.load_profile_intervals)
         return RuntimeProfileReadExecutionResult(
             status=RuntimeProfileReadExecutionStatus.COMPLETED,
             profile_read_execution_record_id=(
@@ -859,6 +877,239 @@ def _execute_live_tcp_on_demand_read_if_available(
         except Exception:
             mark_runtime_tcp_meter_ingress_connection_dead(borrowed_connection.connection_id)
             raise
+
+
+def _execute_live_tcp_profile_read_if_available(
+    request: RuntimeProfileReadAdapterRequest,
+    *,
+    normalized_request: GuruxProfileReadNormalizedRequest,
+    invocation_request: GuruxProfileReadInvocationRequest,
+) -> LiveTcpProfileReadExecution | None:
+    if request.transport.endpoint_transport_type != ConnectivityTransportType.TCP_IP:
+        return None
+
+    ingress_status = get_runtime_tcp_meter_ingress_status()
+    target_is_currently_bound = (
+        ingress_status.connected
+        and ingress_status.bound_meter_id == request.target.meter_id
+        and ingress_status.bound_endpoint_id == request.target.endpoint_id
+    )
+    with borrow_runtime_tcp_meter_ingress_connection(
+        meter_id=request.target.meter_id,
+        endpoint_id=request.target.endpoint_id,
+    ) as borrowed_connection:
+        if borrowed_connection is None:
+            if target_is_currently_bound:
+                return LiveTcpProfileReadExecution(
+                    invocation_status="failed",
+                    profile_read_batch_payload=None,
+                    error_detail=(
+                        "Bound live TCP ingress connection matched the target meter, "
+                        "but profile-read could not borrow it for real execution."
+                    ),
+                    protocol_trace={
+                        "used_bound_connection": False,
+                        "expected_bound_connection": True,
+                        "bound_meter_id": (
+                            str(ingress_status.bound_meter_id)
+                            if ingress_status.bound_meter_id is not None
+                            else None
+                        ),
+                        "bound_endpoint_id": (
+                            str(ingress_status.bound_endpoint_id)
+                            if ingress_status.bound_endpoint_id is not None
+                            else None
+                        ),
+                        "connection_in_use": ingress_status.connection_in_use,
+                    },
+                    raw_frames=[],
+                    bytes_sent=0,
+                    bytes_received=0,
+                )
+            return None
+
+        capture_load_profile = (
+            request.normalized_payload or request.request_payload or {}
+        ).get("capture_load_profile", {})
+        channels = (
+            capture_load_profile.get("channels", [])
+            if isinstance(capture_load_profile, dict)
+            else []
+        )
+        try:
+            return execute_capture_load_profile_over_tcp_ingress(
+                sock=borrowed_connection.socket,
+                config=_build_live_tcp_dlms_session_config(request),
+                profile_obis_code=invocation_request.profile_obis_code,
+                interval_start=min(
+                    interval.interval_start
+                    for interval in normalized_request.expected_profile_batch.load_profile_intervals
+                ),
+                interval_end=max(
+                    interval.interval_end
+                    for interval in normalized_request.expected_profile_batch.load_profile_intervals
+                ),
+                channels=[
+                    item for item in channels if isinstance(item, dict)
+                ],
+            )
+        except Exception:
+            mark_runtime_tcp_meter_ingress_connection_dead(borrowed_connection.connection_id)
+            raise
+
+
+def _build_runtime_profile_read_execution_from_live_tcp(
+    *,
+    request: RuntimeProfileReadAdapterRequest,
+    now: datetime,
+    gurux_operation: GuruxProfileReadOperationDefinition,
+    validated_target: GuruxProfileReadValidatedTarget,
+    normalized_request: GuruxProfileReadNormalizedRequest,
+    invocation_request: GuruxProfileReadInvocationRequest,
+    live_execution: LiveTcpProfileReadExecution,
+    interval_count: int,
+    trace_references: dict[str, object],
+) -> RuntimeProfileReadExecutionResult:
+    if live_execution.invocation_status == "accepted":
+        adapter_acknowledgment_state = RuntimeProfileReadAdapterAcknowledgmentState.ACCEPTED
+        protocol_stage_outcome = RuntimeProfileReadProtocolStageOutcome.PROFILE_READ_COMPLETED
+        execution_outcome = RuntimeCommandOutcome.SUCCEEDED
+        error_category = None
+    elif live_execution.invocation_status == "rejected":
+        adapter_acknowledgment_state = RuntimeProfileReadAdapterAcknowledgmentState.REJECTED
+        protocol_stage_outcome = RuntimeProfileReadProtocolStageOutcome.PROFILE_READ_FAILED
+        execution_outcome = RuntimeCommandOutcome.FAILED
+        error_category = RuntimeProfileReadErrorCategory.ADAPTER_REJECTED
+    else:
+        adapter_acknowledgment_state = RuntimeProfileReadAdapterAcknowledgmentState.ACCEPTED
+        protocol_stage_outcome = RuntimeProfileReadProtocolStageOutcome.PROFILE_READ_FAILED
+        execution_outcome = RuntimeCommandOutcome.FAILED
+        error_category = RuntimeProfileReadErrorCategory.EXECUTION_FAILED
+
+    profile_read_batch = (
+        RuntimeReadingBatchPayload.model_validate(live_execution.profile_read_batch_payload)
+        if isinstance(live_execution.profile_read_batch_payload, dict)
+        else None
+    )
+    interpreter_summary = (
+        "Live TCP ingress capture-load-profile execution completed over the bound session."
+        if execution_outcome == RuntimeCommandOutcome.SUCCEEDED
+        else (
+            live_execution.error_detail
+            or "Live TCP ingress capture-load-profile execution failed over the bound session."
+        )
+    )
+    invocation_response = {
+        "acknowledged": adapter_acknowledgment_state
+        == RuntimeProfileReadAdapterAcknowledgmentState.ACCEPTED,
+        "adapter_available": True,
+        "invocation_status": live_execution.invocation_status,
+        "profile_obis_code": invocation_request.profile_obis_code,
+        "selector_name": invocation_request.selector_name,
+        "selector_id": invocation_request.selector_id,
+        "requested_channel_ids": invocation_request.requested_channel_ids,
+        "requested_interval_count": invocation_request.requested_interval_count,
+        "payload_snapshot": live_execution.profile_read_batch_payload,
+        "error_detail": live_execution.error_detail,
+    }
+    interpreter = {
+        "adapter_acknowledgment_state": adapter_acknowledgment_state.value,
+        "protocol_stage_outcome": protocol_stage_outcome.value,
+        "execution_outcome": execution_outcome.value,
+        "profile_read_batch": (
+            profile_read_batch.model_dump(mode="json") if profile_read_batch is not None else None
+        ),
+        "error_category": error_category.value if error_category is not None else None,
+        "error_detail": live_execution.error_detail,
+        "interpreter_summary": interpreter_summary,
+    }
+    return RuntimeProfileReadExecutionResult(
+        status=RuntimeProfileReadExecutionStatus.COMPLETED,
+        profile_read_execution_record_id=(
+            "runtime-profile-read:"
+            f"{request.execution_context.command_attempt_id}:{request.execution_context.request_id or request.execution_context.command_id}"
+        ),
+        session_identifier=str(trace_references["session_identifier"]),
+        dispatch_envelope_record_id=request.dispatch_envelope_record_id,
+        delivery_contract_record_id=str(trace_references["delivery_contract_record_id"]),
+        envelope_record_id=str(trace_references["envelope_record_id"]),
+        publication_contract_record_id=str(trace_references["publication_contract_record_id"]),
+        attestation_record_id=str(trace_references["attestation_record_id"]),
+        settlement_record_id=str(trace_references["settlement_record_id"]),
+        reconciliation_record_id=str(trace_references["reconciliation_record_id"]),
+        interpretation_record_id=str(trace_references["interpretation_record_id"]),
+        observation_record_id=str(trace_references["observation_record_id"]),
+        invocation_result_record_id=str(trace_references["invocation_result_record_id"]),
+        dispatch_request_record_id=str(trace_references["dispatch_request_record_id"]),
+        selection_record_id=str(trace_references["selection_record_id"]),
+        intent_record_id=str(trace_references["intent_record_id"]),
+        closure_record_id=str(trace_references["closure_record_id"]),
+        materialization_record_id=str(trace_references["materialization_record_id"]),
+        post_processing_record_id=str(trace_references["post_processing_record_id"]),
+        disposition_record_id=str(trace_references["disposition_record_id"]),
+        outcome_record_id=str(trace_references["outcome_record_id"]),
+        executor_identifier=str(request.execution_context.worker_identifier),
+        job_run_id=str(request.execution_context.job_run_id),
+        related_command_id=str(request.execution_context.command_id),
+        command_attempt_id=str(request.execution_context.command_attempt_id),
+        adapter_key="gurux-dlms-bridge",
+        protocol_family=request.protocol_family,
+        profile_read_operation=request.operation,
+        command_category=request.command_category,
+        adapter_acknowledgment_state=adapter_acknowledgment_state,
+        protocol_stage_outcome=protocol_stage_outcome,
+        execution_outcome=execution_outcome,
+        correlation_id=request.execution_context.correlation_id,
+        request_id=request.execution_context.request_id,
+        execution_started_at=now.isoformat(),
+        execution_finished_at=now.isoformat(),
+        profile_read_batch=profile_read_batch,
+        adapter_result_summary={
+            "adapter_key": "gurux-dlms-bridge",
+            "operation": request.operation.value,
+            "protocol_family": request.protocol_family.value,
+            "adapter_acknowledged": (
+                adapter_acknowledgment_state == RuntimeProfileReadAdapterAcknowledgmentState.ACCEPTED
+            ),
+            "vertical_slice": "profile_read",
+            "load_profile_interval_count": interval_count,
+            "live_tcp_ingress": True,
+            "bytes_sent": live_execution.bytes_sent,
+            "bytes_received": live_execution.bytes_received,
+            "live_tcp_protocol_trace": live_execution.protocol_trace,
+            "gurux_profile_read_operation": gurux_operation.model_dump(mode="json"),
+            "gurux_profile_read_validated_target": validated_target.model_dump(mode="json"),
+            "gurux_profile_read_normalized_request": normalized_request.model_dump(mode="json"),
+            "gurux_profile_read_invocation_result": invocation_response,
+            "gurux_profile_read_interpreter": interpreter,
+        },
+        adapter_response_snapshot={
+            "adapter": "gurux-dlms-bridge",
+            "operation": request.operation.value,
+            "target_meter_id": str(request.target.meter_id),
+            "endpoint_id": str(request.target.endpoint_id),
+            "protocol_profile_id": str(request.target.protocol_association_profile_id),
+            "load_profile_interval_count": interval_count,
+            "live_tcp_ingress": True,
+            "bytes_sent": live_execution.bytes_sent,
+            "bytes_received": live_execution.bytes_received,
+            "live_tcp_protocol_trace": live_execution.protocol_trace,
+            "gurux_profile_read_operation": gurux_operation.model_dump(mode="json"),
+            "gurux_profile_read_validated_target": validated_target.model_dump(mode="json"),
+            "gurux_profile_read_normalized_request": normalized_request.model_dump(mode="json"),
+            "gurux_profile_read_invocation_request": invocation_request.model_dump(mode="json"),
+            "gurux_profile_read_invocation_result": invocation_response,
+            "gurux_profile_read_interpreter": interpreter,
+        },
+        error_category=error_category,
+        error_detail=live_execution.error_detail,
+        profile_read_recorded_by_executor_identifier=str(
+            request.execution_context.worker_identifier
+        ),
+        already_recorded=False,
+        summary=interpreter_summary,
+        lineage=request.lineage,
+    )
 
 
 def _execute_live_tcp_relay_control_if_available(

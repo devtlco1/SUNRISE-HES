@@ -18,6 +18,7 @@ from app.runtime.contracts import (
     RuntimeCaptureLoadProfileTerminalStatusCategory,
     RuntimeAttemptDispositionResult,
     RuntimeCommandOutcome,
+    RuntimeCommandResult,
     RuntimeClosureAttestationResult,
     RuntimeDeliveryContractResult,
     RuntimeDispatchEnvelopeResult,
@@ -34,7 +35,6 @@ from app.runtime.contracts import (
     RuntimeProfileReadAdapterRequest,
     RuntimeProfileReadExecutionResult,
     RuntimeProfileReadOperation,
-    RuntimeProtocolAdapterCapability,
     RuntimeProtocolAdapterSelectionResult,
     RuntimeProtocolDispatchRequestResult,
     RuntimeProtocolExecutionIntentResult,
@@ -54,6 +54,7 @@ from app.runtime.services.runtime_artifact_utils import (
     load_runtime_execution_guard,
     merge_runtime_metadata,
 )
+from app.runtime.services.ingestion import persist_runtime_result_telemetry
 from app.runtime.services.runtime_plan_builder import build_runtime_plan_for_command
 
 
@@ -350,15 +351,6 @@ def execute_runtime_profile_read_adapter(
             status_code=status.HTTP_409_CONFLICT,
             detail="Runtime protocol adapter selection is owned by another executor.",
         )
-    if (
-        RuntimeProtocolAdapterCapability.SUPPORTS_PLACEHOLDER_READ_PROFILE
-        not in selection.supported_placeholder_capabilities
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Runtime protocol adapter selection does not authorize the profile-read vertical slice.",
-        )
-
     dispatch_request = relay_helpers._load_runtime_protocol_dispatch_request(
         attempt.execution_metadata
     )
@@ -740,29 +732,48 @@ def execute_runtime_profile_read_adapter(
             mode="json"
         )
     }
+    ingestion_result = persist_runtime_result_telemetry(
+        session,
+        meter_id=command.meter_id,
+        command_id=command.id,
+        attempt_id=attempt.id,
+        session_history_id=attempt.session_history_id,
+        result=_to_runtime_command_result(result),
+    )
+    materialization_payload = {
+        "runtime_profile_read_materialization": {
+            "materialized": ingestion_result.ingested_batch is not None,
+            "ingested_batch_id": (
+                str(ingestion_result.ingested_batch.id)
+                if ingestion_result.ingested_batch is not None
+                else None
+            ),
+            "persisted_interval_count": ingestion_result.persisted_interval_count,
+            "skipped_duplicate_interval_count": (
+                ingestion_result.skipped_duplicate_interval_count
+            ),
+        }
+    }
     attempt.execution_metadata = merge_runtime_metadata(
         attempt.execution_metadata,
-        profile_read_payload,
+        merge_runtime_metadata(
+            merge_runtime_metadata(profile_read_payload, digest_payload),
+            merge_runtime_metadata(terminal_status_payload, materialization_payload),
+        ),
     )
-    attempt.execution_metadata = merge_runtime_metadata(
-        attempt.execution_metadata,
-        digest_payload,
-    )
-    attempt.execution_metadata = merge_runtime_metadata(
-        attempt.execution_metadata,
-        terminal_status_payload,
-    )
-    command.result_summary = merge_runtime_metadata(command.result_summary, profile_read_payload)
-    command.result_summary = merge_runtime_metadata(command.result_summary, digest_payload)
     command.result_summary = merge_runtime_metadata(
         command.result_summary,
-        terminal_status_payload,
+        merge_runtime_metadata(
+            merge_runtime_metadata(profile_read_payload, digest_payload),
+            merge_runtime_metadata(terminal_status_payload, materialization_payload),
+        ),
     )
-    job_run.result_summary = merge_runtime_metadata(job_run.result_summary, profile_read_payload)
-    job_run.result_summary = merge_runtime_metadata(job_run.result_summary, digest_payload)
     job_run.result_summary = merge_runtime_metadata(
         job_run.result_summary,
-        terminal_status_payload,
+        merge_runtime_metadata(
+            merge_runtime_metadata(profile_read_payload, digest_payload),
+            merge_runtime_metadata(terminal_status_payload, materialization_payload),
+        ),
     )
     session.add_all([attempt, command, job_run])
     session.commit()
@@ -774,6 +785,19 @@ def execute_runtime_profile_read_adapter(
         job_run=serialize_job_run(job_run),
         related_command=serialize_meter_command(command),
         created_or_existing_attempt=serialize_command_attempt(attempt),
+    )
+
+
+def _to_runtime_command_result(
+    result: RuntimeProfileReadExecutionResult,
+) -> RuntimeCommandResult:
+    return RuntimeCommandResult(
+        outcome=result.execution_outcome,
+        result_summary=result.adapter_result_summary,
+        response_snapshot=result.adapter_response_snapshot,
+        latest_error_code=(result.error_category.value if result.error_category is not None else None),
+        latest_error_message=result.error_detail,
+        reading_batch=result.profile_read_batch,
     )
 
 
@@ -809,6 +833,15 @@ def _build_runtime_profile_read_adapter_request(
         target=plan.target,
         transport=plan.transport,
         security=plan.security,
+        protocol_profile_code=plan.protocol_profile_code,
+        iec62056_21_enabled=plan.iec62056_21_enabled,
+        iec_device_address=plan.iec_device_address,
+        iec_baud_rate=plan.iec_baud_rate,
+        client_address=plan.client_address,
+        server_address=plan.server_address,
+        server_address_size=plan.server_address_size,
+        protocol_settings=plan.protocol_settings,
+        protocol_defaults=plan.protocol_defaults,
         request_payload=plan.command.request_payload,
         normalized_payload=plan.command.normalized_payload,
         dispatch_envelope_record_id=dispatch_envelope.dispatch_envelope_record_id,

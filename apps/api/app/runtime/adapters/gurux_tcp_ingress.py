@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 import logging
 import socket
 import time
@@ -69,6 +70,17 @@ class LiveTcpRelayControlExecution:
     invocation_status: str
     before_state: LiveTcpRelayControlStateObservation | None
     after_state: LiveTcpRelayControlStateObservation | None
+    error_detail: str | None
+    protocol_trace: dict[str, object]
+    raw_frames: list[dict[str, object]]
+    bytes_sent: int
+    bytes_received: int
+
+
+@dataclass(frozen=True)
+class LiveTcpProfileReadExecution:
+    invocation_status: str
+    profile_read_batch_payload: dict[str, object] | None
     error_detail: str | None
     protocol_trace: dict[str, object]
     raw_frames: list[dict[str, object]]
@@ -195,6 +207,122 @@ def execute_billing_snapshot_over_tcp_ingress(
             ),
             "obis_count": len(obis_codes),
             "association_details": association_details,
+        },
+        raw_frames=raw_frames,
+        bytes_sent=transport.bytes_sent,
+        bytes_received=transport.bytes_received,
+    )
+
+
+def execute_capture_load_profile_over_tcp_ingress(
+    *,
+    sock: socket.socket,
+    config: LiveTcpDlmsSessionConfig,
+    profile_obis_code: str,
+    interval_start: datetime,
+    interval_end: datetime,
+    channels: list[dict[str, object]],
+) -> LiveTcpProfileReadExecution:
+    if not profile_obis_code.strip():
+        raise ValueError("Live TCP profile read requires a profile OBIS code.")
+    if not channels:
+        raise ValueError("Live TCP profile read requires at least one requested channel.")
+
+    transport = SocketSerialAdapter(sock)
+    raw_frames: list[dict[str, object]] = []
+
+    if config.start_protocol == "iec62056_21":
+        transport.timeout = float(config.iec_serial_timeout_seconds)
+        handshake_ok, handshake_details, handshake_frames = _run_iec_handshake_tcp(transport, config)
+        raw_frames.extend(handshake_frames)
+        if not handshake_ok:
+            raise RuntimeError(handshake_details.get("error", "IEC handshake failed."))
+        time.sleep(config.after_iec_sleep_ms / 1000.0)
+    else:
+        handshake_details = {
+            "start_protocol": config.start_protocol,
+            "status": "skipped",
+        }
+
+    transport.timeout = float(config.dlms_read_timeout_seconds)
+    if config.use_broadcast_snrm_first:
+        associated, association_details, association_frames, client = _attempt_vendor_broadcast_association(
+            transport,
+            config,
+        )
+    else:
+        associated, association_details, association_frames, client = _attempt_gurux_association(
+            transport,
+            config,
+        )
+    raw_frames.extend(association_frames)
+    if not associated or client is None:
+        raise RuntimeError(association_details.get("error", "DLMS association failed."))
+
+    try:
+        capture_objects, capture_error = _read_profile_capture_objects(
+            transport,
+            client,
+            profile_obis_code=profile_obis_code,
+            config=config,
+        )
+        if capture_error is not None:
+            return LiveTcpProfileReadExecution(
+                invocation_status="failed",
+                profile_read_batch_payload=None,
+                error_detail=f"Profile capture-object read failed: {capture_error}",
+                protocol_trace={
+                    "start_protocol": config.start_protocol,
+                    "association_method": (
+                        "broadcast_snrm_then_aarq"
+                        if config.use_broadcast_snrm_first
+                        else "snrm_then_aarq"
+                    ),
+                    "profile_obis_code": profile_obis_code,
+                    "requested_channel_count": len(channels),
+                    "requested_window_start": interval_start.isoformat(),
+                    "requested_window_end": interval_end.isoformat(),
+                    "association_details": association_details,
+                    "handshake_details": handshake_details,
+                },
+                raw_frames=raw_frames,
+                bytes_sent=transport.bytes_sent,
+                bytes_received=transport.bytes_received,
+            )
+
+        profile_batch_payload, invocation_status, invocation_error = _read_profile_rows_via_gurux(
+            transport,
+            client,
+            profile_obis_code=profile_obis_code,
+            interval_start=interval_start,
+            interval_end=interval_end,
+            channels=channels,
+            capture_objects=capture_objects,
+            config=config,
+        )
+    finally:
+        _try_gurux_disconnect(transport, client, config)
+
+    return LiveTcpProfileReadExecution(
+        invocation_status=invocation_status,
+        profile_read_batch_payload=profile_batch_payload,
+        error_detail=invocation_error,
+        protocol_trace={
+            "start_protocol": config.start_protocol,
+            "association_method": (
+                "broadcast_snrm_then_aarq" if config.use_broadcast_snrm_first else "snrm_then_aarq"
+            ),
+            "profile_obis_code": profile_obis_code,
+            "requested_channel_count": len(channels),
+            "requested_window_start": interval_start.isoformat(),
+            "requested_window_end": interval_end.isoformat(),
+            "association_details": association_details,
+            "handshake_details": handshake_details,
+            "profile_rows_returned": (
+                len(profile_batch_payload.get("load_profile_intervals", []))
+                if isinstance(profile_batch_payload, dict)
+                else 0
+            ),
         },
         raw_frames=raw_frames,
         bytes_sent=transport.bytes_sent,
@@ -599,6 +727,74 @@ def _read_obis_value(
     return None, "read_failed"
 
 
+def _read_profile_capture_objects(
+    transport: SocketSerialAdapter,
+    client: Any,
+    *,
+    profile_obis_code: str,
+    config: LiveTcpDlmsSessionConfig,
+) -> tuple[list[tuple[Any, Any]] | None, str | None]:
+    from gurux_dlms.objects.GXDLMSProfileGeneric import GXDLMSProfileGeneric
+
+    profile = GXDLMSProfileGeneric(profile_obis_code)
+    value, error = _gurux_read_attribute(transport, client, profile, 3, config)
+    if error is not None:
+        return None, error
+    if not isinstance(value, list) or not value:
+        return None, "capture_objects_unavailable"
+    return profile.captureObjects, None
+
+
+def _read_profile_rows_via_gurux(
+    transport: SocketSerialAdapter,
+    client: Any,
+    *,
+    profile_obis_code: str,
+    interval_start: datetime,
+    interval_end: datetime,
+    channels: list[dict[str, object]],
+    capture_objects: list[tuple[Any, Any]],
+    config: LiveTcpDlmsSessionConfig,
+) -> tuple[dict[str, object] | None, str, str | None]:
+    from gurux_dlms.objects.GXDLMSProfileGeneric import GXDLMSProfileGeneric
+
+    profile = GXDLMSProfileGeneric(profile_obis_code)
+    profile.captureObjects = capture_objects
+    try:
+        reply = _send_pdu_list(
+            transport,
+            client,
+            _frame_list(client.readRowsByRange(profile, interval_start, interval_end)),
+            config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, "failed", str(exc)
+    if reply is None or not reply.isComplete():
+        return None, "failed", (
+            "Profile read did not complete over live TCP ingress within the expected deadline."
+        )
+    error_detail = _resolve_gurux_reply_error(reply)
+    if error_detail:
+        return None, "rejected", error_detail
+    try:
+        if reply.value is not None:
+            client.updateValue(profile, 2, reply.value)
+    except Exception as exc:  # noqa: BLE001
+        return None, "failed", str(exc)
+
+    return (
+        _build_profile_read_batch_payload(
+            profile_buffer=profile.buffer,
+            capture_objects=profile.captureObjects,
+            channels=channels,
+            interval_start=interval_start,
+            interval_end=interval_end,
+        ),
+        "accepted",
+        None,
+    )
+
+
 def _gurux_read_attribute(
     transport: SocketSerialAdapter,
     client: Any,
@@ -647,11 +843,11 @@ def _gurux_read_attribute(
 def _resolve_gurux_object_attribute_value(obj: Any, attr_index: int) -> Any | None:
     candidate_fields = ["value"]
     if attr_index == 2:
-        candidate_fields.extend(["time", "outputState"])
+        candidate_fields.extend(["time", "outputState", "buffer"])
     elif attr_index == 3:
-        candidate_fields.append("controlState")
+        candidate_fields.extend(["controlState", "captureObjects"])
     elif attr_index == 4:
-        candidate_fields.append("controlMode")
+        candidate_fields.extend(["controlMode", "capturePeriod"])
 
     for field_name in candidate_fields:
         if not hasattr(obj, field_name):
@@ -659,7 +855,129 @@ def _resolve_gurux_object_attribute_value(obj: Any, attr_index: int) -> Any | No
         value = getattr(obj, field_name)
         if value is not None:
             return value
+    if getattr(obj, "value", None) is not None:
+        return getattr(obj, "value")
     return None
+
+
+def _build_profile_read_batch_payload(
+    *,
+    profile_buffer: list[list[Any]],
+    capture_objects: list[tuple[Any, Any]],
+    channels: list[dict[str, object]],
+    interval_start: datetime,
+    interval_end: datetime,
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    requested_channels_by_obis = {
+        str(channel.get("obis_code")): channel
+        for channel in channels
+        if isinstance(channel.get("obis_code"), str) and channel.get("obis_code")
+    }
+    timestamp_index = _resolve_profile_timestamp_column_index(capture_objects)
+    channel_columns = _resolve_profile_channel_columns(
+        capture_objects,
+        requested_channels_by_obis=requested_channels_by_obis,
+    )
+
+    intervals: list[dict[str, object]] = []
+    for row in profile_buffer or []:
+        row_timestamp = (
+            _coerce_profile_timestamp(row[timestamp_index])
+            if timestamp_index is not None and timestamp_index < len(row)
+            else None
+        )
+        for column_index, channel in channel_columns:
+            if column_index >= len(row):
+                continue
+            value = row[column_index]
+            if value is None:
+                continue
+            row_interval_start, row_interval_end = _resolve_profile_row_window(
+                row_timestamp=row_timestamp,
+                channel=channel,
+                requested_interval_start=interval_start,
+                requested_interval_end=interval_end,
+            )
+            intervals.append(
+                {
+                    "channel_id": str(channel["channel_id"]),
+                    "interval_start": row_interval_start.isoformat(),
+                    "interval_end": row_interval_end.isoformat(),
+                    "value_numeric": _coerce_profile_numeric(value),
+                }
+            )
+
+    return {
+        "source_type": "command_result",
+        "captured_at": interval_end.isoformat(),
+        "received_at": now.isoformat(),
+        "status": "received",
+        "reading_context": {
+            "vertical_slice": "profile_read",
+            "live_tcp_ingress": True,
+            "requested_channel_count": len(channels),
+        },
+        "load_profile_intervals": intervals,
+    }
+
+
+def _resolve_profile_timestamp_column_index(
+    capture_objects: list[tuple[Any, Any]],
+) -> int | None:
+    for index, (capture_object, _) in enumerate(capture_objects):
+        logical_name = getattr(capture_object, "logicalName", None)
+        if logical_name in {"0.0.1.0.0.255", "0.0.1.1.0.255"}:
+            return index
+    return 0 if capture_objects else None
+
+
+def _resolve_profile_channel_columns(
+    capture_objects: list[tuple[Any, Any]],
+    *,
+    requested_channels_by_obis: dict[str, dict[str, object]],
+) -> list[tuple[int, dict[str, object]]]:
+    resolved: list[tuple[int, dict[str, object]]] = []
+    for index, (capture_object, _) in enumerate(capture_objects):
+        logical_name = getattr(capture_object, "logicalName", None)
+        if not isinstance(logical_name, str):
+            continue
+        channel = requested_channels_by_obis.get(logical_name)
+        if channel is None:
+            continue
+        resolved.append((index, channel))
+    return resolved
+
+
+def _coerce_profile_timestamp(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    candidate = getattr(value, "value", None)
+    if isinstance(candidate, datetime):
+        return candidate if candidate.tzinfo is not None else candidate.replace(tzinfo=UTC)
+    return None
+
+
+def _resolve_profile_row_window(
+    *,
+    row_timestamp: datetime | None,
+    channel: dict[str, object],
+    requested_interval_start: datetime,
+    requested_interval_end: datetime,
+) -> tuple[datetime, datetime]:
+    if row_timestamp is None:
+        return requested_interval_start, requested_interval_end
+    interval_seconds = channel.get("interval_seconds")
+    if isinstance(interval_seconds, int) and interval_seconds > 0:
+        return row_timestamp - timedelta(seconds=interval_seconds), row_timestamp
+    return requested_interval_start, requested_interval_end
+
+
+def _coerce_profile_numeric(value: Any) -> str:
+    candidate = getattr(value, "value", value)
+    return str(candidate)
 
 
 def _gurux_strategies_for_ln(logical_name: str) -> list[tuple[str, Any, int]]:

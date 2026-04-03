@@ -20,6 +20,7 @@ from app.runtime.adapters.dlms_cosem import GuruxDlmsAdapterBridge
 from app.runtime.adapters.gurux_tcp_ingress import (
     LiveTcpIdentityDiscoveryExecution,
     LiveTcpOnDemandReadExecution,
+    LiveTcpProfileReadExecution,
     LiveTcpRelayControlExecution,
     _resolve_gurux_object_attribute_value,
 )
@@ -28,6 +29,8 @@ from app.runtime.contracts import (
     RuntimeExecutionContext,
     RuntimeOnDemandReadAdapterRequest,
     RuntimeOnDemandReadOperation,
+    RuntimeProfileReadAdapterRequest,
+    RuntimeProfileReadOperation,
     RuntimeRelayControlAdapterRequest,
     RuntimeRelayControlOperation,
     RuntimeSecurityMaterialRefs,
@@ -325,6 +328,343 @@ def test_on_demand_read_adapter_uses_bound_live_tcp_ingress_connection(monkeypat
         assert result.register_snapshot.payload["1.0.1.8.0.255"] == "456.789"
         assert result.adapter_result_summary["live_tcp_ingress"] is True
         assert result.adapter_result_summary["bytes_sent"] == 12
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_profile_read_adapter_uses_bound_live_tcp_ingress_connection(monkeypatch) -> None:
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        meter_id = uuid.uuid4()
+        endpoint_id = uuid.uuid4()
+        profile_id = uuid.uuid4()
+        manager.bind_active_connection(
+            meter_id=meter_id,
+            endpoint_id=endpoint_id,
+            protocol_association_profile_id=profile_id,
+        )
+
+        def fake_execute_capture_load_profile_over_tcp_ingress(
+            *, sock, config, profile_obis_code, interval_start, interval_end, channels
+        ):
+            assert sock is not None
+            assert config.start_protocol == "iec62056_21"
+            assert profile_obis_code == "1.0.99.1.0.255"
+            assert len(channels) == 1
+            return LiveTcpProfileReadExecution(
+                invocation_status="accepted",
+                profile_read_batch_payload={
+                    "source_type": "command_result",
+                    "captured_at": interval_end.isoformat(),
+                    "received_at": interval_end.isoformat(),
+                    "status": "received",
+                    "load_profile_intervals": [
+                        {
+                            "channel_id": str(channels[0]["channel_id"]),
+                            "interval_start": interval_start.isoformat(),
+                            "interval_end": interval_end.isoformat(),
+                            "value_numeric": "11.5",
+                        }
+                    ],
+                },
+                error_detail=None,
+                protocol_trace={"start_protocol": config.start_protocol},
+                raw_frames=[{"stage": "fake-profile"}],
+                bytes_sent=21,
+                bytes_received=43,
+            )
+
+        monkeypatch.setattr(
+            "app.runtime.adapters.dlms_cosem.execute_capture_load_profile_over_tcp_ingress",
+            fake_execute_capture_load_profile_over_tcp_ingress,
+        )
+
+        result = GuruxDlmsAdapterBridge().execute_profile_read(
+            RuntimeProfileReadAdapterRequest(
+                adapter_key="gurux-dlms-bridge",
+                protocol_family=ProtocolFamily.DLMS_COSEM,
+                operation=RuntimeProfileReadOperation.CAPTURE_LOAD_PROFILE,
+                command_category=CommandCategory.PROFILE_CAPTURE,
+                execution_context=RuntimeExecutionContext(
+                    command_id=uuid.uuid4(),
+                    job_run_id=uuid.uuid4(),
+                    command_attempt_id=uuid.uuid4(),
+                    correlation_id="corr-live-profile",
+                    worker_identifier="worker-runtime-live-profile",
+                    request_id="request-live-profile",
+                    triggered_at=datetime.now(UTC),
+                ),
+                target=MeterRuntimeTarget(
+                    meter_id=meter_id,
+                    serial_number="meter-live-profile-001",
+                    utility_meter_number="utility-live-profile-001",
+                    meter_profile_id=None,
+                    manufacturer_code="SUN",
+                    meter_model_code="ST34",
+                    meter_model_name="Sunrise Test Meter",
+                    endpoint_assignment_id=uuid.uuid4(),
+                    endpoint_id=endpoint_id,
+                    endpoint_code="live-profile-endpoint",
+                    protocol_association_profile_id=profile_id,
+                ),
+                transport=RuntimeTransportConfig(
+                    endpoint_transport_type=ConnectivityTransportType.TCP_IP,
+                    host="127.0.0.1",
+                    port=listen_port,
+                ),
+                security=RuntimeSecurityMaterialRefs(
+                    authentication_mode=AssociationAuthenticationMode.NONE,
+                ),
+                request_payload={
+                    "capture_load_profile": {
+                        "interval_start": "2026-03-27T00:00:00+00:00",
+                        "interval_end": "2026-03-27T00:15:00+00:00",
+                        "channel_ids": ["00000000-0000-0000-0000-000000000123"],
+                        "channels": [
+                            {
+                                "channel_id": "00000000-0000-0000-0000-000000000123",
+                                "channel_code": "kwh_import",
+                                "obis_code": "1.0.1.8.0.255",
+                                "interval_seconds": 900,
+                                "unit": "kWh",
+                            }
+                        ],
+                    }
+                },
+                normalized_payload={
+                    "profile_read_operation": "capture_load_profile",
+                    "capture_load_profile": {
+                        "interval_start": "2026-03-27T00:00:00+00:00",
+                        "interval_end": "2026-03-27T00:15:00+00:00",
+                        "channel_ids": ["00000000-0000-0000-0000-000000000123"],
+                        "channel_count": 1,
+                        "channels": [
+                            {
+                                "channel_id": "00000000-0000-0000-0000-000000000123",
+                                "channel_code": "kwh_import",
+                                "obis_code": "1.0.1.8.0.255",
+                                "interval_seconds": 900,
+                                "unit": "kWh",
+                            }
+                        ],
+                    },
+                },
+                dispatch_envelope_record_id="dispatch-live-profile",
+                trace_references={
+                    "session_identifier": "session-live-profile",
+                    "delivery_contract_record_id": "delivery-live-profile",
+                    "envelope_record_id": "envelope-live-profile",
+                    "publication_contract_record_id": "publication-live-profile",
+                    "attestation_record_id": "attestation-live-profile",
+                    "settlement_record_id": "settlement-live-profile",
+                    "reconciliation_record_id": "reconciliation-live-profile",
+                    "interpretation_record_id": "interpretation-live-profile",
+                    "observation_record_id": "observation-live-profile",
+                    "invocation_result_record_id": "invocation-live-profile",
+                    "dispatch_request_record_id": "dispatch-request-live-profile",
+                    "selection_record_id": "selection-live-profile",
+                    "intent_record_id": "intent-live-profile",
+                    "closure_record_id": "closure-live-profile",
+                    "materialization_record_id": "materialization-live-profile",
+                    "post_processing_record_id": "post-processing-live-profile",
+                    "disposition_record_id": "disposition-live-profile",
+                    "outcome_record_id": "outcome-live-profile",
+                },
+                lineage=RuntimeExecutionSessionLineage(
+                    dispatch_request_identity="dispatch-identity-live-profile",
+                    queue_message_id="queue-live-profile",
+                    claim_token="claim-live-profile",
+                    intended_worker_path="runtime-live-profile",
+                ),
+                protocol_profile_code="dlms-live-profile",
+                iec62056_21_enabled=True,
+                iec_device_address=None,
+                iec_baud_rate=300,
+                client_address=1,
+                server_address=1,
+                server_address_size=4,
+                protocol_settings={"tcp_start_protocol": "iec", "use_broadcast_snrm_first": True},
+                protocol_defaults=None,
+            )
+        )
+
+        assert result.execution_outcome.value == "succeeded"
+        assert result.profile_read_batch is not None
+        assert len(result.profile_read_batch.load_profile_intervals) == 1
+        assert (
+            str(result.profile_read_batch.load_profile_intervals[0].value_numeric) == "11.5"
+        )
+        assert result.adapter_result_summary["live_tcp_ingress"] is True
+        assert result.adapter_result_summary["bytes_sent"] == 21
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_profile_read_adapter_fails_when_bound_live_connection_cannot_be_reused(
+    monkeypatch,
+) -> None:
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        meter_id = uuid.uuid4()
+        endpoint_id = uuid.uuid4()
+        profile_id = uuid.uuid4()
+        manager.bind_active_connection(
+            meter_id=meter_id,
+            endpoint_id=endpoint_id,
+            protocol_association_profile_id=profile_id,
+        )
+
+        borrowed_context = manager.borrow_bound_connection(meter_id=meter_id, endpoint_id=endpoint_id)
+        borrowed = borrowed_context.__enter__()
+        assert borrowed is not None
+        try:
+            result = GuruxDlmsAdapterBridge().execute_profile_read(
+                RuntimeProfileReadAdapterRequest(
+                    adapter_key="gurux-dlms-bridge",
+                    protocol_family=ProtocolFamily.DLMS_COSEM,
+                    operation=RuntimeProfileReadOperation.CAPTURE_LOAD_PROFILE,
+                    command_category=CommandCategory.PROFILE_CAPTURE,
+                    execution_context=RuntimeExecutionContext(
+                        command_id=uuid.uuid4(),
+                        job_run_id=uuid.uuid4(),
+                        command_attempt_id=uuid.uuid4(),
+                        correlation_id="corr-live-profile-busy",
+                        worker_identifier="worker-runtime-live-profile",
+                        request_id="request-live-profile-busy",
+                        triggered_at=datetime.now(UTC),
+                    ),
+                    target=MeterRuntimeTarget(
+                        meter_id=meter_id,
+                        serial_number="meter-live-profile-001",
+                        utility_meter_number="utility-live-profile-001",
+                        meter_profile_id=None,
+                        manufacturer_code="SUN",
+                        meter_model_code="ST34",
+                        meter_model_name="Sunrise Test Meter",
+                        endpoint_assignment_id=uuid.uuid4(),
+                        endpoint_id=endpoint_id,
+                        endpoint_code="live-profile-endpoint",
+                        protocol_association_profile_id=profile_id,
+                    ),
+                    transport=RuntimeTransportConfig(
+                        endpoint_transport_type=ConnectivityTransportType.TCP_IP,
+                        host="127.0.0.1",
+                        port=listen_port,
+                    ),
+                    security=RuntimeSecurityMaterialRefs(
+                        authentication_mode=AssociationAuthenticationMode.NONE,
+                    ),
+                    request_payload={
+                        "capture_load_profile": {
+                            "interval_start": "2026-03-27T00:00:00+00:00",
+                            "interval_end": "2026-03-27T00:15:00+00:00",
+                            "channel_ids": ["00000000-0000-0000-0000-000000000123"],
+                            "channels": [
+                                {
+                                    "channel_id": "00000000-0000-0000-0000-000000000123",
+                                    "channel_code": "kwh_import",
+                                    "obis_code": "1.0.1.8.0.255",
+                                    "interval_seconds": 900,
+                                    "unit": "kWh",
+                                }
+                            ],
+                        }
+                    },
+                    normalized_payload={
+                        "profile_read_operation": "capture_load_profile",
+                        "capture_load_profile": {
+                            "interval_start": "2026-03-27T00:00:00+00:00",
+                            "interval_end": "2026-03-27T00:15:00+00:00",
+                            "channel_ids": ["00000000-0000-0000-0000-000000000123"],
+                            "channel_count": 1,
+                            "channels": [
+                                {
+                                    "channel_id": "00000000-0000-0000-0000-000000000123",
+                                    "channel_code": "kwh_import",
+                                    "obis_code": "1.0.1.8.0.255",
+                                    "interval_seconds": 900,
+                                    "unit": "kWh",
+                                }
+                            ],
+                        },
+                    },
+                    dispatch_envelope_record_id="dispatch-live-profile-busy",
+                    trace_references={
+                        "session_identifier": "session-live-profile-busy",
+                        "delivery_contract_record_id": "delivery-live-profile-busy",
+                        "envelope_record_id": "envelope-live-profile-busy",
+                        "publication_contract_record_id": "publication-live-profile-busy",
+                        "attestation_record_id": "attestation-live-profile-busy",
+                        "settlement_record_id": "settlement-live-profile-busy",
+                        "reconciliation_record_id": "reconciliation-live-profile-busy",
+                        "interpretation_record_id": "interpretation-live-profile-busy",
+                        "observation_record_id": "observation-live-profile-busy",
+                        "invocation_result_record_id": "invocation-live-profile-busy",
+                        "dispatch_request_record_id": "dispatch-request-live-profile-busy",
+                        "selection_record_id": "selection-live-profile-busy",
+                        "intent_record_id": "intent-live-profile-busy",
+                        "closure_record_id": "closure-live-profile-busy",
+                        "materialization_record_id": "materialization-live-profile-busy",
+                        "post_processing_record_id": "post-processing-live-profile-busy",
+                        "disposition_record_id": "disposition-live-profile-busy",
+                        "outcome_record_id": "outcome-live-profile-busy",
+                    },
+                    lineage=RuntimeExecutionSessionLineage(
+                        dispatch_request_identity="dispatch-identity-live-profile-busy",
+                        queue_message_id="queue-live-profile-busy",
+                        claim_token="claim-live-profile-busy",
+                        intended_worker_path="runtime-live-profile",
+                    ),
+                    protocol_profile_code="dlms-live-profile",
+                    iec62056_21_enabled=True,
+                    iec_device_address=None,
+                    iec_baud_rate=300,
+                    client_address=1,
+                    server_address=1,
+                    server_address_size=4,
+                    protocol_settings={"tcp_start_protocol": "iec", "use_broadcast_snrm_first": True},
+                    protocol_defaults=None,
+                )
+            )
+        finally:
+            borrowed_context.__exit__(None, None, None)
+
+        assert result.execution_outcome.value == "failed"
+        assert result.error_detail is not None
+        assert "could not borrow it for real execution" in result.error_detail.lower()
+        assert result.adapter_result_summary["live_tcp_ingress"] is True
     finally:
         if client_socket is not None:
             client_socket.close()

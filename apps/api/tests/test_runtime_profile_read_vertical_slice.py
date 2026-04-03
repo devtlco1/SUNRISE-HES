@@ -16,6 +16,7 @@ from app.modules.connectivity.enums import (
 )
 from app.modules.jobs.dependencies import INTERNAL_TOKEN_HEADER
 from app.modules.jobs.models import JobRun
+from app.modules.readings.models import LoadProfileChannel
 from app.runtime.adapters.dlms_cosem import (
     _build_gurux_capture_load_profile_invocation_request,
     _interpret_gurux_capture_load_profile_response,
@@ -95,7 +96,7 @@ def _prepare_runtime_profile_read_chain(
                 ],
             },
         }
-    return _prepare_runtime_relay_control_chain(
+    attempt_id, command_id, job_run_id, session_identifier = _prepare_runtime_relay_control_chain(
         client,
         db_session,
         token,
@@ -103,6 +104,60 @@ def _prepare_runtime_profile_read_chain(
         category=CommandCategory.PROFILE_CAPTURE,
         mock_execution=mock_execution,
     )
+    command = db_session.get(MeterCommand, uuid.UUID(command_id))
+    assert command is not None
+    load_profile_channel = LoadProfileChannel(
+        meter_id=command.meter_id,
+        channel_code=f"runtime-profile-{command.id.hex[:8]}",
+        obis_code="1.0.1.8.0.255",
+        unit="kWh",
+        interval_seconds=900,
+        is_active=True,
+    )
+    db_session.add(load_profile_channel)
+    db_session.commit()
+    db_session.refresh(load_profile_channel)
+
+    reading_batch = mock_execution.get("reading_batch")
+    if isinstance(reading_batch, dict):
+        intervals = reading_batch.get("load_profile_intervals")
+        if isinstance(intervals, list):
+            for item in intervals:
+                if isinstance(item, dict):
+                    item["channel_id"] = str(load_profile_channel.id)
+
+    capture_load_profile_payload = {
+        "interval_start": "2026-03-27T00:00:00+00:00",
+        "interval_end": "2026-03-27T00:15:00+00:00",
+        "channel_ids": [str(load_profile_channel.id)],
+        "channel_count": 1,
+        "channels": [
+            {
+                "channel_id": str(load_profile_channel.id),
+                "channel_code": load_profile_channel.channel_code,
+                "obis_code": load_profile_channel.obis_code,
+                "interval_seconds": load_profile_channel.interval_seconds,
+                "unit": load_profile_channel.unit,
+            }
+        ],
+    }
+    command.request_payload = {
+        "profile_read_operation": "capture_load_profile",
+        "capture_load_profile": {
+            key: value
+            for key, value in capture_load_profile_payload.items()
+            if key != "channel_count"
+        },
+        "mock_execution": mock_execution,
+    }
+    command.normalized_payload = {
+        "profile_read_operation": "capture_load_profile",
+        "capture_load_profile": capture_load_profile_payload,
+        "mock_execution": mock_execution,
+    }
+    db_session.add(command)
+    db_session.commit()
+    return attempt_id, command_id, job_run_id, session_identifier
 
 
 def _build_profile_read_adapter_request_for_tests(
@@ -233,6 +288,18 @@ def test_runtime_profile_read_adapter_executes_for_valid_profile_chain(
         job_run.result_summary["runtime_capture_load_profile_execution_digest"]["channel_count"]
         == 1
     )
+    assert (
+        attempt.execution_metadata["runtime_profile_read_materialization"]["persisted_interval_count"]
+        == 1
+    )
+    assert (
+        meter_command.result_summary["runtime_profile_read_materialization"]["materialized"]
+        is True
+    )
+    assert (
+        job_run.result_summary["runtime_profile_read_materialization"]["skipped_duplicate_interval_count"]
+        == 0
+    )
 
 
 def test_runtime_profile_read_adapter_refuses_for_non_profile_command_category(
@@ -315,18 +382,57 @@ def test_runtime_profile_read_adapter_refuses_when_capture_load_profile_prerequi
     db_session: Session,
 ) -> None:
     token = _login_as_super_admin(client, db_session)
-    attempt_id, _, _, session_identifier = _prepare_runtime_profile_read_chain(
+    attempt_id, command_id, _, session_identifier = _prepare_runtime_profile_read_chain(
         client,
         db_session,
         token,
         command_template_code="runtime-profile-read-missing-batch",
         mock_execution={"outcome": "succeeded"},
     )
+    command = db_session.get(MeterCommand, uuid.UUID(command_id))
+    assert command is not None
+    command.request_payload = {
+        "profile_read_operation": "capture_load_profile",
+        "mock_execution": {"outcome": "succeeded"},
+    }
+    command.normalized_payload = {
+        "profile_read_operation": "capture_load_profile",
+        "mock_execution": {"outcome": "succeeded"},
+    }
+    db_session.add(command)
+    db_session.commit()
 
     response = _execute_runtime_profile_read_adapter(client, attempt_id, session_identifier)
 
     assert response.status_code == 409
     assert "capture-load-profile validator" in response.json()["detail"].lower()
+
+
+def test_runtime_profile_read_execution_does_not_require_placeholder_selection_capability(
+    client,
+    db_session: Session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    attempt_id, _, _, session_identifier = _prepare_runtime_profile_read_chain(
+        client,
+        db_session,
+        token,
+        command_template_code="runtime-profile-read-no-placeholder-capability",
+    )
+    _persist_attempt_execution_metadata_sections(
+        db_session,
+        attempt_id,
+        section_updates={
+            "runtime_protocol_adapter_selection": {
+                "supported_placeholder_capabilities": [],
+            }
+        },
+    )
+
+    response = _execute_runtime_profile_read_adapter(client, attempt_id, session_identifier)
+
+    assert response.status_code == 200
+    assert response.json()["result"]["execution_outcome"] == "succeeded"
 
 
 def test_repeated_runtime_profile_read_adapter_execution_is_idempotent_with_digest(
