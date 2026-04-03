@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { AuthorizedFetch } from "../../operational-shell";
+import { MeterDetailsAttachmentsTab } from "./meter-details-attachments-tab";
 import { MeterDetailsAuditTab } from "./meter-details-audit-tab";
 import { MeterDetailsCommercialTab } from "./meter-details-commercial-tab";
 import { MeterDetailsConfigurationTab } from "./meter-details-configuration-tab";
@@ -208,6 +209,7 @@ type ExecuteNowResponse = {
 
 type TabKey =
   | "summary"
+  | "attachments"
   | "configuration"
   | "connectivity"
   | "gis"
@@ -1240,6 +1242,11 @@ export function MeterDetailsCommandsTab({
           : "Meter detail context is still loading.",
       },
       {
+        label: "Attachments",
+        value: "No current attachment source",
+        note: "No meter-linked documents or files are exposed by the current repo contracts.",
+      },
+      {
         label: "Configuration",
         value: meter
           ? `${meter.manufacturer_code} / ${meter.meter_model_code}`
@@ -1341,6 +1348,12 @@ export function MeterDetailsCommandsTab({
         label: "Summary",
         value: meter ? "Identity + consumer context" : "Meter context loading",
         note: consumerLinkage?.linkage_status === "linked" ? "Linked consumer context available" : "Linked consumer context bounded",
+      },
+      {
+        key: "attachments" as const,
+        label: "Attachments",
+        value: "Read-only attachment visibility",
+        note: "Honest bounded empty state until a real meter attachment foundation exists",
       },
       {
         key: "configuration" as const,
@@ -1566,8 +1579,8 @@ export function MeterDetailsCommandsTab({
           <div>
             <h2>Meter workspace</h2>
             <p className="muted">
-              Unified operator foundation for identity, configuration, connectivity,
-              readings, and commands using the current meter-scoped truth.
+              Unified operator foundation for identity, attachments, configuration,
+              connectivity, readings, and commands using the current meter-scoped truth.
             </p>
           </div>
         </div>
@@ -1797,6 +1810,28 @@ export function MeterDetailsCommandsTab({
             ) : null}
           </section>
         </div>
+      ) : null}
+
+      {activeTab === "attachments" ? (
+        <MeterDetailsAttachmentsTab
+          meter={
+            meter
+              ? {
+                  id: meter.id,
+                  serial_number: meter.serial_number,
+                  utility_meter_number: meter.utility_meter_number,
+                  current_status: meter.current_status,
+                  transformer_id: meter.transformer_id,
+                  service_point_id: meter.service_point_id,
+                  last_seen_at: meter.last_seen_at,
+                }
+              : null
+          }
+          linkedServicePointId={linkedServicePointId}
+          linkedServicePointCode={linkedServicePointCode}
+          isAttachmentsContextLoading={isBootstrappingPage && !meter}
+          attachmentsContextError={!meter ? pageError : null}
+        />
       ) : null}
 
       {activeTab === "configuration" ? (

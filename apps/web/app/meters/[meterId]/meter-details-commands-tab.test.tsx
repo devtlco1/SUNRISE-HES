@@ -1026,6 +1026,7 @@ async function openMeterWorkspaceTab(
   user: ReturnType<typeof userEvent.setup>,
   tabName:
     | "Summary"
+    | "Attachments"
     | "Configuration"
     | "Connectivity"
     | "GIS"
@@ -1191,6 +1192,58 @@ describe("MeterDetailsCommandsTab", () => {
       "href",
       "/connectivity",
     );
+  });
+
+  it("renders the attachments tab with an honest bounded empty state", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Attachments");
+
+    const attachmentsPanel = screen
+      .getByRole("heading", { name: "Attachments context" })
+      .closest("section");
+    expect(attachmentsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(attachmentsPanel as HTMLElement).getByText("No current attachment source"),
+      ).toBeInTheDocument();
+      expect(
+        within(attachmentsPanel as HTMLElement).getByText(
+          "No meter-linked files or documents are currently exposed by the existing application contracts. This bounded tab reserves the operational slot without inventing attachment records.",
+        ),
+      ).toBeInTheDocument();
+      expect(within(attachmentsPanel as HTMLElement).getByText("0")).toBeInTheDocument();
+    });
+
+    const anchorsPanel = screen
+      .getByRole("heading", { name: "Attachment anchors" })
+      .closest("section");
+    expect(anchorsPanel).not.toBeNull();
+    expect(within(anchorsPanel as HTMLElement).getByText("SN-1001")).toBeInTheDocument();
+    expect(within(anchorsPanel as HTMLElement).getByText("SP-1001")).toBeInTheDocument();
+    expect(
+      within(anchorsPanel as HTMLElement).getByText("No registered attachments"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a bounded attachments unavailable state when meter detail context is missing", async () => {
+    const { fetchMock } = createMockApi({
+      meterStatus: 500,
+      meterErrorDetail: "Meter not found.",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Attachments");
+
+    expect(await screen.findAllByText("Meter not found.")).not.toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "Attachments context" })).toBeInTheDocument();
+    expect(screen.getByText("Attachments context not available for this meter.")).toBeInTheDocument();
   });
 
   it("renders the configuration tab with meter model, profile, and protocol context", async () => {
