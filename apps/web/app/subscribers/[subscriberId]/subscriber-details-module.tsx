@@ -73,6 +73,19 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function formatContactSummary({
+  phoneNumber,
+  email,
+}: {
+  phoneNumber: string | null;
+  email: string | null;
+}): string {
+  if (phoneNumber && email) {
+    return `${phoneNumber} • ${email}`;
+  }
+  return phoneNumber ?? email ?? "Not available";
+}
+
 export function SubscriberDetailsModule({
   subscriberId,
   authorizedFetch,
@@ -109,6 +122,66 @@ export function SubscriberDetailsModule({
     void loadDetail();
   }, [loadDetail]);
 
+  const primaryAccount = detail?.accounts[0] ?? null;
+  const primaryServicePointId =
+    detail?.current_operational_meter?.service_point_id ??
+    primaryAccount?.service_point_id ??
+    null;
+  const primaryServicePointCode =
+    detail?.current_operational_meter?.service_point_code ??
+    primaryAccount?.service_point_code ??
+    null;
+  const workspaceCards = detail
+    ? [
+        {
+          label: "Subscriber identity",
+          value: detail.full_name,
+          note: `${formatStatusLabel(detail.consumer_type)} • ${detail.external_ref ?? detail.national_id ?? "No external identifier"}`,
+        },
+        {
+          label: "Account context",
+          value:
+            primaryAccount?.account_number ??
+            `${detail.active_account_count} active account(s)`,
+          note:
+            detail.account_status_summary !== null
+              ? formatStatusLabel(detail.account_status_summary)
+              : "No active account summary recorded",
+        },
+        {
+          label: "Operational meter",
+          value:
+            detail.current_operational_meter?.serial_number ??
+            "No current operational meter",
+          note: detail.current_operational_meter
+            ? `${formatStatusLabel(detail.current_operational_meter.current_status)} • ${detail.current_operational_meter.utility_meter_number ?? "No utility number"}`
+            : "No active meter linkage recorded",
+        },
+        {
+          label: "Service point",
+          value: primaryServicePointCode ?? primaryServicePointId ?? "Not available",
+          note: primaryServicePointCode
+            ? "Primary install/premise context available"
+            : "No linked service point available",
+        },
+        {
+          label: "Contact",
+          value: formatContactSummary({
+            phoneNumber: detail.phone_number,
+            email: detail.email,
+          }),
+          note: detail.phone_number && detail.email
+            ? "Phone and email currently recorded"
+            : "Bounded subscriber contact visibility",
+        },
+        {
+          label: "Linked estate",
+          value: `${detail.linked_meter_count} meter(s)`,
+          note: `${detail.accounts.length} account(s) in current subscriber detail result set`,
+        },
+      ]
+    : [];
+
   return (
     <section className="panel">
       {detailError ? <p className="error-banner">{detailError}</p> : null}
@@ -143,7 +216,10 @@ export function SubscriberDetailsModule({
                   {detail.external_ref ?? detail.national_id ?? "No external identifier"}
                 </span>
                 <span className="artifact-pill">
-                  {detail.phone_number ?? detail.email ?? "No contact summary"}
+                  {formatContactSummary({
+                    phoneNumber: detail.phone_number,
+                    email: detail.email,
+                  })}
                 </span>
               </div>
             </section>
@@ -167,6 +243,50 @@ export function SubscriberDetailsModule({
                   {detail.current_operational_meter?.serial_number ?? "Not available"}
                 </strong>
               </div>
+            </div>
+
+            <div className="artifact-row">
+              {detail.current_operational_meter ? (
+                <Link
+                  className="primary-button"
+                  href={`/meters/${detail.current_operational_meter.id}`}
+                >
+                  Open meter detail
+                </Link>
+              ) : null}
+              {primaryAccount ? (
+                <Link className="secondary-button" href={`/accounts/${primaryAccount.id}`}>
+                  Open account detail
+                </Link>
+              ) : null}
+              {primaryServicePointId ? (
+                <Link
+                  className="secondary-button"
+                  href={`/service-points/${primaryServicePointId}`}
+                >
+                  Open service point detail
+                </Link>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="subpanel">
+            <div className="section-heading">
+              <div>
+                <h3>Subscriber workspace</h3>
+                <p className="muted">
+                  Dense operational and commercial summary for the current subscriber.
+                </p>
+              </div>
+            </div>
+            <div className="subscribers-overview-grid">
+              {workspaceCards.map((card) => (
+                <div key={card.label} className="stat-card subscribers-overview-card">
+                  <span className="stat-label">{card.label}</span>
+                  <strong>{card.value}</strong>
+                  <p className="muted">{card.note}</p>
+                </div>
+              ))}
             </div>
           </section>
 
@@ -254,6 +374,22 @@ export function SubscriberDetailsModule({
                   >
                     Open meter detail
                   </Link>
+                  {detail.current_operational_meter.account_id ? (
+                    <Link
+                      className="secondary-button"
+                      href={`/accounts/${detail.current_operational_meter.account_id}`}
+                    >
+                      Open account detail
+                    </Link>
+                  ) : null}
+                  {detail.current_operational_meter.service_point_id ? (
+                    <Link
+                      className="secondary-button"
+                      href={`/service-points/${detail.current_operational_meter.service_point_id}`}
+                    >
+                      Open service point detail
+                    </Link>
+                  ) : null}
                 </div>
               </div>
             ) : (
@@ -296,6 +432,19 @@ export function SubscriberDetailsModule({
                   <div className="command-list-item-meta">
                     <span>Account ID {account.id}</span>
                     <span>{account.current_meter_count} current meter(s)</span>
+                  </div>
+                  <div className="artifact-row">
+                    <Link className="secondary-button" href={`/accounts/${account.id}`}>
+                      Open account detail
+                    </Link>
+                    {account.service_point_id ? (
+                      <Link
+                        className="secondary-button"
+                        href={`/service-points/${account.service_point_id}`}
+                      >
+                        Open service point detail
+                      </Link>
+                    ) : null}
                   </div>
                 </div>
               ))}

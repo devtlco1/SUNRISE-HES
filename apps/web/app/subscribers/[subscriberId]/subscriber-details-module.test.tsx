@@ -125,8 +125,14 @@ describe("SubscriberDetailsModule", () => {
 
     renderSubscriberDetailsModuleInShell();
 
-    expect(await screen.findByText("Amina Al Balushi")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Amina Al Balushi" })).toBeInTheDocument();
     expect(screen.getAllByText("Active")).not.toHaveLength(0);
+    const workspacePanel = screen
+      .getByRole("heading", { name: "Subscriber workspace" })
+      .closest("section");
+    expect(workspacePanel).not.toBeNull();
+    expect(within(workspacePanel as HTMLElement).getByText("ACC-1001")).toBeInTheDocument();
+    expect(within(workspacePanel as HTMLElement).getByText("SP-1001")).toBeInTheDocument();
     const currentMeterPanel = screen
       .getByRole("heading", { name: "Current operational meter" })
       .closest("section");
@@ -145,6 +151,29 @@ describe("SubscriberDetailsModule", () => {
       "href",
       "/meters/meter-1",
     );
+    expect(
+      within(currentMeterPanel as HTMLElement).getByRole("link", {
+        name: "Open account detail",
+      }),
+    ).toHaveAttribute("href", "/accounts/account-1");
+    expect(
+      within(currentMeterPanel as HTMLElement).getByRole("link", {
+        name: "Open service point detail",
+      }),
+    ).toHaveAttribute("href", "/service-points/sp-1");
+
+    const accountsPanel = screen.getByRole("heading", { name: "Accounts" }).closest("section");
+    expect(accountsPanel).not.toBeNull();
+    expect(
+      within(accountsPanel as HTMLElement).getByRole("link", {
+        name: "Open account detail",
+      }),
+    ).toHaveAttribute("href", "/accounts/account-1");
+    expect(
+      within(accountsPanel as HTMLElement).getByRole("link", {
+        name: "Open service point detail",
+      }),
+    ).toHaveAttribute("href", "/service-points/sp-1");
   });
 
   it("renders a bounded loading state while subscriber detail is bootstrapping", async () => {
@@ -163,7 +192,7 @@ describe("SubscriberDetailsModule", () => {
     renderSubscriberDetailsModuleInShell();
 
     expect(await screen.findByText("Loading subscriber detail...")).toBeInTheDocument();
-    expect(await screen.findByText("Amina Al Balushi")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Amina Al Balushi" })).toBeInTheDocument();
   });
 
   it("renders bounded empty sections when the subscriber has no linked accounts or meters", async () => {
@@ -197,6 +226,9 @@ describe("SubscriberDetailsModule", () => {
       screen.getByText("No current operational meter available for this subscriber."),
     ).toBeInTheDocument();
     expect(screen.getByText("No meters linked to this subscriber.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No current operational meter"),
+    ).toBeInTheDocument();
   });
 
   it("renders a bounded error state when subscriber detail fails", async () => {
