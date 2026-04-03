@@ -70,7 +70,44 @@ type MockLoadProfileChannel = {
   channel_code: string;
   obis_code: string;
   interval_seconds: number;
+  unit?: string | null;
   is_active: boolean;
+};
+
+type MockMeterReadingItem = {
+  id: string;
+  batch_id: string;
+  meter_id: string;
+  obis_code: string;
+  reading_type: string;
+  value_numeric: string | null;
+  value_text: string | null;
+  value_timestamp: string | null;
+  unit: string | null;
+  quality: string | null;
+  captured_at: string;
+  metadata: Record<string, unknown> | null;
+};
+
+type MockRegisterSnapshotItem = {
+  id: string;
+  meter_id: string;
+  related_batch_id: string;
+  snapshot_type: string;
+  captured_at: string;
+  payload: Record<string, unknown>;
+  checksum: string | null;
+};
+
+type MockLoadProfileIntervalItem = {
+  id: string;
+  meter_id: string;
+  channel_id: string;
+  interval_start: string;
+  interval_end: string;
+  value_numeric: string | null;
+  quality: string | null;
+  source_batch_id: string | null;
 };
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -157,6 +194,7 @@ function createMockApi({
       channel_code: "import-wh",
       obis_code: "1.0.1.8.0.255",
       interval_seconds: 900,
+      unit: "kWh",
       is_active: true,
     },
     {
@@ -164,7 +202,50 @@ function createMockApi({
       channel_code: "export-wh",
       obis_code: "1.0.2.8.0.255",
       interval_seconds: 900,
+      unit: "kWh",
       is_active: true,
+    },
+  ],
+  readingsItems = [
+    {
+      id: "reading-1",
+      batch_id: "batch-1",
+      meter_id: "meter-1",
+      obis_code: "1.0.1.8.0.255",
+      reading_type: "register",
+      value_numeric: "1552.41",
+      value_text: null,
+      value_timestamp: null,
+      unit: "kWh",
+      quality: "validated",
+      captured_at: "2026-03-30T11:05:00.000Z",
+      metadata: null,
+    },
+  ],
+  registerSnapshots = [
+    {
+      id: "snapshot-1",
+      meter_id: "meter-1",
+      related_batch_id: "batch-2",
+      snapshot_type: "billing",
+      captured_at: "2026-03-30T10:55:00.000Z",
+      payload: {
+        total_import_kwh: 1552.41,
+        md_kw: 7.2,
+      },
+      checksum: null,
+    },
+  ],
+  loadProfileIntervals = [
+    {
+      id: "interval-1",
+      meter_id: "meter-1",
+      channel_id: "channel-1",
+      interval_start: "2026-03-30T10:00:00.000Z",
+      interval_end: "2026-03-30T10:15:00.000Z",
+      value_numeric: "11.50",
+      quality: "valid",
+      source_batch_id: "batch-3",
     },
   ],
   consumerLinkageResponse = {
@@ -195,6 +276,9 @@ function createMockApi({
   protocolProfiles?: MockProtocolProfile[];
   templateItems?: MockCommandTemplate[];
   loadProfileChannels?: MockLoadProfileChannel[];
+  readingsItems?: MockMeterReadingItem[];
+  registerSnapshots?: MockRegisterSnapshotItem[];
+  loadProfileIntervals?: MockLoadProfileIntervalItem[];
   consumerLinkageResponse?: MockConsumerLinkage;
 } = {}) {
   const requests: RequestLog[] = [];
@@ -397,6 +481,27 @@ function createMockApi({
       });
     }
 
+    if (url.includes("/api/v1/meters/meter-1/readings")) {
+      return jsonResponse({
+        total: readingsItems.length,
+        items: readingsItems,
+      });
+    }
+
+    if (url.includes("/api/v1/meters/meter-1/register-snapshots")) {
+      return jsonResponse({
+        total: registerSnapshots.length,
+        items: registerSnapshots,
+      });
+    }
+
+    if (url.includes("/api/v1/meters/meter-1/load-profile-intervals")) {
+      return jsonResponse({
+        total: loadProfileIntervals.length,
+        items: loadProfileIntervals,
+      });
+    }
+
     if (url.includes("/api/v1/meters/meter-1/commands/recent")) {
       const parsedUrl = new URL(url);
       const family = parsedUrl.searchParams.get("family");
@@ -540,6 +645,15 @@ function renderMeterTabInShell() {
   );
 }
 
+async function openMeterWorkspaceTab(
+  user: ReturnType<typeof userEvent.setup>,
+  tabName: "Summary" | "Connectivity" | "Readings" | "Commands",
+) {
+  await user.click(
+    await screen.findByRole("tab", { name: new RegExp(tabName, "i") }),
+  );
+}
+
 describe("MeterDetailsCommandsTab", () => {
   beforeEach(() => {
     window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:8000");
@@ -554,8 +668,10 @@ describe("MeterDetailsCommandsTab", () => {
   it("renders recent commands for the meter and hides unsupported families", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
 
     expect(await screen.findByRole("link", { name: "Current meter" })).toBeInTheDocument();
     expect(await screen.findAllByText("profile-capture-template")).not.toHaveLength(0);
@@ -637,8 +753,10 @@ describe("MeterDetailsCommandsTab", () => {
   it("renders the connectivity context panel with current endpoint and protocol state", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Connectivity");
 
     expect(await screen.findByText("Connectivity context")).toBeInTheDocument();
 
@@ -751,6 +869,7 @@ describe("MeterDetailsCommandsTab", () => {
       consumerLinkageErrorDetail: "Consumer linkage temporarily unavailable.",
     });
     vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
 
     renderMeterTabInShell();
 
@@ -758,8 +877,9 @@ describe("MeterDetailsCommandsTab", () => {
       await screen.findByText("Consumer linkage temporarily unavailable."),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Operational summary" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Connectivity context" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Action readiness" })).toBeInTheDocument();
+    await openMeterWorkspaceTab(user, "Connectivity");
+    expect(screen.getByRole("heading", { name: "Connectivity context" })).toBeInTheDocument();
   });
 
   it("renders a bounded loading state while consumer linkage is bootstrapping", async () => {
@@ -783,6 +903,7 @@ describe("MeterDetailsCommandsTab", () => {
 
   it("renders a bounded loading state while connectivity context is bootstrapping", async () => {
     const { fetchMock } = createMockApi();
+    const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -795,9 +916,32 @@ describe("MeterDetailsCommandsTab", () => {
     );
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Connectivity");
 
     expect(await screen.findByText("Loading connectivity context...")).toBeInTheDocument();
     expect(await screen.findByText("TCP Primary")).toBeInTheDocument();
+  });
+
+  it("renders the readings tab with latest reading, billing, and interval context", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Readings");
+
+    const readingsPanel = (
+      await screen.findByRole("heading", { name: "Readings context" })
+    ).closest("section");
+    expect(readingsPanel).not.toBeNull();
+    expect(within(readingsPanel as HTMLElement).getByText("1552.41 kWh")).toBeInTheDocument();
+    expect(
+      within(readingsPanel as HTMLElement).getByText(/Total Import Kwh: 1552.41/i),
+    ).toBeInTheDocument();
+    expect(within(readingsPanel as HTMLElement).getByText("11.50 kWh")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open readings workspace" }),
+    ).toHaveAttribute("href", "/readings?meterId=meter-1");
   });
 
   it("renders the action readiness panel for the existing execute-now flows", async () => {
@@ -903,8 +1047,10 @@ describe("MeterDetailsCommandsTab", () => {
       protocolProfiles: [],
     });
     vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Connectivity");
 
     await waitFor(() => {
       expect(
@@ -980,14 +1126,16 @@ describe("MeterDetailsCommandsTab", () => {
       endpointAssignmentsErrorDetail: "Endpoint assignments unavailable.",
     });
     vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
 
     renderMeterTabInShell();
 
     expect(
       await screen.findByText(
-        "Unable to load complete meter connectivity and command context.",
+        "Unable to load complete meter detail context.",
       ),
     ).toBeInTheDocument();
+    await openMeterWorkspaceTab(user, "Connectivity");
 
     const connectivityPanel = screen
       .getByRole("heading", { name: "Connectivity context" })
@@ -1012,6 +1160,7 @@ describe("MeterDetailsCommandsTab", () => {
     const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
 
     const relayRow = await screen.findByRole("button", {
       name: /relay-disconnect-template/i,
@@ -1033,6 +1182,7 @@ describe("MeterDetailsCommandsTab", () => {
     const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
 
     const onDemandRow = await screen.findByRole("button", {
       name: /on-demand-read-template/i,
@@ -1061,6 +1211,7 @@ describe("MeterDetailsCommandsTab", () => {
     const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
     await screen.findByText("Recent commands");
 
     const profileForm = screen
@@ -1110,6 +1261,7 @@ describe("MeterDetailsCommandsTab", () => {
     const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
     await screen.findByText("Recent commands");
 
     const relayForm = screen
@@ -1144,6 +1296,7 @@ describe("MeterDetailsCommandsTab", () => {
     const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
     await screen.findByText("Recent commands");
 
     const relayForm = screen
@@ -1186,6 +1339,7 @@ describe("MeterDetailsCommandsTab", () => {
     const user = userEvent.setup();
 
     renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Commands");
     await screen.findByText("Recent commands");
 
     const onDemandForm = screen

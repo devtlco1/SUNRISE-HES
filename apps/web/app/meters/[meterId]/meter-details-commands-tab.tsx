@@ -133,6 +133,7 @@ type LoadProfileChannel = {
   channel_code: string;
   obis_code: string;
   interval_seconds: number;
+  unit?: string | null;
   is_active: boolean;
 };
 
@@ -141,13 +142,64 @@ type LoadProfileChannelListResponse = {
   items: LoadProfileChannel[];
 };
 
+type MeterReadingItem = {
+  id: string;
+  batch_id: string;
+  meter_id: string;
+  obis_code: string;
+  reading_type: string;
+  value_numeric: string | null;
+  value_text: string | null;
+  value_timestamp: string | null;
+  unit: string | null;
+  quality: string | null;
+  captured_at: string;
+  metadata: Record<string, unknown> | null;
+};
+
+type MeterReadingListResponse = {
+  total: number;
+  items: MeterReadingItem[];
+};
+
+type MeterRegisterSnapshotItem = {
+  id: string;
+  meter_id: string;
+  related_batch_id: string;
+  snapshot_type: string;
+  captured_at: string;
+  payload: Record<string, unknown>;
+  checksum: string | null;
+};
+
+type MeterRegisterSnapshotListResponse = {
+  total: number;
+  items: MeterRegisterSnapshotItem[];
+};
+
+type LoadProfileIntervalItem = {
+  id: string;
+  meter_id: string;
+  channel_id: string;
+  interval_start: string;
+  interval_end: string;
+  value_numeric: string | null;
+  quality: string | null;
+  source_batch_id: string | null;
+};
+
+type LoadProfileIntervalListResponse = {
+  total: number;
+  items: LoadProfileIntervalItem[];
+};
+
 type ExecuteNowResponse = {
   result: {
     command_id: string;
   };
 };
 
-type TabKey = "overview" | "commands";
+type TabKey = "summary" | "connectivity" | "readings" | "commands";
 type FamilyFilter = "all" | CommandOperationalFamily;
 type RelayOperation = "disconnect" | "reconnect";
 
@@ -189,6 +241,79 @@ function formatConnectivityFreshnessHint(lastSeenAt: string | null): string {
   return lastSeenAt
     ? "Recent connectivity signal recorded"
     : "No recent connectivity signal";
+}
+
+function formatReadingValue(reading: MeterReadingItem): string {
+  if (reading.value_numeric !== null) {
+    return `${reading.value_numeric}${reading.unit ? ` ${reading.unit}` : ""}`;
+  }
+  if (reading.value_text) {
+    return reading.value_text;
+  }
+  if (reading.value_timestamp) {
+    return formatDateTime(reading.value_timestamp);
+  }
+  return "Not available";
+}
+
+function formatPayloadKey(value: string): string {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatPayloadValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "Not available";
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => formatPayloadValue(item)).join(", ");
+  }
+  return JSON.stringify(value);
+}
+
+function formatBillingPrimaryValue(payload: Record<string, unknown>): string {
+  const firstEntry = Object.entries(payload).find(([, value]) => value !== null && value !== undefined);
+  if (!firstEntry) {
+    return "No payload value";
+  }
+
+  const [key, value] = firstEntry;
+  return `${formatPayloadKey(key)}: ${formatPayloadValue(value)}`;
+}
+
+function formatBillingSummary(payload: Record<string, unknown>): string {
+  const summaryEntries = Object.entries(payload)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .slice(0, 2);
+
+  if (summaryEntries.length === 0) {
+    return "No structured billing payload recorded.";
+  }
+
+  return summaryEntries
+    .map(([key, value]) => `${formatPayloadKey(key)} ${formatPayloadValue(value)}`)
+    .join(" • ");
+}
+
+function formatIntervalValue(
+  interval: LoadProfileIntervalItem,
+  channel: LoadProfileChannel | null,
+): string {
+  if (interval.value_numeric === null) {
+    return "Not available";
+  }
+
+  return `${interval.value_numeric}${channel?.unit ? ` ${channel.unit}` : ""}`;
+}
+
+function formatIntervalWindow(interval: LoadProfileIntervalItem): string {
+  return `${formatDateTime(interval.interval_start)} to ${formatDateTime(interval.interval_end)}`;
 }
 
 type ActionReadinessLevel = "ready" | "partially ready" | "unavailable";
@@ -237,10 +362,17 @@ export function MeterDetailsCommandsTab({
   meterId: string;
   authorizedFetch: AuthorizedFetch;
 }) {
-  const [activeTab, setActiveTab] = useState<TabKey>("commands");
+  const [activeTab, setActiveTab] = useState<TabKey>("summary");
   const [meter, setMeter] = useState<MeterDetail | null>(null);
   const [consumerLinkage, setConsumerLinkage] =
     useState<MeterConsumerLinkage | null>(null);
+  const [meterReadings, setMeterReadings] = useState<MeterReadingItem[]>([]);
+  const [billingSnapshots, setBillingSnapshots] = useState<
+    MeterRegisterSnapshotItem[]
+  >([]);
+  const [loadProfileIntervals, setLoadProfileIntervals] = useState<
+    LoadProfileIntervalItem[]
+  >([]);
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[]>([]);
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
   const [selectedCommandDetail, setSelectedCommandDetail] =
@@ -317,6 +449,16 @@ export function MeterDetailsCommandsTab({
     () => loadProfileChannels.filter((channel) => channel.is_active),
     [loadProfileChannels],
   );
+  const loadProfileChannelById = useMemo(
+    () => new Map(loadProfileChannels.map((channel) => [channel.id, channel])),
+    [loadProfileChannels],
+  );
+  const latestReading = meterReadings[0] ?? null;
+  const latestBillingSnapshot = billingSnapshots[0] ?? null;
+  const latestInterval = loadProfileIntervals[0] ?? null;
+  const latestIntervalChannel = latestInterval
+    ? loadProfileChannelById.get(latestInterval.channel_id) ?? null
+    : null;
 
   const profileCaptureTemplates = useMemo(
     () =>
@@ -385,6 +527,18 @@ export function MeterDetailsCommandsTab({
 
   const isConsumerLinkageLoading =
     isBootstrappingPage && consumerLinkage === null && consumerLinkageError === null;
+
+  const isReadingsContextLoading =
+    isBootstrappingPage &&
+    meterReadings.length === 0 &&
+    billingSnapshots.length === 0 &&
+    loadProfileIntervals.length === 0;
+
+  const hasReadingsContext =
+    latestReading !== null ||
+    latestBillingSnapshot !== null ||
+    latestInterval !== null ||
+    activeLoadProfileChannels.length > 0;
 
   const isActionReadinessLoading =
     isBootstrappingPage &&
@@ -547,6 +701,9 @@ export function MeterDetailsCommandsTab({
         profilesResult,
         channelsResult,
         consumerLinkageResult,
+        readingsResult,
+        snapshotsResult,
+        intervalsResult,
       ] =
         await Promise.allSettled([
           authorizedFetch<CommandTemplateListResponse>("/api/v1/command-templates"),
@@ -562,6 +719,15 @@ export function MeterDetailsCommandsTab({
           authorizedFetch<MeterConsumerLinkage>(
             `/api/v1/meters/${meterId}/consumer-linkage`,
           ),
+          authorizedFetch<MeterReadingListResponse>(
+            `/api/v1/meters/${meterId}/readings?limit=5`,
+          ),
+          authorizedFetch<MeterRegisterSnapshotListResponse>(
+            `/api/v1/meters/${meterId}/register-snapshots?limit=5`,
+          ),
+          authorizedFetch<LoadProfileIntervalListResponse>(
+            `/api/v1/meters/${meterId}/load-profile-intervals?limit=5`,
+          ),
         ]);
 
       setTemplates(
@@ -575,6 +741,19 @@ export function MeterDetailsCommandsTab({
       );
       setLoadProfileChannels(
         channelsResult.status === "fulfilled" ? channelsResult.value.items : [],
+      );
+      setMeterReadings(
+        readingsResult.status === "fulfilled" ? readingsResult.value.items : [],
+      );
+      setBillingSnapshots(
+        snapshotsResult.status === "fulfilled"
+          ? snapshotsResult.value.items.filter(
+              (item) => item.snapshot_type === "billing",
+            )
+          : [],
+      );
+      setLoadProfileIntervals(
+        intervalsResult.status === "fulfilled" ? intervalsResult.value.items : [],
       );
       setConsumerLinkage(
         consumerLinkageResult.status === "fulfilled"
@@ -593,13 +772,19 @@ export function MeterDetailsCommandsTab({
         templatesResult.status === "rejected" ||
         assignmentsResult.status === "rejected" ||
         profilesResult.status === "rejected" ||
-        channelsResult.status === "rejected"
+        channelsResult.status === "rejected" ||
+        readingsResult.status === "rejected" ||
+        snapshotsResult.status === "rejected" ||
+        intervalsResult.status === "rejected"
       ) {
-        setPageError("Unable to load complete meter connectivity and command context.");
+        setPageError("Unable to load complete meter detail context.");
       }
     } catch (error) {
       setMeter(null);
       setConsumerLinkage(null);
+      setMeterReadings([]);
+      setBillingSnapshots([]);
+      setLoadProfileIntervals([]);
       setTemplates([]);
       setEndpointAssignments([]);
       setProtocolProfiles([]);
@@ -608,7 +793,7 @@ export function MeterDetailsCommandsTab({
       setPageError(
         error instanceof Error
           ? error.message
-          : "Unable to load meter command dependencies.",
+          : "Unable to load meter detail dependencies.",
       );
     } finally {
       setIsBootstrappingPage(false);
@@ -863,6 +1048,105 @@ export function MeterDetailsCommandsTab({
   const linkedServicePointId =
     consumerLinkage?.service_point_id ?? meter?.service_point_id ?? null;
   const linkedServicePointCode = consumerLinkage?.service_point_code ?? null;
+  const workspaceCards = useMemo(
+    () => [
+      {
+        label: "Meter identity",
+        value: meter?.serial_number ?? meterId,
+        note: meter
+          ? `${meter.current_status} • ${meter.utility_meter_number ?? "No utility number"}`
+          : "Meter detail context is still loading.",
+      },
+      {
+        label: "Connectivity",
+        value:
+          primaryEndpointAssignment?.endpoint_code ??
+          meter?.communication_profile_code ??
+          "No active context",
+        note: defaultProtocolProfile
+          ? `${defaultProtocolProfile.code} • ${formatConnectivityFreshnessHint(
+              meter?.last_seen_at ?? null,
+            )}`
+          : formatConnectivityFreshnessHint(meter?.last_seen_at ?? null),
+      },
+      {
+        label: "Readings",
+        value: latestReading
+          ? formatReadingValue(latestReading)
+          : latestBillingSnapshot
+            ? formatBillingPrimaryValue(latestBillingSnapshot.payload)
+            : latestInterval
+              ? formatIntervalValue(latestInterval, latestIntervalChannel)
+              : "No recent reading context",
+        note: latestReading
+          ? `Latest raw reading ${formatDateTime(latestReading.captured_at)}`
+          : latestBillingSnapshot
+            ? `Latest billing snapshot ${formatDateTime(latestBillingSnapshot.captured_at)}`
+            : latestInterval
+              ? `Latest interval ${formatIntervalWindow(latestInterval)}`
+              : "Readings context is currently empty for this meter.",
+      },
+      {
+        label: "Commands",
+        value: latestRecentCommand
+          ? formatFamilySummary(latestRecentCommand.family_specific_outcome_summary)
+          : "No command activity",
+        note: latestRecentCommand
+          ? `${latestRecentCommand.command_template_code} • ${latestRecentCommand.command_status}`
+          : "No recent supported commands recorded for this meter.",
+      },
+    ],
+    [
+      defaultProtocolProfile,
+      latestBillingSnapshot,
+      latestInterval,
+      latestIntervalChannel,
+      latestReading,
+      latestRecentCommand,
+      meter,
+      meterId,
+      primaryEndpointAssignment,
+    ],
+  );
+  const tabCards = useMemo(
+    () => [
+      {
+        key: "summary" as const,
+        label: "Summary",
+        value: meter ? "Identity + consumer context" : "Meter context loading",
+        note: consumerLinkage?.linkage_status === "linked" ? "Linked consumer context available" : "Linked consumer context bounded",
+      },
+      {
+        key: "connectivity" as const,
+        label: "Connectivity",
+        value: hasConnectivityContext ? "Endpoint + protocol context" : "Connectivity gaps visible",
+        note: activeEndpointAssignments.length > 0 ? `${activeEndpointAssignments.length} active endpoint assignments in scope` : "No active endpoint assignment in scope",
+      },
+      {
+        key: "readings" as const,
+        label: "Readings",
+        value: hasReadingsContext ? "Latest reads in scope" : "No current readings context",
+        note: `${meterReadings.length} raw • ${billingSnapshots.length} billing • ${loadProfileIntervals.length} interval`,
+      },
+      {
+        key: "commands" as const,
+        label: "Commands",
+        value: `${recentCommands.length} recent command${recentCommands.length === 1 ? "" : "s"}`,
+        note: "Recent command detail and execute-now actions remain available",
+      },
+    ],
+    [
+      activeEndpointAssignments.length,
+      billingSnapshots.length,
+      consumerLinkage?.linkage_status,
+      hasConnectivityContext,
+      hasReadingsContext,
+      loadProfileIntervals.length,
+      meter,
+      meterReadings.length,
+      recentCommands.length,
+    ],
+  );
 
   return (
     <section className="panel">
@@ -1005,322 +1289,420 @@ export function MeterDetailsCommandsTab({
         ) : null}
       </section>
 
-      <section className="subpanel meter-summary-panel">
+      <section className="subpanel meter-detail-workspace-panel">
         <div className="section-heading">
           <div>
-            <h2>Operational summary</h2>
+            <h2>Meter workspace</h2>
             <p className="muted">
-              Current meter context for the existing operational commands
-              experience.
+              Unified operator foundation for identity, connectivity, readings,
+              and commands using the current meter-scoped truth.
             </p>
           </div>
         </div>
 
-        {isBootstrappingPage && !meter ? (
-          <p className="muted">Loading meter summary...</p>
-        ) : null}
+        <div className="meter-detail-workspace-grid">
+          {workspaceCards.map((card) => (
+            <div key={card.label} className="stat-card">
+              <span className="stat-label">{card.label}</span>
+              <strong>{card.value}</strong>
+              <p className="muted">{card.note}</p>
+            </div>
+          ))}
+        </div>
 
-        {!isBootstrappingPage && meter ? (
-          <div className="meter-summary-grid">
-            <div className="stat-card">
-              <span className="stat-label">Meter ID</span>
-              <strong>{meter.id}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Serial number</span>
-              <strong>{meter.serial_number}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Utility meter number</span>
-              <strong>{meter.utility_meter_number ?? "Not available"}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Status</span>
-              <strong>{meter.current_status}</strong>
-            </div>
-              <div className="stat-card">
-                <span className="stat-label">Transformer ID</span>
-                <strong>{meter.transformer_id ?? "Not available"}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Service point ID</span>
-                <strong>{meter.service_point_id ?? "Not available"}</strong>
-              </div>
-            <div className="stat-card">
-              <span className="stat-label">Communication profile</span>
-              <strong>{meter.communication_profile_code ?? "Not available"}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Meter profile</span>
-              <strong>{meter.meter_profile_code ?? "Not available"}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Manufacturer / model</span>
-              <strong>
-                {meter.manufacturer_code} / {meter.meter_model_code}
-              </strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Last seen</span>
-              <strong>{formatDateTime(meter.last_seen_at)}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Primary endpoint</span>
-              <strong>
-                {primaryEndpointAssignment?.endpoint_code ?? "No active endpoint"}
-              </strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Protocol profile</span>
-              <strong>
-                {defaultProtocolProfile?.code ?? "No active protocol profile"}
-              </strong>
-            </div>
-          </div>
-        ) : null}
-
-        {!isBootstrappingPage && !meter ? (
-          <p className="muted">Meter summary not available.</p>
-        ) : null}
+        <div className="meter-detail-tab-row" role="tablist" aria-label="Meter detail workspace tabs">
+          {tabCards.map((tab) => (
+            <button
+              key={tab.key}
+              aria-selected={activeTab === tab.key}
+              className={
+                activeTab === tab.key ? "meter-detail-tab-button active" : "meter-detail-tab-button"
+              }
+              onClick={() => setActiveTab(tab.key)}
+              role="tab"
+              type="button"
+            >
+              <span className="meter-detail-tab-label">{tab.label}</span>
+              <strong>{tab.value}</strong>
+              <span className="muted">{tab.note}</span>
+            </button>
+          ))}
+        </div>
       </section>
 
-      <section className="subpanel meter-summary-panel">
-        <div className="section-heading">
-          <div>
-            <h2>Connectivity context</h2>
-            <p className="muted">
-              Current endpoint and protocol context for this meter&apos;s
-              operational path.
-            </p>
-          </div>
-        </div>
-
-        {isConnectivityContextLoading ? (
-          <p className="muted">Loading connectivity context...</p>
-        ) : null}
-
-        {!isConnectivityContextLoading && hasConnectivityContext ? (
-          <div className="meter-summary-grid">
-            <div className="stat-card">
-              <span className="stat-label">Primary endpoint</span>
-              <strong>
-                {primaryEndpointAssignment?.endpoint_display_name ??
-                  primaryEndpointAssignment?.endpoint_code ??
-                  "No active endpoint"}
-              </strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Endpoint code</span>
-              <strong>
-                {primaryEndpointAssignment?.endpoint_code ?? "No active endpoint"}
-              </strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Endpoint assignment status</span>
-              <strong>
-                {primaryEndpointAssignment?.assignment_status ?? "Not assigned"}
-              </strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Primary assignment</span>
-              <strong>
-                {primaryEndpointAssignment
-                  ? primaryEndpointAssignment.is_primary
-                    ? "Primary"
-                    : "Secondary"
-                  : "Not available"}
-              </strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Communication profile</span>
-              <strong>{meter?.communication_profile_code ?? "Not available"}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Protocol profile</span>
-              <strong>{defaultProtocolProfile?.code ?? "Not available"}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Protocol family</span>
-              <strong>
-                {defaultProtocolProfile?.protocol_family ?? "Not available"}
-              </strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Connectivity freshness</span>
-              <strong>
-                {formatConnectivityFreshnessHint(meter?.last_seen_at ?? null)}
-              </strong>
-            </div>
-          </div>
-        ) : null}
-
-        {!isConnectivityContextLoading && !hasConnectivityContext ? (
-          <p className="muted">Connectivity context not available.</p>
-        ) : null}
-      </section>
-
-      <section className="subpanel meter-summary-panel">
-        <div className="section-heading">
-          <div>
-            <h2>Consumer linkage</h2>
-            <p className="muted">
-              Current linked subscriber context for operational navigation into the
-              bounded consumers slice.
-            </p>
-          </div>
-        </div>
-
-        {isConsumerLinkageLoading ? (
-          <p className="muted">Loading consumer linkage...</p>
-        ) : null}
-
-        {!isConsumerLinkageLoading && consumerLinkageError ? (
-          <p className="error-banner">{consumerLinkageError}</p>
-        ) : null}
-
-        {!isConsumerLinkageLoading &&
-        !consumerLinkageError &&
-        consumerLinkage?.linkage_status === "linked" ? (
-          <div className="detail-stack">
-            <div className="meter-summary-grid">
-              <div className="stat-card">
-                <span className="stat-label">Subscriber</span>
-                <strong>
-                  {consumerLinkage.consumer_display_name ?? "Linked consumer"}
-                </strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Consumer ID</span>
-                <strong>{consumerLinkage.consumer_id ?? "Not available"}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Account</span>
-                <strong>
-                  {consumerLinkage.account_number ?? "No current account"}
-                </strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Account status</span>
-                <strong>{consumerLinkage.account_status ?? "Not available"}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Service point</span>
-                <strong>
-                  {consumerLinkage.service_point_code ?? "Not available"}
-                </strong>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Operational identifier</span>
-                <strong>
-                  {consumerLinkage.consumer_external_ref ??
-                    consumerLinkage.consumer_type ??
-                    "Not available"}
-                </strong>
+      {activeTab === "summary" ? (
+        <div className="detail-stack">
+          <section className="subpanel meter-summary-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Operational summary</h2>
+                <p className="muted">
+                  Current meter identity, topology context, and bounded operational
+                  cues for this central truth page.
+                </p>
               </div>
             </div>
 
-            {consumerLinkage.consumer_id ? (
-              <div className="artifact-row">
-                <Link
-                  className="primary-button"
-                  href={`/subscribers/${consumerLinkage.consumer_id}`}
-                >
-                  Open subscriber detail
-                </Link>
+            {isBootstrappingPage && !meter ? (
+              <p className="muted">Loading meter summary...</p>
+            ) : null}
+
+            {!isBootstrappingPage && meter ? (
+              <div className="meter-summary-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Meter ID</span>
+                  <strong>{meter.id}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Serial number</span>
+                  <strong>{meter.serial_number}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Utility meter number</span>
+                  <strong>{meter.utility_meter_number ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Status</span>
+                  <strong>{meter.current_status}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Transformer ID</span>
+                  <strong>{meter.transformer_id ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Service point ID</span>
+                  <strong>{meter.service_point_id ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Communication profile</span>
+                  <strong>{meter.communication_profile_code ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Meter profile</span>
+                  <strong>{meter.meter_profile_code ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Manufacturer / model</span>
+                  <strong>
+                    {meter.manufacturer_code} / {meter.meter_model_code}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Last seen</span>
+                  <strong>{formatDateTime(meter.last_seen_at)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Primary endpoint</span>
+                  <strong>
+                    {primaryEndpointAssignment?.endpoint_code ?? "No active endpoint"}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Protocol profile</span>
+                  <strong>
+                    {defaultProtocolProfile?.code ?? "No active protocol profile"}
+                  </strong>
+                </div>
               </div>
             ) : null}
-          </div>
-        ) : null}
 
-        {!isConsumerLinkageLoading &&
-        !consumerLinkageError &&
-        consumerLinkage?.linkage_status !== "linked" ? (
-          <p className="muted">
-            No current subscriber linkage available for this meter.
-          </p>
-        ) : null}
-      </section>
+            {!isBootstrappingPage && !meter ? (
+              <p className="muted">Meter summary not available.</p>
+            ) : null}
+          </section>
 
-      <section className="subpanel meter-summary-panel">
-        <div className="section-heading">
-          <div>
-            <h2>Action readiness</h2>
-            <p className="muted">
-              Advisory summary for the existing execute-now paths. Final command
-              validation remains on the backend.
-            </p>
-          </div>
-        </div>
-
-        {isActionReadinessLoading ? (
-          <p className="muted">Loading action readiness...</p>
-        ) : null}
-
-        {!isActionReadinessLoading && meter ? (
-          <div className="meter-summary-grid">
-            {actionReadinessItems.map((item) => (
-              <div key={item.title} className="stat-card">
-                <span className="stat-label">{item.title}</span>
-                <strong>{item.status}</strong>
-                <p className="muted">{item.summary}</p>
+          <section className="subpanel meter-summary-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Consumer linkage</h2>
+                <p className="muted">
+                  Current linked subscriber and account context available for
+                  downstream navigation.
+                </p>
               </div>
-            ))}
-          </div>
-        ) : null}
+            </div>
 
-        {!isActionReadinessLoading && !meter ? (
-          <p className="muted">Action readiness not available.</p>
-        ) : null}
-      </section>
+            {isConsumerLinkageLoading ? (
+              <p className="muted">Loading consumer linkage...</p>
+            ) : null}
 
-      <section>
-        <div className="tab-row" role="tablist" aria-label="Meter details tabs">
-          <button
-            className={activeTab === "overview" ? "tab-button active" : "tab-button"}
-            onClick={() => setActiveTab("overview")}
-            role="tab"
-            type="button"
-          >
-            Overview
-          </button>
-          <button
-            className={activeTab === "commands" ? "tab-button active" : "tab-button"}
-            onClick={() => setActiveTab("commands")}
-            role="tab"
-            type="button"
-          >
-            Commands
-          </button>
+            {!isConsumerLinkageLoading && consumerLinkageError ? (
+              <p className="error-banner">{consumerLinkageError}</p>
+            ) : null}
+
+            {!isConsumerLinkageLoading &&
+            !consumerLinkageError &&
+            consumerLinkage?.linkage_status === "linked" ? (
+              <div className="detail-stack">
+                <div className="meter-summary-grid">
+                  <div className="stat-card">
+                    <span className="stat-label">Subscriber</span>
+                    <strong>
+                      {consumerLinkage.consumer_display_name ?? "Linked consumer"}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Consumer ID</span>
+                    <strong>{consumerLinkage.consumer_id ?? "Not available"}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Account</span>
+                    <strong>
+                      {consumerLinkage.account_number ?? "No current account"}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Account status</span>
+                    <strong>{consumerLinkage.account_status ?? "Not available"}</strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Service point</span>
+                    <strong>
+                      {consumerLinkage.service_point_code ?? "Not available"}
+                    </strong>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Operational identifier</span>
+                    <strong>
+                      {consumerLinkage.consumer_external_ref ??
+                        consumerLinkage.consumer_type ??
+                        "Not available"}
+                    </strong>
+                  </div>
+                </div>
+
+                {consumerLinkage.consumer_id ? (
+                  <div className="artifact-row">
+                    <Link
+                      className="primary-button"
+                      href={`/subscribers/${consumerLinkage.consumer_id}`}
+                    >
+                      Open subscriber detail
+                    </Link>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {!isConsumerLinkageLoading &&
+            !consumerLinkageError &&
+            consumerLinkage?.linkage_status !== "linked" ? (
+              <p className="muted">
+                No current subscriber linkage available for this meter.
+              </p>
+            ) : null}
+          </section>
+
+          <section className="subpanel meter-summary-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Action readiness</h2>
+                <p className="muted">
+                  Advisory summary for the existing execute-now paths. Final command
+                  validation remains on the backend.
+                </p>
+              </div>
+            </div>
+
+            {isActionReadinessLoading ? (
+              <p className="muted">Loading action readiness...</p>
+            ) : null}
+
+            {!isActionReadinessLoading && meter ? (
+              <div className="meter-summary-grid">
+                {actionReadinessItems.map((item) => (
+                  <div key={item.title} className="stat-card">
+                    <span className="stat-label">{item.title}</span>
+                    <strong>{item.status}</strong>
+                    <p className="muted">{item.summary}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {!isActionReadinessLoading && !meter ? (
+              <p className="muted">Action readiness not available.</p>
+            ) : null}
+          </section>
         </div>
+      ) : null}
 
-        {activeTab === "overview" ? (
-          <div className="meter-overview-grid">
-            <div className="stat-card">
-              <span className="stat-label">Serial number</span>
-              <strong>{meter?.serial_number ?? meterId}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Utility meter number</span>
-              <strong>{meter?.utility_meter_number ?? "Not available"}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Status</span>
-              <strong>{meter?.current_status ?? "Unknown"}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Last seen</span>
-              <strong>{formatDateTime(meter?.last_seen_at ?? null)}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Manufacturer</span>
-              <strong>{meter?.manufacturer_code ?? "Unknown"}</strong>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Meter model</span>
-              <strong>{meter?.meter_model_code ?? "Unknown"}</strong>
+      {activeTab === "connectivity" ? (
+        <section className="subpanel meter-summary-panel">
+          <div className="section-heading">
+            <div>
+              <h2>Connectivity context</h2>
+              <p className="muted">
+                Current endpoint and protocol context for this meter&apos;s
+                operational path.
+              </p>
             </div>
           </div>
-        ) : null}
+
+          {isConnectivityContextLoading ? (
+            <p className="muted">Loading connectivity context...</p>
+          ) : null}
+
+          {!isConnectivityContextLoading && hasConnectivityContext ? (
+            <div className="meter-summary-grid">
+              <div className="stat-card">
+                <span className="stat-label">Primary endpoint</span>
+                <strong>
+                  {primaryEndpointAssignment?.endpoint_display_name ??
+                    primaryEndpointAssignment?.endpoint_code ??
+                    "No active endpoint"}
+                </strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Endpoint code</span>
+                <strong>
+                  {primaryEndpointAssignment?.endpoint_code ?? "No active endpoint"}
+                </strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Endpoint assignment status</span>
+                <strong>
+                  {primaryEndpointAssignment?.assignment_status ?? "Not assigned"}
+                </strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Primary assignment</span>
+                <strong>
+                  {primaryEndpointAssignment
+                    ? primaryEndpointAssignment.is_primary
+                      ? "Primary"
+                      : "Secondary"
+                    : "Not available"}
+                </strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Communication profile</span>
+                <strong>{meter?.communication_profile_code ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Protocol profile</span>
+                <strong>{defaultProtocolProfile?.code ?? "Not available"}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Protocol family</span>
+                <strong>
+                  {defaultProtocolProfile?.protocol_family ?? "Not available"}
+                </strong>
+              </div>
+              <div className="stat-card">
+                <span className="stat-label">Connectivity freshness</span>
+                <strong>
+                  {formatConnectivityFreshnessHint(meter?.last_seen_at ?? null)}
+                </strong>
+              </div>
+            </div>
+          ) : null}
+
+          {!isConnectivityContextLoading && !hasConnectivityContext ? (
+            <p className="muted">Connectivity context not available.</p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {activeTab === "readings" ? (
+        <div className="detail-stack">
+          <section className="subpanel meter-summary-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Readings context</h2>
+                <p className="muted">
+                  Latest raw readings, billing snapshots, and interval cues already
+                  available for this meter.
+                </p>
+              </div>
+            </div>
+
+            {isReadingsContextLoading ? (
+              <p className="muted">Loading readings context...</p>
+            ) : null}
+
+            {!isReadingsContextLoading && hasReadingsContext ? (
+              <div className="meter-summary-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Latest raw reading</span>
+                  <strong>
+                    {latestReading ? formatReadingValue(latestReading) : "Not available"}
+                  </strong>
+                  <p className="muted">
+                    {latestReading
+                      ? `${latestReading.obis_code} • ${formatDateTime(
+                          latestReading.captured_at,
+                        )}`
+                      : "No raw reading recorded."}
+                  </p>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Latest billing snapshot</span>
+                  <strong>
+                    {latestBillingSnapshot
+                      ? formatBillingPrimaryValue(latestBillingSnapshot.payload)
+                      : "Not available"}
+                  </strong>
+                  <p className="muted">
+                    {latestBillingSnapshot
+                      ? formatBillingSummary(latestBillingSnapshot.payload)
+                      : "No billing snapshot recorded."}
+                  </p>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Latest interval</span>
+                  <strong>
+                    {latestInterval
+                      ? formatIntervalValue(latestInterval, latestIntervalChannel)
+                      : "Not available"}
+                  </strong>
+                  <p className="muted">
+                    {latestInterval
+                      ? `${latestIntervalChannel?.channel_code ?? latestInterval.channel_id} • ${formatIntervalWindow(
+                          latestInterval,
+                        )}`
+                      : "No interval row recorded."}
+                  </p>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Active load-profile channels</span>
+                  <strong>{activeLoadProfileChannels.length}</strong>
+                  <p className="muted">
+                    {activeLoadProfileChannels.length > 0
+                      ? activeLoadProfileChannels
+                          .slice(0, 3)
+                          .map((channel) => channel.channel_code)
+                          .join(", ")
+                      : "No active load-profile channel context."}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {!isReadingsContextLoading && !hasReadingsContext ? (
+              <p className="muted">Readings context not available for this meter yet.</p>
+            ) : null}
+          </section>
+
+          <section className="subpanel meter-summary-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Reading follow-through</h2>
+                <p className="muted">
+                  Use the shared readings workspace to inspect the full reading and
+                  interval history for this meter.
+                </p>
+              </div>
+            </div>
+
+            <div className="artifact-row">
+              <Link className="primary-button" href={`/readings?meterId=${meterId}`}>
+                Open readings workspace
+              </Link>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
         {activeTab === "commands" ? (
           <div className="commands-tab-layout">
@@ -1721,7 +2103,6 @@ export function MeterDetailsCommandsTab({
             </section>
           </div>
         ) : null}
-      </section>
     </section>
   );
 }
