@@ -26,7 +26,7 @@ function createMockApi({
       claim_expires_at: null,
       worker_identifier: "worker-1",
       started_at: "2026-03-31T09:57:00.000Z",
-      completed_at: null,
+      completed_at: "2026-03-31T09:57:30.000Z",
       cancelled_at: null,
       status: "failed",
       retry_count: 1,
@@ -274,6 +274,46 @@ describe("JobsEventsAlertsModule", () => {
     ).toHaveAttribute("href", "/commands");
   });
 
+  it("renders a dedicated job runs workspace with status, timing, and outcome visibility", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const jobRunsPanel = (
+      await screen.findByRole("heading", { name: "Job runs workspace" })
+    ).closest("section");
+    expect(jobRunsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(jobRunsPanel as HTMLElement).getByText("Loaded job runs"),
+      ).toBeInTheDocument();
+      expect(within(jobRunsPanel as HTMLElement).getByText("Completed runs")).toBeInTheDocument();
+      expect(
+        within(jobRunsPanel as HTMLElement).getByText("Running or queued"),
+      ).toBeInTheDocument();
+      expect(
+        within(jobRunsPanel as HTMLElement).getByText("Failed or timed out"),
+      ).toBeInTheDocument();
+      expect(
+        within(jobRunsPanel as HTMLElement).getByText(/Completed .*2026/),
+      ).toBeInTheDocument();
+      expect(within(jobRunsPanel as HTMLElement).getByText("Duration 30 sec")).toBeInTheDocument();
+      expect(
+        within(jobRunsPanel as HTMLElement).getByText("Association rejected"),
+      ).toBeInTheDocument();
+      expect(within(jobRunsPanel as HTMLElement).getByText("Retries 1/3")).toBeInTheDocument();
+    });
+
+    expect(
+      within(jobRunsPanel as HTMLElement).getByRole("link", { name: "Open job run detail" }),
+    ).toHaveAttribute("href", "/jobs-events-alerts/activity/job_run/job-run-1");
+    expect(
+      within(jobRunsPanel as HTMLElement).getAllByRole("link", { name: "Open meter detail" })[0],
+    ).toHaveAttribute("href", "/meters/meter-1");
+  });
+
   it("shows a round-trip cue on the retry queue after returning from activity detail", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
@@ -431,6 +471,37 @@ describe("JobsEventsAlertsModule", () => {
     });
   });
 
+  it("renders bounded job-run execution detail when a job run is selected", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const inspectButtons = await screen.findAllByRole("button", {
+      name: "Inspect summary",
+    });
+    await user.click(inspectButtons[2]);
+
+    const summaryPanel = screen
+      .getByRole("heading", { name: "Selected activity summary" })
+      .closest("section");
+    expect(summaryPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(within(summaryPanel as HTMLElement).getByText("worker-1")).toBeInTheDocument();
+      expect(
+        within(summaryPanel as HTMLElement).getByText("job-correlation-1"),
+      ).toBeInTheDocument();
+      expect(within(summaryPanel as HTMLElement).getByText("Started")).toBeInTheDocument();
+      expect(within(summaryPanel as HTMLElement).getByText("Completed")).toBeInTheDocument();
+      expect(within(summaryPanel as HTMLElement).getByText("30 sec")).toBeInTheDocument();
+      expect(
+        within(summaryPanel as HTMLElement).getAllByText("Association rejected").length,
+      ).toBeGreaterThan(0);
+    });
+  });
+
   it("renders bounded loading states while the monitoring surface is bootstrapping", async () => {
     const { fetchMock } = createMockApi({ delayedResponses: true });
     vi.stubGlobal("fetch", fetchMock);
@@ -440,6 +511,7 @@ describe("JobsEventsAlertsModule", () => {
     expect(
       await screen.findByText("Loading jobs, events, and alerts overview..."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Loading job runs workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading job runs and retry queue...")).toBeInTheDocument();
     expect(screen.getByText("Loading recent operational activity...")).toBeInTheDocument();
   });
@@ -460,14 +532,21 @@ describe("JobsEventsAlertsModule", () => {
     const retryPanel = screen
       .getByRole("heading", { name: "Job runs + retry queue" })
       .closest("section");
+    const jobRunsPanel = screen
+      .getByRole("heading", { name: "Job runs workspace" })
+      .closest("section");
     const activityPanel = screen
       .getByRole("heading", { name: "Recent operational activity" })
       .closest("section");
     expect(alertsPanel).not.toBeNull();
     expect(retryPanel).not.toBeNull();
+    expect(jobRunsPanel).not.toBeNull();
     expect(activityPanel).not.toBeNull();
 
     await waitFor(() => {
+      expect(
+        within(jobRunsPanel as HTMLElement).getByText("No recent job runs are currently visible."),
+      ).toBeInTheDocument();
       expect(
         within(retryPanel as HTMLElement).getByText(
           "No retry-worthy job runs or problematic command execution contexts are currently visible.",

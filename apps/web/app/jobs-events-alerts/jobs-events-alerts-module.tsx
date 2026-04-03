@@ -203,6 +203,73 @@ function formatRetrySummary(retryCount: number, maxRetries: number): string {
   return "Retry budget exhausted in the current bounded runtime budget.";
 }
 
+function formatDurationFromMs(durationMs: number): string {
+  const clampedDurationMs = Math.max(durationMs, 0);
+  const totalMinutes = Math.floor(clampedDurationMs / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours} hr ${minutes} min`;
+  }
+  if (hours > 0) {
+    return `${hours} hr`;
+  }
+  if (minutes > 0) {
+    return `${minutes} min`;
+  }
+  return `${Math.max(Math.round(clampedDurationMs / 1000), 1)} sec`;
+}
+
+function buildJobRunDurationLabel(jobRun: JobRunItem): string {
+  if (!jobRun.started_at || !jobRun.completed_at) {
+    return "Not completed";
+  }
+
+  const startedAt = new Date(jobRun.started_at);
+  const completedAt = new Date(jobRun.completed_at);
+  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(completedAt.getTime())) {
+    return "Not available";
+  }
+
+  return formatDurationFromMs(completedAt.getTime() - startedAt.getTime());
+}
+
+function buildJobRunTimingSummary(jobRun: JobRunItem): string {
+  if (jobRun.completed_at) {
+    return `Completed ${formatDateTime(jobRun.completed_at)}`;
+  }
+  if (jobRun.started_at) {
+    return `Started ${formatDateTime(jobRun.started_at)}`;
+  }
+  if (jobRun.claimed_at) {
+    return `Claimed ${formatDateTime(jobRun.claimed_at)}`;
+  }
+  return `Scheduled ${formatDateTime(jobRun.scheduled_for)}`;
+}
+
+function buildJobRunOutcomeSummary(jobRun: JobRunItem): string {
+  if (jobRun.latest_error_message) {
+    return jobRun.latest_error_message;
+  }
+  if (jobRun.latest_error_code) {
+    return jobRun.latest_error_code;
+  }
+  if (jobRun.related_command) {
+    return `Related command ${formatStatusLabel(jobRun.related_command.current_status)}`;
+  }
+  if (jobRun.result_summary) {
+    const summaryEntries = Object.entries(jobRun.result_summary)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .slice(0, 2)
+      .map(([key, value]) => `${formatStatusLabel(key)} ${String(value)}`);
+    if (summaryEntries.length > 0) {
+      return summaryEntries.join(" • ");
+    }
+  }
+  return "No execution outcome summary recorded";
+}
+
 function buildRetryRemediationHref({
   commandId,
   itemType,
@@ -525,6 +592,21 @@ export function JobsEventsAlertsModule({
       ).length,
     [jobRuns],
   );
+  const completedJobRuns = useMemo(
+    () => (jobRuns ?? []).filter((jobRun) => jobRun.completed_at !== null).length,
+    [jobRuns],
+  );
+  const failedJobRuns = useMemo(
+    () => (jobRuns ?? []).filter((jobRun) => isRetryWorthyStatus(jobRun.status)).length,
+    [jobRuns],
+  );
+  const runningJobRuns = useMemo(
+    () =>
+      (jobRuns ?? []).filter((jobRun) =>
+        ["running", "claimed", "pending"].includes(jobRun.status),
+      ).length,
+    [jobRuns],
+  );
 
   const overviewCards = useMemo(
     () => [
@@ -570,6 +652,13 @@ export function JobsEventsAlertsModule({
       filteredActivityItems[0] ??
       null,
     [filteredActivityItems, selectedActivityId],
+  );
+  const selectedJobRun = useMemo(
+    () =>
+      selectedActivity?.type === "job_run"
+        ? (jobRuns ?? []).find((jobRun) => jobRun.id === selectedActivity.id) ?? null
+        : null,
+    [jobRuns, selectedActivity],
   );
 
   const activityStatus = useMemo(() => {
@@ -624,6 +713,106 @@ export function JobsEventsAlertsModule({
                   <strong>{card.value}</strong>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Job runs workspace</h2>
+              <p className="muted">
+                Recent job execution visibility with status, timing, retry, and outcome
+                context using the current jobs read model.
+              </p>
+            </div>
+            <span className="artifact-pill">
+              {(jobRuns ?? []).length} run{(jobRuns ?? []).length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {isLoadingActivity ? (
+            <p className="muted">Loading job runs workspace...</p>
+          ) : (
+            <div className="detail-stack">
+              <div className="jobs-overview-grid">
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Loaded job runs</span>
+                  <strong>{String((jobRuns ?? []).length)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Completed runs</span>
+                  <strong>{String(completedJobRuns)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Running or queued</span>
+                  <strong>{String(runningJobRuns)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Failed or timed out</span>
+                  <strong>{String(failedJobRuns)}</strong>
+                </div>
+              </div>
+
+              <div className="command-list">
+                {(jobRuns ?? []).length === 0 ? (
+                  <p className="muted">No recent job runs are currently visible.</p>
+                ) : null}
+
+                {(jobRuns ?? []).map((jobRun) => (
+                  <article key={jobRun.id} className="command-list-item">
+                    <div className="command-list-item-header">
+                      <strong>
+                        {jobRun.related_command?.command_template_code ??
+                          `Job run ${jobRun.id.slice(0, 8)}`}
+                      </strong>
+                      <span className={`status-pill ${buildStatusTone(jobRun.status)}`}>
+                        {formatStatusLabel(jobRun.status)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-badges">
+                      <span className="artifact-pill">Job run</span>
+                      <span className="artifact-pill">
+                        {jobRun.worker_identifier ?? "No worker claim"}
+                      </span>
+                      <span className="artifact-pill">
+                        {jobRun.correlation_id ?? "No correlation ID"}
+                      </span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>{buildJobRunTimingSummary(jobRun)}</span>
+                      <span>Duration {buildJobRunDurationLabel(jobRun)}</span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>{buildJobRunOutcomeSummary(jobRun)}</span>
+                      <span>
+                        Retries {jobRun.retry_count}/{jobRun.max_retries}
+                      </span>
+                    </div>
+                    <div className="artifact-row">
+                      <Link
+                        className="secondary-button"
+                        href={buildActivityDetailHref("job_run", jobRun.id)}
+                      >
+                        Open job run detail
+                      </Link>
+                      {jobRun.target_meter_id ? (
+                        <Link
+                          className="secondary-button"
+                          href={`/meters/${jobRun.target_meter_id}`}
+                        >
+                          Open meter detail
+                        </Link>
+                      ) : null}
+                      {jobRun.related_command_id ? (
+                        <Link className="secondary-button" href="/commands">
+                          Open commands page
+                        </Link>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
           )}
         </section>
@@ -962,6 +1151,34 @@ export function JobsEventsAlertsModule({
                   <span className="stat-label">Summary</span>
                   <strong>{selectedActivity.summary}</strong>
                 </div>
+                {selectedJobRun ? (
+                  <>
+                    <div className="stat-card">
+                      <span className="stat-label">Worker</span>
+                      <strong>{selectedJobRun.worker_identifier ?? "Not available"}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Correlation ID</span>
+                      <strong>{selectedJobRun.correlation_id ?? "Not available"}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Started</span>
+                      <strong>{formatDateTime(selectedJobRun.started_at)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Completed</span>
+                      <strong>{formatDateTime(selectedJobRun.completed_at)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Duration</span>
+                      <strong>{buildJobRunDurationLabel(selectedJobRun)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Outcome</span>
+                      <strong>{buildJobRunOutcomeSummary(selectedJobRun)}</strong>
+                    </div>
+                  </>
+                ) : null}
               </div>
 
               <div className="artifact-row">
