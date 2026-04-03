@@ -91,6 +91,8 @@ from app.runtime.schemas import (
     RuntimeOnDemandReadExecutionResponse,
     RuntimeTcpMeterIngressBindRequest,
     RuntimeTcpMeterIngressBindResponse,
+    RuntimeTcpMeterIngressIdentityDiscoveryRequest,
+    RuntimeTcpMeterIngressIdentityDiscoveryResponse,
     RuntimeTcpMeterIngressStatusResponse,
     RuntimeProfileReadExecutionRequest,
     RuntimeProfileReadExecutionResponse,
@@ -133,6 +135,7 @@ from app.runtime.services import (
     build_runtime_plan_for_command,
     consume_derived_work_job_run,
     dequeue_and_claim_redis_dispatch_message,
+    discover_runtime_tcp_meter_identity,
     enqueue_dispatch_request_for_job_run,
     evaluate_redis_transport_readiness,
     execute_runtime_plan_for_attempt,
@@ -933,6 +936,35 @@ def bind_runtime_tcp_meter_ingress_connection_endpoint(
 def unbind_runtime_tcp_meter_ingress_connection_endpoint() -> RuntimeTcpMeterIngressBindResponse:
     unbind_runtime_tcp_meter_ingress_connection()
     return RuntimeTcpMeterIngressBindResponse(result=_serialize_runtime_tcp_meter_ingress_status().result)
+
+
+@internal_runtime_platform_router.post(
+    "/tcp-meter-ingress/discover-identity",
+    response_model=RuntimeTcpMeterIngressIdentityDiscoveryResponse,
+    dependencies=[Depends(require_internal_api_token)],
+)
+def discover_runtime_tcp_meter_identity_endpoint(
+    payload: RuntimeTcpMeterIngressIdentityDiscoveryRequest,
+    session: Session = Depends(get_db_session),
+) -> RuntimeTcpMeterIngressIdentityDiscoveryResponse:
+    result = discover_runtime_tcp_meter_identity(
+        session,
+        protocol_association_profile_id=payload.protocol_association_profile_id,
+    )
+    return RuntimeTcpMeterIngressIdentityDiscoveryResponse(
+        result={
+            "success": result.success,
+            "active_connection_id": result.active_connection_id,
+            "protocol_association_profile_id": result.protocol_association_profile_id,
+            "discovered_identity_value": result.discovered_identity_value,
+            "discovered_identity_obis_code": result.discovered_identity_obis_code,
+            "identity_values": result.identity_values,
+            "protocol_path_used": result.protocol_path_used,
+            "diagnostic_message": result.diagnostic_message,
+            "remote_addr": result.remote_addr,
+            "remote_port": result.remote_port,
+        }
+    )
 
 
 @internal_runtime_queue_router.post(

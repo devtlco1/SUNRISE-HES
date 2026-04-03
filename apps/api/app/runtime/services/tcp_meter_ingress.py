@@ -45,6 +45,14 @@ class BorrowedTcpMeterConnection:
     bound_endpoint_id: UUID
 
 
+@dataclass(frozen=True)
+class BorrowedActiveTcpMeterConnection:
+    connection_id: str
+    socket: socket.socket
+    remote_addr: str | None
+    remote_port: int | None
+
+
 class TcpMeterIngressManager:
     """First-slice listener/registry for one active inbound meter TCP session."""
 
@@ -201,6 +209,35 @@ class TcpMeterIngressManager:
                 connection.close()
             except OSError:
                 pass
+
+    @contextmanager
+    def borrow_active_unbound_connection(self) -> Iterator[BorrowedActiveTcpMeterConnection | None]:
+        borrowed: BorrowedActiveTcpMeterConnection | None = None
+        with self._lock:
+            if (
+                self._connection is not None
+                and self._connection_id is not None
+                and self._bound_meter_id is None
+                and self._bound_endpoint_id is None
+                and not self._connection_in_use
+            ):
+                self._connection_in_use = True
+                borrowed = BorrowedActiveTcpMeterConnection(
+                    connection_id=self._connection_id,
+                    socket=self._connection,
+                    remote_addr=self._connection_addr[0]
+                    if self._connection_addr is not None
+                    else None,
+                    remote_port=self._connection_addr[1]
+                    if self._connection_addr is not None
+                    else None,
+                )
+        try:
+            yield borrowed
+        finally:
+            with self._lock:
+                if borrowed is not None and self._connection_id == borrowed.connection_id:
+                    self._connection_in_use = False
 
     def _run_listener_loop(self) -> None:
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -362,6 +399,14 @@ def borrow_runtime_tcp_meter_ingress_connection(
         meter_id=meter_id,
         endpoint_id=endpoint_id,
     ) as borrowed:
+        yield borrowed
+
+
+@contextmanager
+def borrow_runtime_tcp_meter_ingress_unbound_connection() -> Iterator[
+    BorrowedActiveTcpMeterConnection | None
+]:
+    with _tcp_meter_ingress_manager.borrow_active_unbound_connection() as borrowed:
         yield borrowed
 
 

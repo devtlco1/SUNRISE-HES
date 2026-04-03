@@ -45,6 +45,24 @@ class LiveTcpOnDemandReadExecution:
     bytes_received: int
 
 
+@dataclass(frozen=True)
+class LiveTcpIdentityDiscoveryExecution:
+    identity_obis_code: str | None
+    identity_value: str | None
+    identity_values: dict[str, str]
+    protocol_trace: dict[str, object]
+    raw_frames: list[dict[str, object]]
+    bytes_sent: int
+    bytes_received: int
+
+
+IDENTITY_DISCOVERY_OBIS_CODES = [
+    "0.0.96.1.0.255",
+    "0.0.96.1.1.255",
+    "0.0.96.1.2.255",
+]
+
+
 class SocketSerialAdapter:
     """Match the small serial-like API the Gurux workflow expects."""
 
@@ -150,6 +168,79 @@ def execute_billing_snapshot_over_tcp_ingress(
 
     return LiveTcpOnDemandReadExecution(
         register_snapshot_payload=register_snapshot_payload,
+        protocol_trace={
+            "start_protocol": config.start_protocol,
+            "association_method": (
+                "broadcast_snrm_then_aarq" if config.use_broadcast_snrm_first else "snrm_then_aarq"
+            ),
+            "obis_count": len(obis_codes),
+            "association_details": association_details,
+        },
+        raw_frames=raw_frames,
+        bytes_sent=transport.bytes_sent,
+        bytes_received=transport.bytes_received,
+    )
+
+
+def execute_identity_discovery_over_tcp_ingress(
+    *,
+    sock: socket.socket,
+    config: LiveTcpDlmsSessionConfig,
+    identity_obis_codes: list[str] | None = None,
+) -> LiveTcpIdentityDiscoveryExecution:
+    obis_codes = identity_obis_codes or list(IDENTITY_DISCOVERY_OBIS_CODES)
+    if not obis_codes:
+        raise ValueError("Live TCP identity discovery requires at least one OBIS code.")
+
+    transport = SocketSerialAdapter(sock)
+    raw_frames: list[dict[str, object]] = []
+
+    if config.start_protocol == "iec62056_21":
+        transport.timeout = float(config.iec_serial_timeout_seconds)
+        handshake_ok, handshake_details, handshake_frames = _run_iec_handshake_tcp(transport, config)
+        raw_frames.extend(handshake_frames)
+        if not handshake_ok:
+            raise RuntimeError(handshake_details.get("error", "IEC handshake failed."))
+        time.sleep(config.after_iec_sleep_ms / 1000.0)
+
+    transport.timeout = float(config.dlms_read_timeout_seconds)
+    if config.use_broadcast_snrm_first:
+        associated, association_details, association_frames, client = _attempt_vendor_broadcast_association(
+            transport,
+            config,
+        )
+    else:
+        associated, association_details, association_frames, client = _attempt_gurux_association(
+            transport,
+            config,
+        )
+    raw_frames.extend(association_frames)
+    if not associated or client is None:
+        raise RuntimeError(association_details.get("error", "DLMS association failed."))
+
+    try:
+        identity_values = _read_obis_via_gurux(
+            transport,
+            client,
+            obis_codes,
+            config,
+        )
+    finally:
+        _try_gurux_disconnect(transport, client, config)
+
+    identity_obis_code: str | None = None
+    identity_value: str | None = None
+    for obis_code in obis_codes:
+        candidate = identity_values.get(obis_code)
+        if candidate:
+            identity_obis_code = obis_code
+            identity_value = candidate
+            break
+
+    return LiveTcpIdentityDiscoveryExecution(
+        identity_obis_code=identity_obis_code,
+        identity_value=identity_value,
+        identity_values=identity_values,
         protocol_trace={
             "start_protocol": config.start_protocol,
             "association_method": (

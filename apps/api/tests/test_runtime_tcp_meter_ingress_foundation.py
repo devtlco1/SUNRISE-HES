@@ -14,7 +14,10 @@ from app.modules.connectivity.enums import (
 from app.modules.connectivity.models import MeterEndpointAssignment
 from app.modules.jobs.dependencies import INTERNAL_TOKEN_HEADER
 from app.runtime.adapters.dlms_cosem import GuruxDlmsAdapterBridge
-from app.runtime.adapters.gurux_tcp_ingress import LiveTcpOnDemandReadExecution
+from app.runtime.adapters.gurux_tcp_ingress import (
+    LiveTcpIdentityDiscoveryExecution,
+    LiveTcpOnDemandReadExecution,
+)
 from app.runtime.contracts import (
     MeterRuntimeTarget,
     RuntimeExecutionContext,
@@ -266,6 +269,141 @@ def test_on_demand_read_adapter_uses_bound_live_tcp_ingress_connection(monkeypat
         assert result.register_snapshot.payload["1.0.1.8.0.255"] == "456.789"
         assert result.adapter_result_summary["live_tcp_ingress"] is True
         assert result.adapter_result_summary["bytes_sent"] == 12
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_internal_runtime_tcp_meter_ingress_discovery_refuses_without_active_connection(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    _, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    try:
+        response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/discover-identity",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={"protocol_association_profile_id": protocol_profile_id},
+        )
+        assert response.status_code == 409
+        assert "no active live connection" in response.json()["detail"].lower()
+    finally:
+        manager.stop()
+
+
+def test_internal_runtime_tcp_meter_ingress_discovery_returns_identity_before_bind(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    _, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setenv("RUNTIME_SECRET_SECRET___METERS_RUNTIME_LOW", "test-runtime-password")
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        def fake_execute_identity_discovery_over_tcp_ingress(*, sock, config, identity_obis_codes=None):
+            assert sock is not None
+            assert config.start_protocol == "iec62056_21"
+            return LiveTcpIdentityDiscoveryExecution(
+                identity_obis_code="0.0.96.1.0.255",
+                identity_value="SN-123456",
+                identity_values={
+                    "0.0.96.1.0.255": "SN-123456",
+                    "0.0.96.1.1.255": "DEVICE-ABC",
+                },
+                protocol_trace={"association_method": "broadcast_snrm_then_aarq"},
+                raw_frames=[{"stage": "fake-discovery"}],
+                bytes_sent=22,
+                bytes_received=44,
+            )
+
+        monkeypatch.setattr(
+            "app.runtime.services.tcp_meter_identity_discovery.execute_identity_discovery_over_tcp_ingress",
+            fake_execute_identity_discovery_over_tcp_ingress,
+        )
+
+        response = client.post(
+            "/api/v1/internal/platform/tcp-meter-ingress/discover-identity",
+            headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+            json={"protocol_association_profile_id": protocol_profile_id},
+        )
+        assert response.status_code == 200
+        payload = response.json()["result"]
+        assert payload["success"] is True
+        assert payload["discovered_identity_value"] == "SN-123456"
+        assert payload["discovered_identity_obis_code"] == "0.0.96.1.0.255"
+        assert payload["identity_values"]["0.0.96.1.1.255"] == "DEVICE-ABC"
+        assert payload["protocol_path_used"] == "broadcast_snrm_then_aarq"
+        assert payload["active_connection_id"] is not None
+    finally:
+        if client_socket is not None:
+            client_socket.close()
+        manager.stop()
+
+
+def test_internal_runtime_tcp_meter_ingress_discovery_respects_connection_in_use(
+    client,
+    monkeypatch,
+    db_session,
+) -> None:
+    token = _login_as_super_admin(client, db_session)
+    meter_id = _create_meter_record(client, token)
+    _, protocol_profile_id = _attach_runtime_connectivity(db_session, meter_id)
+
+    manager = tcp_meter_ingress.TcpMeterIngressManager(
+        enabled=True,
+        host="127.0.0.1",
+        port=0,
+        socket_timeout_seconds=0.2,
+    )
+    monkeypatch.setattr(tcp_meter_ingress, "_tcp_meter_ingress_manager", manager)
+    manager.start()
+    client_socket: socket.socket | None = None
+    try:
+        _wait_until(lambda: manager.get_status().listen_port is not None)
+        listen_port = manager.get_status().listen_port
+        assert listen_port is not None
+        client_socket = socket.create_connection(("127.0.0.1", listen_port), timeout=1.0)
+        _wait_until(lambda: manager.get_status().connected is True)
+
+        with manager.borrow_active_unbound_connection() as borrowed:
+            assert borrowed is not None
+            response = client.post(
+                "/api/v1/internal/platform/tcp-meter-ingress/discover-identity",
+                headers={INTERNAL_TOKEN_HEADER: "test-internal-token"},
+                json={"protocol_association_profile_id": protocol_profile_id},
+            )
+            assert response.status_code == 409
+            assert "already in use" in response.json()["detail"].lower()
     finally:
         if client_socket is not None:
             client_socket.close()

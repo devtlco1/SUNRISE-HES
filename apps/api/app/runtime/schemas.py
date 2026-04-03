@@ -626,6 +626,27 @@ class RuntimeTcpMeterIngressBindResponse(BaseModel):
     result: RuntimeTcpMeterIngressStatusResult
 
 
+class RuntimeTcpMeterIngressIdentityDiscoveryRequest(BaseModel):
+    protocol_association_profile_id: UUID
+
+
+class RuntimeTcpMeterIngressIdentityDiscoveryResult(BaseModel):
+    success: bool
+    active_connection_id: str
+    protocol_association_profile_id: UUID
+    discovered_identity_value: str | None = None
+    discovered_identity_obis_code: str | None = None
+    identity_values: dict[str, str] = Field(default_factory=dict)
+    protocol_path_used: str
+    diagnostic_message: str
+    remote_addr: str | None = None
+    remote_port: int | None = None
+
+
+class RuntimeTcpMeterIngressIdentityDiscoveryResponse(BaseModel):
+    result: RuntimeTcpMeterIngressIdentityDiscoveryResult
+
+
 class RedisConsumerGroupBootstrapRequest(BaseModel):
     pass
 
