@@ -737,12 +737,95 @@ def _read_profile_capture_objects(
     from gurux_dlms.objects.GXDLMSProfileGeneric import GXDLMSProfileGeneric
 
     profile = GXDLMSProfileGeneric(profile_obis_code)
-    value, error = _gurux_read_attribute(transport, client, profile, 3, config)
-    if error is not None:
-        return None, error
-    if not isinstance(value, list) or not value:
-        return None, "capture_objects_unavailable"
-    return profile.captureObjects, None
+    try:
+        reply = _send_pdu_list(
+            transport,
+            client,
+            _frame_list(client.read(profile, 3)),
+            config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, str(exc)
+    if reply is None or not reply.isComplete():
+        return None, "read_deadline"
+    error_detail = _resolve_gurux_reply_error(reply)
+    if error_detail and error_detail != "0":
+        return None, error_detail
+
+    raw_value = getattr(reply, "value", None)
+    update_error: str | None = None
+    try:
+        if raw_value:
+            client.updateValue(profile, 3, raw_value)
+    except Exception as exc:  # noqa: BLE001
+        update_error = str(exc)
+
+    capture_objects = _normalize_profile_capture_objects(getattr(profile, "captureObjects", None))
+    if capture_objects is None:
+        capture_objects = _normalize_profile_capture_objects(raw_value)
+    if capture_objects:
+        return capture_objects, None
+    if update_error is not None:
+        return None, f"capture_objects_unavailable ({update_error})"
+    return None, "capture_objects_unavailable"
+
+
+def _normalize_profile_capture_objects(raw_value: Any) -> list[tuple[Any, Any]] | None:
+    from gurux_dlms._GXObjectFactory import _GXObjectFactory
+    from gurux_dlms.internal._GXCommon import _GXCommon
+    from gurux_dlms.objects.GXDLMSCaptureObject import GXDLMSCaptureObject
+
+    if not isinstance(raw_value, list) or not raw_value:
+        return None
+
+    normalized: list[tuple[Any, Any]] = []
+    for item in raw_value:
+        if (
+            isinstance(item, tuple)
+            and len(item) == 2
+            and hasattr(item[0], "logicalName")
+            and hasattr(item[1], "attributeIndex")
+            and hasattr(item[1], "dataIndex")
+        ):
+            normalized.append(item)
+            continue
+        if not isinstance(item, (list, tuple)) or len(item) != 4:
+            return None
+
+        object_type = _coerce_profile_capture_object_int(item[0])
+        attribute_index = _coerce_profile_capture_object_int(item[2])
+        data_index = _coerce_profile_capture_object_int(item[3])
+        logical_name = item[1]
+        if isinstance(logical_name, (bytes, bytearray)):
+            logical_name = _GXCommon.toLogicalName(logical_name)
+        if (
+            object_type is None
+            or attribute_index is None
+            or data_index is None
+            or not isinstance(logical_name, str)
+            or not logical_name
+        ):
+            return None
+        try:
+            capture_object = _GXObjectFactory.createObject(object_type)
+        except Exception:  # noqa: BLE001
+            return None
+        capture_object.logicalName = logical_name
+        normalized.append(
+            (
+                capture_object,
+                GXDLMSCaptureObject(attribute_index, data_index),
+            )
+        )
+    return normalized or None
+
+
+def _coerce_profile_capture_object_int(value: Any) -> int | None:
+    candidate = getattr(value, "value", value)
+    try:
+        return int(candidate)
+    except (TypeError, ValueError):
+        return None
 
 
 def _read_profile_rows_via_gurux(

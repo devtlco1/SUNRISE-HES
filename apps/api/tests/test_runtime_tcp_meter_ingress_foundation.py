@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import socket
+import sys
 import time
 import uuid
 from datetime import UTC, datetime
+from types import ModuleType
 
 from sqlalchemy import func, select
 
@@ -18,10 +20,12 @@ from app.modules.jobs.dependencies import INTERNAL_TOKEN_HEADER
 from app.modules.meters.models import Meter
 from app.runtime.adapters.dlms_cosem import GuruxDlmsAdapterBridge
 from app.runtime.adapters.gurux_tcp_ingress import (
+    LiveTcpDlmsSessionConfig,
     LiveTcpIdentityDiscoveryExecution,
     LiveTcpOnDemandReadExecution,
     LiveTcpProfileReadExecution,
     LiveTcpRelayControlExecution,
+    _read_profile_capture_objects,
     _resolve_gurux_object_attribute_value,
 )
 from app.runtime.contracts import (
@@ -973,6 +977,154 @@ def test_resolve_gurux_object_attribute_value_returns_disconnect_control_propert
 
     assert _resolve_gurux_object_attribute_value(relay_control, 2) is False
     assert _resolve_gurux_object_attribute_value(relay_control, 3) == 2
+
+
+def _install_fake_gurux_profile_modules(monkeypatch) -> None:
+    class FakeProfileGeneric:
+        def __init__(self, logical_name: str) -> None:
+            self.logicalName = logical_name
+            self.captureObjects = []
+
+    class FakeCaptureObject:
+        def __init__(self, attribute_index: int = 0, data_index: int = 0) -> None:
+            self.attributeIndex = attribute_index
+            self.dataIndex = data_index
+
+    class FakeCreatedObject:
+        def __init__(self, object_type: int) -> None:
+            self.objectType = object_type
+            self.logicalName = ""
+
+    class FakeGXCommon:
+        @staticmethod
+        def toLogicalName(value) -> str:
+            return ".".join(str(part) for part in value)
+
+    gurux_module = ModuleType("gurux_dlms")
+    objects_module = ModuleType("gurux_dlms.objects")
+    internal_module = ModuleType("gurux_dlms.internal")
+    profile_module = ModuleType("gurux_dlms.objects.GXDLMSProfileGeneric")
+    capture_module = ModuleType("gurux_dlms.objects.GXDLMSCaptureObject")
+    common_module = ModuleType("gurux_dlms.internal._GXCommon")
+    factory_module = ModuleType("gurux_dlms._GXObjectFactory")
+
+    profile_module.GXDLMSProfileGeneric = FakeProfileGeneric
+    capture_module.GXDLMSCaptureObject = FakeCaptureObject
+    common_module._GXCommon = FakeGXCommon
+    factory_module._GXObjectFactory = type(
+        "FakeGXObjectFactory",
+        (),
+        {"createObject": staticmethod(lambda object_type: FakeCreatedObject(object_type))},
+    )
+
+    monkeypatch.setitem(sys.modules, "gurux_dlms", gurux_module)
+    monkeypatch.setitem(sys.modules, "gurux_dlms.objects", objects_module)
+    monkeypatch.setitem(sys.modules, "gurux_dlms.internal", internal_module)
+    monkeypatch.setitem(sys.modules, "gurux_dlms.objects.GXDLMSProfileGeneric", profile_module)
+    monkeypatch.setitem(sys.modules, "gurux_dlms.objects.GXDLMSCaptureObject", capture_module)
+    monkeypatch.setitem(sys.modules, "gurux_dlms.internal._GXCommon", common_module)
+    monkeypatch.setitem(sys.modules, "gurux_dlms._GXObjectFactory", factory_module)
+
+
+def test_read_profile_capture_objects_normalizes_raw_structures_when_update_fails(
+    monkeypatch,
+) -> None:
+    _install_fake_gurux_profile_modules(monkeypatch)
+
+    class FakeReply:
+        error = 0
+        value = [
+            [8, bytearray(b"\x00\x00\x01\x00\x00\xff"), 2, 0],
+            [3, bytearray(b"\x01\x00\x01\x08\x00\xff"), 2, 0],
+        ]
+
+        @staticmethod
+        def isComplete() -> bool:
+            return True
+
+    class FakeClient:
+        @staticmethod
+        def read(obj, attr_index):
+            assert getattr(obj, "logicalName", None) == "1.0.99.1.0.255"
+            assert attr_index == 3
+            return [b"read-capture-objects"]
+
+        @staticmethod
+        def updateValue(obj, attr_index, value):
+            raise ValueError("meter-specific capture object shape")
+
+    monkeypatch.setattr(
+        "app.runtime.adapters.gurux_tcp_ingress._send_pdu_list",
+        lambda transport, client, pdus, config: FakeReply(),
+    )
+
+    capture_objects, error = _read_profile_capture_objects(
+        object(),
+        FakeClient(),
+        profile_obis_code="1.0.99.1.0.255",
+        config=LiveTcpDlmsSessionConfig(
+            start_protocol="iec62056_21",
+            client_address=1,
+            server_address=16,
+            server_address_size=1,
+            authentication_mode="low",
+            password="secret",
+        ),
+    )
+
+    assert error is None
+    assert capture_objects is not None
+    assert [capture_object.logicalName for capture_object, _ in capture_objects] == [
+        "0.0.1.0.0.255",
+        "1.0.1.8.0.255",
+    ]
+    assert [metadata.attributeIndex for _, metadata in capture_objects] == [2, 2]
+
+
+def test_read_profile_capture_objects_returns_unavailable_when_reply_has_no_objects(
+    monkeypatch,
+) -> None:
+    _install_fake_gurux_profile_modules(monkeypatch)
+
+    class FakeReply:
+        error = 0
+        value = []
+
+        @staticmethod
+        def isComplete() -> bool:
+            return True
+
+    class FakeClient:
+        @staticmethod
+        def read(obj, attr_index):
+            assert attr_index == 3
+            return [b"read-capture-objects"]
+
+        @staticmethod
+        def updateValue(obj, attr_index, value):
+            raise AssertionError("updateValue should not run for an empty capture-object reply")
+
+    monkeypatch.setattr(
+        "app.runtime.adapters.gurux_tcp_ingress._send_pdu_list",
+        lambda transport, client, pdus, config: FakeReply(),
+    )
+
+    capture_objects, error = _read_profile_capture_objects(
+        object(),
+        FakeClient(),
+        profile_obis_code="1.0.99.1.0.255",
+        config=LiveTcpDlmsSessionConfig(
+            start_protocol="iec62056_21",
+            client_address=1,
+            server_address=16,
+            server_address_size=1,
+            authentication_mode="low",
+            password="secret",
+        ),
+    )
+
+    assert capture_objects is None
+    assert error == "capture_objects_unavailable"
 
 
 def test_internal_runtime_tcp_meter_ingress_discovery_refuses_without_active_connection(
