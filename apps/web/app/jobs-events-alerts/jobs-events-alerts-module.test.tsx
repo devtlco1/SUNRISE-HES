@@ -418,6 +418,71 @@ describe("JobsEventsAlertsModule", () => {
     ).toHaveAttribute("href", "/jobs-events-alerts/activity/job_run/job-run-1");
   });
 
+  it("renders a job definition workspace and lets the scheduler lanes change the selected definition", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const workspacePanel = (
+      await screen.findByRole("heading", { name: "Job definition workspace" })
+    ).closest("section");
+    expect(workspacePanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Profile capture daily"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Planning posture"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Schedule summary"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Visible execution context"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText(/Latest run Failed at .*2026/),
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      within(workspacePanel as HTMLElement).getByRole("link", {
+        name: "Open latest execution log",
+      }),
+    ).toHaveAttribute("href", "/jobs-events-alerts/activity/job_run/job-run-1");
+    expect(
+      within(workspacePanel as HTMLElement).getByRole("link", {
+        name: "Review scheduler calendar",
+      }),
+    ).toHaveAttribute("href", "/jobs-events-alerts#scheduler-calendar-workspace");
+
+    const manualLane = (
+      await screen.findByRole("heading", { name: "Manual planning lane" })
+    ).closest("section");
+    expect(manualLane).not.toBeNull();
+
+    await user.click(
+      within(manualLane as HTMLElement).getByRole("button", { name: "Inspect workspace" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Manual investigation trigger"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText(
+          "No recent execution context is visible for this job definition.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText("No failed run visible"),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("renders a dedicated job runs workspace with status, timing, and outcome visibility", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
@@ -713,6 +778,7 @@ describe("JobsEventsAlertsModule", () => {
       await screen.findByText("Loading jobs, events, and alerts overview..."),
     ).toBeInTheDocument();
     expect(screen.getByText("Loading scheduler calendar workspace...")).toBeInTheDocument();
+    expect(screen.getByText("Loading job definition workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading job runs workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading failed runs workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading job runs and retry queue...")).toBeInTheDocument();
@@ -739,6 +805,9 @@ describe("JobsEventsAlertsModule", () => {
     const schedulerPanel = screen
       .getByRole("heading", { name: "Scheduler calendar workspace" })
       .closest("section");
+    const jobDefinitionPanel = screen
+      .getByRole("heading", { name: "Job definition workspace" })
+      .closest("section");
     const jobRunsPanel = screen
       .getByRole("heading", { name: "Job runs workspace" })
       .closest("section");
@@ -751,6 +820,7 @@ describe("JobsEventsAlertsModule", () => {
     expect(alertsPanel).not.toBeNull();
     expect(retryPanel).not.toBeNull();
     expect(schedulerPanel).not.toBeNull();
+    expect(jobDefinitionPanel).not.toBeNull();
     expect(jobRunsPanel).not.toBeNull();
     expect(failedRunsPanel).not.toBeNull();
     expect(activityPanel).not.toBeNull();
@@ -769,6 +839,11 @@ describe("JobsEventsAlertsModule", () => {
       expect(
         within(schedulerPanel as HTMLElement).getByText(
           "No manual-only job definitions are currently visible.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(jobDefinitionPanel as HTMLElement).getByText(
+          "No job definition selected for workspace review.",
         ),
       ).toBeInTheDocument();
       expect(

@@ -360,6 +360,25 @@ function buildPlanningPosture(jobDefinition: JobDefinitionItem): string {
   return jobDefinition.is_active ? "Active schedule" : "Paused schedule";
 }
 
+function buildPlanningPostureTone(jobDefinition: JobDefinitionItem): "positive" | "warning" | "neutral" {
+  if (!jobDefinition.is_active) {
+    return "neutral";
+  }
+  if (jobDefinition.schedule_type === "manual") {
+    return "warning";
+  }
+  return "positive";
+}
+
+function buildJobDefinitionLatestRunSummary(jobRun: JobRunItem | null): string {
+  if (!jobRun) {
+    return "No recent run in the current bounded projection.";
+  }
+  return `Latest run ${formatStatusLabel(jobRun.status)} at ${formatDateTime(
+    buildJobRunTimestamp(jobRun),
+  )}`;
+}
+
 function buildRetryRemediationHref({
   commandId,
   itemType,
@@ -416,6 +435,7 @@ export function JobsEventsAlertsModule({
     null,
   );
   const [recentEvents, setRecentEvents] = useState<RecentEventItem[] | null>(null);
+  const [selectedJobDefinitionId, setSelectedJobDefinitionId] = useState<string | null>(null);
   const [activityFilter, setActivityFilter] = useState<"all" | "attention">(
     initialAttentionContext?.filter ?? "all",
   );
@@ -794,6 +814,25 @@ export function JobsEventsAlertsModule({
     }
     return entries;
   }, [jobRuns]);
+  const jobRunsByDefinitionId = useMemo(() => {
+    const entries = new Map<string, JobRunItem[]>();
+    for (const jobRun of jobRuns ?? []) {
+      const existing = entries.get(jobRun.job_definition_id) ?? [];
+      existing.push(jobRun);
+      entries.set(jobRun.job_definition_id, existing);
+    }
+    for (const [definitionId, runs] of entries.entries()) {
+      entries.set(
+        definitionId,
+        [...runs].sort(
+          (left, right) =>
+            new Date(buildJobRunTimestamp(right)).getTime() -
+            new Date(buildJobRunTimestamp(left)).getTime(),
+        ),
+      );
+    }
+    return entries;
+  }, [jobRuns]);
 
   const overviewCards = useMemo(
     () => [
@@ -843,6 +882,19 @@ export function JobsEventsAlertsModule({
       return filteredActivityItems[0]?.id ?? null;
     });
   }, [filteredActivityItems]);
+  useEffect(() => {
+    setSelectedJobDefinitionId((currentSelectedJobDefinitionId) => {
+      if (
+        currentSelectedJobDefinitionId &&
+        (jobDefinitions ?? []).some((definition) => definition.id === currentSelectedJobDefinitionId)
+      ) {
+        return currentSelectedJobDefinitionId;
+      }
+
+      const activeDefinition = (jobDefinitions ?? []).find((definition) => definition.is_active);
+      return activeDefinition?.id ?? jobDefinitions?.[0]?.id ?? null;
+    });
+  }, [jobDefinitions]);
 
   const selectedActivity = useMemo(
     () =>
@@ -857,6 +909,25 @@ export function JobsEventsAlertsModule({
         ? (jobRuns ?? []).find((jobRun) => jobRun.id === selectedActivity.id) ?? null
         : null,
     [jobRuns, selectedActivity],
+  );
+  const selectedJobDefinition = useMemo(
+    () =>
+      (jobDefinitions ?? []).find((definition) => definition.id === selectedJobDefinitionId) ?? null,
+    [jobDefinitions, selectedJobDefinitionId],
+  );
+  const selectedJobDefinitionRuns = useMemo(
+    () =>
+      selectedJobDefinition ? (jobRunsByDefinitionId.get(selectedJobDefinition.id) ?? []) : [],
+    [jobRunsByDefinitionId, selectedJobDefinition],
+  );
+  const selectedJobDefinitionLatestRun = useMemo(
+    () => selectedJobDefinitionRuns[0] ?? null,
+    [selectedJobDefinitionRuns],
+  );
+  const selectedJobDefinitionLatestFailedRun = useMemo(
+    () =>
+      selectedJobDefinitionRuns.find((jobRun) => isRetryWorthyStatus(jobRun.status)) ?? null,
+    [selectedJobDefinitionRuns],
   );
 
   const activityStatus = useMemo(() => {
@@ -915,7 +986,7 @@ export function JobsEventsAlertsModule({
           )}
         </section>
 
-        <section className="subpanel">
+        <section className="subpanel" id="scheduler-calendar-workspace">
           <div className="section-heading">
             <div>
               <h2>Scheduler calendar workspace</h2>
@@ -985,9 +1056,7 @@ export function JobsEventsAlertsModule({
                               <div className="command-list-item-header">
                                 <strong>{definition.name}</strong>
                                 <span
-                                  className={`status-pill ${
-                                    definition.is_active ? "positive" : "neutral"
-                                  }`}
+                                  className={`status-pill ${buildPlanningPostureTone(definition)}`}
                                 >
                                   {buildPlanningPosture(definition)}
                                 </span>
@@ -1020,6 +1089,13 @@ export function JobsEventsAlertsModule({
                                 </span>
                               </div>
                               <div className="artifact-row">
+                                <button
+                                  className="secondary-button"
+                                  onClick={() => setSelectedJobDefinitionId(definition.id)}
+                                  type="button"
+                                >
+                                  Inspect workspace
+                                </button>
                                 {latestRun ? (
                                   <Link
                                     className="secondary-button"
@@ -1060,11 +1136,7 @@ export function JobsEventsAlertsModule({
                         <article key={definition.id} className="command-list-item">
                           <div className="command-list-item-header">
                             <strong>{definition.name}</strong>
-                            <span
-                              className={`status-pill ${
-                                definition.is_active ? "positive" : "neutral"
-                              }`}
-                            >
+                            <span className={`status-pill ${buildPlanningPostureTone(definition)}`}>
                               {buildPlanningPosture(definition)}
                             </span>
                           </div>
@@ -1093,6 +1165,13 @@ export function JobsEventsAlertsModule({
                             </span>
                           </div>
                           <div className="artifact-row">
+                            <button
+                              className="secondary-button"
+                              onClick={() => setSelectedJobDefinitionId(definition.id)}
+                              type="button"
+                            >
+                              Inspect workspace
+                            </button>
                             {latestRun ? (
                               <Link
                                 className="secondary-button"
@@ -1130,11 +1209,7 @@ export function JobsEventsAlertsModule({
                         <article key={definition.id} className="command-list-item">
                           <div className="command-list-item-header">
                             <strong>{definition.name}</strong>
-                            <span
-                              className={`status-pill ${
-                                definition.is_active ? "warning" : "neutral"
-                              }`}
-                            >
+                            <span className={`status-pill ${buildPlanningPostureTone(definition)}`}>
                               {buildPlanningPosture(definition)}
                             </span>
                           </div>
@@ -1161,6 +1236,13 @@ export function JobsEventsAlertsModule({
                             </span>
                           </div>
                           <div className="artifact-row">
+                            <button
+                              className="secondary-button"
+                              onClick={() => setSelectedJobDefinitionId(definition.id)}
+                              type="button"
+                            >
+                              Inspect workspace
+                            </button>
                             {latestRun ? (
                               <Link
                                 className="secondary-button"
@@ -1181,6 +1263,180 @@ export function JobsEventsAlertsModule({
         </section>
 
         <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Job definition workspace</h2>
+              <p className="muted">
+                One bounded planning and execution workspace for the currently selected job
+                definition.
+              </p>
+            </div>
+          </div>
+
+          {isLoadingActivity ? (
+            <p className="muted">Loading job definition workspace...</p>
+          ) : selectedJobDefinition ? (
+            <div className="detail-stack">
+              <section className="jobs-activity-hero">
+                <div className="jobs-activity-hero-row">
+                  <div>
+                    <p className="eyebrow">Selected Job Definition</p>
+                    <h3>{selectedJobDefinition.name}</h3>
+                    <p className="muted">
+                      {formatStatusLabel(selectedJobDefinition.category)} job in the{" "}
+                      {formatStatusLabel(selectedJobDefinition.target_type)} planning lane.
+                    </p>
+                  </div>
+                  <span className={`status-pill ${buildPlanningPostureTone(selectedJobDefinition)}`}>
+                    {buildPlanningPosture(selectedJobDefinition)}
+                  </span>
+                </div>
+
+                <div className="command-list-item-badges">
+                  <span className="artifact-pill">
+                    {formatStatusLabel(selectedJobDefinition.schedule_type)}
+                  </span>
+                  <span className="artifact-pill">{selectedJobDefinition.code}</span>
+                  <span className="artifact-pill">
+                    Timeout {selectedJobDefinition.timeout_seconds} sec
+                  </span>
+                </div>
+              </section>
+
+              <div className="detail-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Planning posture</span>
+                  <strong>{buildPlanningPosture(selectedJobDefinition)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Schedule mode</span>
+                  <strong>{formatStatusLabel(selectedJobDefinition.schedule_type)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Schedule summary</span>
+                  <strong>{buildScheduleSummary(selectedJobDefinition)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Retry posture</span>
+                  <strong>Retries {selectedJobDefinition.max_retries}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Latest run</span>
+                  <strong>{buildJobDefinitionLatestRunSummary(selectedJobDefinitionLatestRun)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Latest failed run</span>
+                  <strong>
+                    {selectedJobDefinitionLatestFailedRun
+                      ? formatStatusLabel(selectedJobDefinitionLatestFailedRun.status)
+                      : "No failed run visible"}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="command-list-item">
+                <div className="command-list-item-header">
+                  <strong>Planning details</strong>
+                  <span className="artifact-pill">
+                    {selectedJobDefinition.default_payload ? "Default payload set" : "No default payload"}
+                  </span>
+                </div>
+                <div className="command-list-item-meta">
+                  <span>
+                    {selectedJobDefinition.notes ?? "No planning notes recorded in the current read model."}
+                  </span>
+                  <span>
+                    Command template{" "}
+                    {selectedJobDefinition.command_template_id ?? "Not linked"}
+                  </span>
+                </div>
+                <div className="command-list-item-meta">
+                  <span>Priority {formatStatusLabel(selectedJobDefinition.priority)}</span>
+                  <span>Target {formatStatusLabel(selectedJobDefinition.target_type)}</span>
+                </div>
+              </div>
+
+              <div className="command-list-item">
+                <div className="command-list-item-header">
+                  <strong>Visible execution context</strong>
+                  <span className="artifact-pill">
+                    {selectedJobDefinitionRuns.length} visible run
+                    {selectedJobDefinitionRuns.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                <div className="detail-stack">
+                  {selectedJobDefinitionRuns.length === 0 ? (
+                    <p className="muted">
+                      No recent execution context is visible for this job definition.
+                    </p>
+                  ) : null}
+
+                  {selectedJobDefinitionRuns.slice(0, 3).map((jobRun) => (
+                    <article key={jobRun.id} className="command-list-item">
+                      <div className="command-list-item-header">
+                        <strong>{jobRun.id}</strong>
+                        <span className={`status-pill ${buildStatusTone(jobRun.status)}`}>
+                          {formatStatusLabel(jobRun.status)}
+                        </span>
+                      </div>
+                      <div className="command-list-item-meta">
+                        <span>{buildJobRunTimingSummary(jobRun)}</span>
+                        <span>Duration {buildJobRunDurationLabel(jobRun)}</span>
+                      </div>
+                      <div className="command-list-item-meta">
+                        <span>{buildJobRunOutcomeSummary(jobRun)}</span>
+                        <span>Retries {jobRun.retry_count}/{jobRun.max_retries}</span>
+                      </div>
+                      <div className="artifact-row">
+                        <Link
+                          className="secondary-button"
+                          href={buildActivityDetailHref("job_run", jobRun.id)}
+                        >
+                          Open run detail
+                        </Link>
+                        {jobRun.related_command_id ? (
+                          <Link className="secondary-button" href="/commands">
+                            Open commands page
+                          </Link>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="artifact-row">
+                <Link className="secondary-button" href="/jobs-events-alerts#scheduler-calendar-workspace">
+                  Review scheduler calendar
+                </Link>
+                <Link className="secondary-button" href="/jobs-events-alerts#failed-runs-workspace">
+                  Review failed runs
+                </Link>
+                {selectedJobDefinitionLatestRun ? (
+                  <Link
+                    className="secondary-button"
+                    href={buildActivityDetailHref("job_run", selectedJobDefinitionLatestRun.id)}
+                  >
+                    Open latest execution log
+                  </Link>
+                ) : null}
+                {selectedJobDefinitionLatestFailedRun ? (
+                  <Link
+                    className="secondary-button"
+                    href={buildActivityDetailHref("job_run", selectedJobDefinitionLatestFailedRun.id)}
+                  >
+                    Open latest failed run detail
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <p className="muted">No job definition selected for workspace review.</p>
+          )}
+        </section>
+
+        <section className="subpanel" id="failed-runs-workspace">
           <div className="section-heading">
             <div>
               <h2>Failed runs workspace</h2>
