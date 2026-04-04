@@ -13,6 +13,80 @@ function jsonResponse(payload: unknown, status = 200) {
 }
 
 function createMockApi({
+  jobDefinitions = [
+    {
+      id: "job-definition-1",
+      code: "profile-capture-daily",
+      name: "Profile capture daily",
+      category: "command",
+      target_type: "meter",
+      schedule_type: "once",
+      run_at: "2026-03-31T09:55:00.000Z",
+      cron_expression: null,
+      interval_seconds: null,
+      command_template_id: "template-1",
+      default_payload: null,
+      priority: "normal",
+      timeout_seconds: 120,
+      max_retries: 3,
+      is_active: true,
+      notes: "Daily planning anchor",
+    },
+    {
+      id: "job-definition-2",
+      code: "relay-health-interval",
+      name: "Relay health interval",
+      category: "connectivity_check",
+      target_type: "meter",
+      schedule_type: "interval",
+      run_at: "2026-03-31T09:00:00.000Z",
+      cron_expression: null,
+      interval_seconds: 900,
+      command_template_id: null,
+      default_payload: null,
+      priority: "normal",
+      timeout_seconds: 180,
+      max_retries: 1,
+      is_active: true,
+      notes: null,
+    },
+    {
+      id: "job-definition-3",
+      code: "nightly-maintenance",
+      name: "Nightly maintenance",
+      category: "system_maintenance",
+      target_type: "system",
+      schedule_type: "cron",
+      run_at: null,
+      cron_expression: "0 2 * * *",
+      interval_seconds: null,
+      command_template_id: null,
+      default_payload: null,
+      priority: "normal",
+      timeout_seconds: 300,
+      max_retries: 0,
+      is_active: false,
+      notes: "Paused pending review",
+    },
+    {
+      id: "job-definition-4",
+      code: "manual-investigation",
+      name: "Manual investigation trigger",
+      category: "command",
+      target_type: "meter",
+      schedule_type: "manual",
+      run_at: null,
+      cron_expression: null,
+      interval_seconds: null,
+      command_template_id: null,
+      default_payload: null,
+      priority: "normal",
+      timeout_seconds: 240,
+      max_retries: 0,
+      is_active: true,
+      notes: "Manual operator use",
+    },
+  ],
   jobRuns = [
     {
       id: "job-run-1",
@@ -83,20 +157,25 @@ function createMockApi({
       received_at: "2026-03-31T09:59:30.000Z",
     },
   ],
+  jobDefinitionsStatus = 200,
   jobRunsStatus = 200,
   commandsStatus = 200,
   eventsStatus = 200,
+  jobDefinitionsDetail = "Job definitions unavailable.",
   jobRunsDetail = "Job runs unavailable.",
   commandsDetail = "Commands unavailable.",
   eventsDetail = "Events unavailable.",
   delayedResponses = false,
 }: {
+  jobDefinitions?: Array<Record<string, unknown>>;
   jobRuns?: Array<Record<string, unknown>>;
   recentCommands?: Array<Record<string, unknown>>;
   recentEvents?: Array<Record<string, unknown>>;
+  jobDefinitionsStatus?: number;
   jobRunsStatus?: number;
   commandsStatus?: number;
   eventsStatus?: number;
+  jobDefinitionsDetail?: string;
   jobRunsDetail?: string;
   commandsDetail?: string;
   eventsDetail?: string;
@@ -118,6 +197,13 @@ function createMockApi({
 
     if (delayedResponses) {
       await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
+
+    if (url.endsWith("/api/v1/job-definitions")) {
+      if (jobDefinitionsStatus !== 200) {
+        return jsonResponse({ detail: jobDefinitionsDetail }, jobDefinitionsStatus);
+      }
+      return jsonResponse({ total: jobDefinitions.length, items: jobDefinitions });
     }
 
     if (url.includes("/api/v1/job-runs?")) {
@@ -272,6 +358,64 @@ describe("JobsEventsAlertsModule", () => {
     expect(
       within(retryPanel as HTMLElement).getAllByRole("link", { name: "Open commands page" })[0],
     ).toHaveAttribute("href", "/commands");
+  });
+
+  it("renders a scheduler calendar workspace with calendar anchors and planning lanes", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const schedulerPanel = (
+      await screen.findByRole("heading", { name: "Scheduler calendar workspace" })
+    ).closest("section");
+    expect(schedulerPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Loaded schedules"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Active schedules"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("One-time calendar anchors"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Recurring schedules"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Calendar anchors"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Recurring cadence lane"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Manual planning lane"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Profile capture daily"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Relay health interval"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Manual investigation trigger"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Every 15 min"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText("Cron 0 2 * * *"),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getAllByText("Active schedule").length,
+      ).toBeGreaterThan(0);
+    });
+
+    expect(
+      within(schedulerPanel as HTMLElement).getByRole("link", { name: "Open latest run detail" }),
+    ).toHaveAttribute("href", "/jobs-events-alerts/activity/job_run/job-run-1");
   });
 
   it("renders a dedicated job runs workspace with status, timing, and outcome visibility", async () => {
@@ -568,6 +712,7 @@ describe("JobsEventsAlertsModule", () => {
     expect(
       await screen.findByText("Loading jobs, events, and alerts overview..."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Loading scheduler calendar workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading job runs workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading failed runs workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading job runs and retry queue...")).toBeInTheDocument();
@@ -576,6 +721,7 @@ describe("JobsEventsAlertsModule", () => {
 
   it("renders bounded empty states when recent jobs, commands, and events are empty", async () => {
     const { fetchMock } = createMockApi({
+      jobDefinitions: [],
       jobRuns: [],
       recentCommands: [],
       recentEvents: [],
@@ -590,6 +736,9 @@ describe("JobsEventsAlertsModule", () => {
     const retryPanel = screen
       .getByRole("heading", { name: "Job runs + retry queue" })
       .closest("section");
+    const schedulerPanel = screen
+      .getByRole("heading", { name: "Scheduler calendar workspace" })
+      .closest("section");
     const jobRunsPanel = screen
       .getByRole("heading", { name: "Job runs workspace" })
       .closest("section");
@@ -601,11 +750,27 @@ describe("JobsEventsAlertsModule", () => {
       .closest("section");
     expect(alertsPanel).not.toBeNull();
     expect(retryPanel).not.toBeNull();
+    expect(schedulerPanel).not.toBeNull();
     expect(jobRunsPanel).not.toBeNull();
     expect(failedRunsPanel).not.toBeNull();
     expect(activityPanel).not.toBeNull();
 
     await waitFor(() => {
+      expect(
+        within(schedulerPanel as HTMLElement).getByText(
+          "No job schedules are currently visible.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText(
+          "No recurring schedules are currently visible.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(schedulerPanel as HTMLElement).getByText(
+          "No manual-only job definitions are currently visible.",
+        ),
+      ).toBeInTheDocument();
       expect(
         within(jobRunsPanel as HTMLElement).getByText("No recent job runs are currently visible."),
       ).toBeInTheDocument();
@@ -691,9 +856,11 @@ describe("JobsEventsAlertsModule", () => {
 
   it("renders a bounded error state when all monitoring sources fail", async () => {
     const { fetchMock } = createMockApi({
+      jobDefinitionsStatus: 503,
       jobRunsStatus: 503,
       commandsStatus: 503,
       eventsStatus: 503,
+      jobDefinitionsDetail: "Job definitions unavailable.",
       jobRunsDetail: "Job runs unavailable.",
       commandsDetail: "Commands unavailable.",
       eventsDetail: "Events unavailable.",

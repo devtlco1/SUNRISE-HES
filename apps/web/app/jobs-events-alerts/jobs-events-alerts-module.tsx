@@ -46,6 +46,30 @@ type JobRunListResponse = {
   items: JobRunItem[];
 };
 
+type JobDefinitionItem = {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  target_type: string;
+  schedule_type: string;
+  run_at: string | null;
+  cron_expression: string | null;
+  interval_seconds: number | null;
+  command_template_id: string | null;
+  default_payload: Record<string, unknown> | null;
+  priority: string;
+  timeout_seconds: number;
+  max_retries: number;
+  is_active: boolean;
+  notes: string | null;
+};
+
+type JobDefinitionListResponse = {
+  total: number;
+  items: JobDefinitionItem[];
+};
+
 type CommandRecentItem = {
   command_id: string;
   command_family: string;
@@ -287,6 +311,55 @@ function buildJobRunOutcomeSummary(jobRun: JobRunItem): string {
   return "No execution outcome summary recorded";
 }
 
+function formatCalendarDateLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatIntervalLabel(intervalSeconds: number | null): string {
+  if (!intervalSeconds || intervalSeconds <= 0) {
+    return "Interval not configured";
+  }
+  if (intervalSeconds % 3600 === 0) {
+    const hours = intervalSeconds / 3600;
+    return `Every ${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  if (intervalSeconds % 60 === 0) {
+    const minutes = intervalSeconds / 60;
+    return `Every ${minutes} min`;
+  }
+  return `Every ${intervalSeconds} sec`;
+}
+
+function buildScheduleSummary(jobDefinition: JobDefinitionItem): string {
+  if (jobDefinition.schedule_type === "once") {
+    return jobDefinition.run_at
+      ? `Runs ${formatDateTime(jobDefinition.run_at)}`
+      : "One-time schedule without a recorded run time";
+  }
+  if (jobDefinition.schedule_type === "interval") {
+    return formatIntervalLabel(jobDefinition.interval_seconds);
+  }
+  if (jobDefinition.schedule_type === "cron") {
+    return jobDefinition.cron_expression
+      ? `Cron ${jobDefinition.cron_expression}`
+      : "Cron schedule not configured";
+  }
+  return "Manual trigger only";
+}
+
+function buildPlanningPosture(jobDefinition: JobDefinitionItem): string {
+  return jobDefinition.is_active ? "Active schedule" : "Paused schedule";
+}
+
 function buildRetryRemediationHref({
   commandId,
   itemType,
@@ -338,6 +411,7 @@ export function JobsEventsAlertsModule({
   initialRetryQueueRoundTripContext?: RetryQueueRoundTripContext | null;
 }) {
   const [jobRuns, setJobRuns] = useState<JobRunItem[] | null>(null);
+  const [jobDefinitions, setJobDefinitions] = useState<JobDefinitionItem[] | null>(null);
   const [recentCommands, setRecentCommands] = useState<CommandRecentItem[] | null>(
     null,
   );
@@ -353,31 +427,35 @@ export function JobsEventsAlertsModule({
     setIsLoadingActivity(true);
     setPageError(null);
 
-    const [jobRunsResult, commandsResult, eventsResult] = await Promise.allSettled([
+    const [jobRunsResult, jobDefinitionsResult, commandsResult, eventsResult] =
+      await Promise.allSettled([
       authorizedFetch<JobRunListResponse>("/api/v1/job-runs?limit=8"),
+      authorizedFetch<JobDefinitionListResponse>("/api/v1/job-definitions"),
       authorizedFetch<CommandRecentListResponse>("/api/v1/commands/recent?limit=8"),
       authorizedFetch<RecentEventListResponse>("/api/v1/events/recent?limit=8"),
-    ]);
+      ]);
 
     const hasJobRuns = jobRunsResult.status === "fulfilled";
+    const hasJobDefinitions = jobDefinitionsResult.status === "fulfilled";
     const hasCommands = commandsResult.status === "fulfilled";
     const hasEvents = eventsResult.status === "fulfilled";
 
     setJobRuns(hasJobRuns ? jobRunsResult.value.items : null);
+    setJobDefinitions(hasJobDefinitions ? jobDefinitionsResult.value.items : null);
     setRecentCommands(hasCommands ? commandsResult.value.items : null);
     setRecentEvents(hasEvents ? eventsResult.value.items : null);
 
-    if (!hasJobRuns && !hasCommands && !hasEvents) {
-      const errors = [jobRunsResult, commandsResult, eventsResult]
+    if (!hasJobRuns && !hasJobDefinitions && !hasCommands && !hasEvents) {
+      const errors = [jobRunsResult, jobDefinitionsResult, commandsResult, eventsResult]
         .filter((result): result is PromiseRejectedResult => result.status === "rejected")
         .map((result) =>
           result.reason instanceof Error
             ? result.reason.message
-            : "Unable to load jobs, events, and alerts activity.",
+            : "Unable to load jobs, events, alerts, and scheduling activity.",
         );
-      setPageError(errors[0] ?? "Unable to load jobs, events, and alerts activity.");
-    } else if (!hasJobRuns || !hasCommands || !hasEvents) {
-      setPageError("Unable to load complete jobs, events, and alerts context.");
+      setPageError(errors[0] ?? "Unable to load jobs, events, alerts, and scheduling activity.");
+    } else if (!hasJobRuns || !hasJobDefinitions || !hasCommands || !hasEvents) {
+      setPageError("Unable to load complete jobs, events, alerts, and scheduling context.");
     }
 
     setIsLoadingActivity(false);
@@ -646,6 +724,76 @@ export function JobsEventsAlertsModule({
     [failedJobRunItems],
   );
   const latestFailedJobRun = failedJobRunItems[0] ?? null;
+  const activeScheduledDefinitions = useMemo(
+    () => (jobDefinitions ?? []).filter((definition) => definition.is_active).length,
+    [jobDefinitions],
+  );
+  const onceScheduledDefinitions = useMemo(
+    () =>
+      (jobDefinitions ?? []).filter(
+        (definition) => definition.schedule_type === "once" && definition.run_at,
+      ),
+    [jobDefinitions],
+  );
+  const recurringScheduledDefinitions = useMemo(
+    () =>
+      (jobDefinitions ?? []).filter(
+        (definition) => definition.schedule_type === "cron" || definition.schedule_type === "interval",
+      ),
+    [jobDefinitions],
+  );
+  const manualScheduledDefinitions = useMemo(
+    () => (jobDefinitions ?? []).filter((definition) => definition.schedule_type === "manual"),
+    [jobDefinitions],
+  );
+  const schedulerCalendarGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { label: string; items: JobDefinitionItem[] }
+    >();
+
+    for (const definition of onceScheduledDefinitions) {
+      if (!definition.run_at) {
+        continue;
+      }
+      const key = definition.run_at.slice(0, 10);
+      const existing = groups.get(key);
+      if (existing) {
+        existing.items.push(definition);
+        continue;
+      }
+      groups.set(key, {
+        label: formatCalendarDateLabel(definition.run_at),
+        items: [definition],
+      });
+    }
+
+    return [...groups.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([, value]) => ({
+        ...value,
+        items: value.items.sort((left, right) =>
+          (left.run_at ?? "").localeCompare(right.run_at ?? ""),
+        ),
+      }));
+  }, [onceScheduledDefinitions]);
+  const latestRunByDefinitionId = useMemo(() => {
+    const entries = new Map<string, JobRunItem>();
+    for (const jobRun of jobRuns ?? []) {
+      const existing = entries.get(jobRun.job_definition_id);
+      if (!existing) {
+        entries.set(jobRun.job_definition_id, jobRun);
+        continue;
+      }
+      if (
+        new Date(buildJobRunTimestamp(jobRun)).getTime() >
+        new Date(buildJobRunTimestamp(existing)).getTime()
+      ) {
+        entries.set(jobRun.job_definition_id, jobRun);
+      }
+    }
+    return entries;
+  }, [jobRuns]);
 
   const overviewCards = useMemo(
     () => [
@@ -669,8 +817,19 @@ export function JobsEventsAlertsModule({
         label: "Retry-worthy execution contexts",
         value: String(retryQueueItems.length),
       },
+      {
+        label: "Scheduler definitions loaded",
+        value: jobDefinitions ? String(jobDefinitions.length) : "Not available",
+      },
     ],
-    [alertItems.length, jobRuns, recentCommands, recentEvents, retryQueueItems.length],
+    [
+      alertItems.length,
+      jobDefinitions,
+      jobRuns,
+      recentCommands,
+      recentEvents,
+      retryQueueItems.length,
+    ],
   );
 
   useEffect(() => {
@@ -752,6 +911,271 @@ export function JobsEventsAlertsModule({
                   <strong>{card.value}</strong>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Scheduler calendar workspace</h2>
+              <p className="muted">
+                Calendar-like planning view over the current job definition schedules using the
+                existing jobs read model.
+              </p>
+            </div>
+            <span className="artifact-pill">
+              {(jobDefinitions ?? []).length} definition
+              {(jobDefinitions ?? []).length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          {isLoadingActivity ? (
+            <p className="muted">Loading scheduler calendar workspace...</p>
+          ) : (
+            <div className="detail-stack">
+              <div className="jobs-overview-grid">
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Loaded schedules</span>
+                  <strong>{String((jobDefinitions ?? []).length)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Active schedules</span>
+                  <strong>{String(activeScheduledDefinitions)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">One-time calendar anchors</span>
+                  <strong>{String(onceScheduledDefinitions.length)}</strong>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Recurring schedules</span>
+                  <strong>{String(recurringScheduledDefinitions.length)}</strong>
+                </div>
+              </div>
+
+              {jobDefinitions?.length === 0 ? (
+                <p className="muted">No job schedules are currently visible.</p>
+              ) : null}
+
+              {schedulerCalendarGroups.length > 0 ? (
+                <section className="detail-stack">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Calendar anchors</h3>
+                      <p className="muted">
+                        One-time schedules grouped by their configured calendar day.
+                      </p>
+                    </div>
+                  </div>
+
+                  {schedulerCalendarGroups.map((group) => (
+                    <div key={group.label} className="command-list-item">
+                      <div className="command-list-item-header">
+                        <strong>{group.label}</strong>
+                        <span className="artifact-pill">
+                          {group.items.length} item{group.items.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+
+                      <div className="detail-stack">
+                        {group.items.map((definition) => {
+                          const latestRun = latestRunByDefinitionId.get(definition.id) ?? null;
+                          return (
+                            <article key={definition.id} className="command-list-item">
+                              <div className="command-list-item-header">
+                                <strong>{definition.name}</strong>
+                                <span
+                                  className={`status-pill ${
+                                    definition.is_active ? "positive" : "neutral"
+                                  }`}
+                                >
+                                  {buildPlanningPosture(definition)}
+                                </span>
+                              </div>
+                              <div className="command-list-item-badges">
+                                <span className="artifact-pill">
+                                  {formatStatusLabel(definition.category)}
+                                </span>
+                                <span className="artifact-pill">
+                                  {formatStatusLabel(definition.target_type)}
+                                </span>
+                                <span className="artifact-pill">
+                                  {formatStatusLabel(definition.schedule_type)}
+                                </span>
+                              </div>
+                              <div className="command-list-item-meta">
+                                <span>{buildScheduleSummary(definition)}</span>
+                                <span>{definition.code}</span>
+                              </div>
+                              <div className="command-list-item-meta">
+                                <span>
+                                  {latestRun
+                                    ? `Latest run ${formatStatusLabel(latestRun.status)}`
+                                    : "No recent run in the current bounded projection."}
+                                </span>
+                                <span>
+                                  {latestRun
+                                    ? formatDateTime(buildJobRunTimestamp(latestRun))
+                                    : `Timeout ${definition.timeout_seconds} sec`}
+                                </span>
+                              </div>
+                              <div className="artifact-row">
+                                {latestRun ? (
+                                  <Link
+                                    className="secondary-button"
+                                    href={buildActivityDetailHref("job_run", latestRun.id)}
+                                  >
+                                    Open latest run detail
+                                  </Link>
+                                ) : null}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              ) : null}
+
+              <div className="jobs-activity-layout">
+                <section className="subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Recurring cadence lane</h3>
+                      <p className="muted">
+                        Active recurring schedules shown with cadence and latest run context.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="command-list">
+                    {recurringScheduledDefinitions.length === 0 ? (
+                      <p className="muted">No recurring schedules are currently visible.</p>
+                    ) : null}
+
+                    {recurringScheduledDefinitions.map((definition) => {
+                      const latestRun = latestRunByDefinitionId.get(definition.id) ?? null;
+                      return (
+                        <article key={definition.id} className="command-list-item">
+                          <div className="command-list-item-header">
+                            <strong>{definition.name}</strong>
+                            <span
+                              className={`status-pill ${
+                                definition.is_active ? "positive" : "neutral"
+                              }`}
+                            >
+                              {buildPlanningPosture(definition)}
+                            </span>
+                          </div>
+                          <div className="command-list-item-badges">
+                            <span className="artifact-pill">
+                              {formatStatusLabel(definition.schedule_type)}
+                            </span>
+                            <span className="artifact-pill">
+                              {formatStatusLabel(definition.category)}
+                            </span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>{buildScheduleSummary(definition)}</span>
+                            <span>{definition.code}</span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>
+                              {latestRun
+                                ? `Latest run ${formatStatusLabel(latestRun.status)}`
+                                : "No recent run in the current bounded projection."}
+                            </span>
+                            <span>
+                              {latestRun
+                                ? formatDateTime(buildJobRunTimestamp(latestRun))
+                                : `Retry budget ${definition.max_retries}`}
+                            </span>
+                          </div>
+                          <div className="artifact-row">
+                            {latestRun ? (
+                              <Link
+                                className="secondary-button"
+                                href={buildActivityDetailHref("job_run", latestRun.id)}
+                              >
+                                Open latest run detail
+                              </Link>
+                            ) : null}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Manual planning lane</h3>
+                      <p className="muted">
+                        Manual jobs remain visible here as planning anchors without synthetic
+                        calendar placement.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="command-list">
+                    {manualScheduledDefinitions.length === 0 ? (
+                      <p className="muted">No manual-only job definitions are currently visible.</p>
+                    ) : null}
+
+                    {manualScheduledDefinitions.map((definition) => {
+                      const latestRun = latestRunByDefinitionId.get(definition.id) ?? null;
+                      return (
+                        <article key={definition.id} className="command-list-item">
+                          <div className="command-list-item-header">
+                            <strong>{definition.name}</strong>
+                            <span
+                              className={`status-pill ${
+                                definition.is_active ? "warning" : "neutral"
+                              }`}
+                            >
+                              {buildPlanningPosture(definition)}
+                            </span>
+                          </div>
+                          <div className="command-list-item-badges">
+                            <span className="artifact-pill">Manual</span>
+                            <span className="artifact-pill">
+                              {formatStatusLabel(definition.category)}
+                            </span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>{definition.code}</span>
+                            <span>{definition.notes ?? "No planning notes recorded."}</span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>
+                              {latestRun
+                                ? `Latest run ${formatStatusLabel(latestRun.status)}`
+                                : "No recent run in the current bounded projection."}
+                            </span>
+                            <span>
+                              {latestRun
+                                ? formatDateTime(buildJobRunTimestamp(latestRun))
+                                : `Timeout ${definition.timeout_seconds} sec`}
+                            </span>
+                          </div>
+                          <div className="artifact-row">
+                            {latestRun ? (
+                              <Link
+                                className="secondary-button"
+                                href={buildActivityDetailHref("job_run", latestRun.id)}
+                              >
+                                Open latest run detail
+                              </Link>
+                            ) : null}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
             </div>
           )}
         </section>
