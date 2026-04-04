@@ -141,8 +141,122 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function formatDurationFromMs(durationMs: number): string {
+  const clampedDurationMs = Math.max(durationMs, 0);
+  const totalMinutes = Math.floor(clampedDurationMs / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours} hr ${minutes} min`;
+  }
+  if (hours > 0) {
+    return `${hours} hr`;
+  }
+  if (minutes > 0) {
+    return `${minutes} min`;
+  }
+  return `${Math.max(Math.round(clampedDurationMs / 1000), 1)} sec`;
+}
+
+function buildDurationLabel(startedAt: string | null, endedAt: string | null): string {
+  if (!startedAt || !endedAt) {
+    return "Not completed";
+  }
+
+  const started = new Date(startedAt);
+  const ended = new Date(endedAt);
+  if (Number.isNaN(started.getTime()) || Number.isNaN(ended.getTime())) {
+    return "Not available";
+  }
+
+  return formatDurationFromMs(ended.getTime() - started.getTime());
+}
+
 function isRetryWorthyStatus(value: string | null): boolean {
   return ["failed", "timed_out", "cancelled"].includes(value ?? "");
+}
+
+function buildJobRunExecutionTrace(detail: JobRunDetail) {
+  return [
+    {
+      label: "Scheduled",
+      timestamp: detail.scheduled_for,
+      summary: "Run entered the bounded scheduling queue.",
+      tone: "neutral" as const,
+    },
+    {
+      label: "Available",
+      timestamp: detail.available_at,
+      summary: "Run became available for worker claim.",
+      tone: "neutral" as const,
+    },
+    {
+      label: "Claimed",
+      timestamp: detail.claimed_at,
+      summary: detail.worker_identifier
+        ? `Claimed by ${detail.worker_identifier}.`
+        : "No worker claim recorded.",
+      tone: "warning" as const,
+    },
+    {
+      label: "Started",
+      timestamp: detail.started_at,
+      summary: "Execution started in the current bounded flow.",
+      tone: "warning" as const,
+    },
+    {
+      label: detail.cancelled_at ? "Cancelled" : "Finished",
+      timestamp: detail.cancelled_at ?? detail.completed_at,
+      summary:
+        detail.latest_error_message ??
+        detail.latest_error_code ??
+        (detail.result_summary ? "Execution outcome recorded." : "No execution outcome recorded."),
+      tone: buildStatusTone(detail.status),
+    },
+  ].filter((item) => item.timestamp);
+}
+
+function buildCommandExecutionTrace(detail: CommandOperationalDetail) {
+  return [
+    {
+      label: "Command created",
+      timestamp: detail.created_at,
+      summary: `${formatStatusLabel(detail.command_family)} command entered the bounded operational projection.`,
+      tone: "neutral" as const,
+    },
+    {
+      label: "Execution attempt",
+      timestamp: detail.latest_updated_at,
+      summary: detail.latest_command_execution_attempt_status
+        ? `Latest attempt ${formatStatusLabel(detail.latest_command_execution_attempt_status)}.`
+        : "No execution attempt recorded.",
+      tone: buildStatusTone(detail.latest_command_execution_attempt_status),
+    },
+    {
+      label: "Projection updated",
+      timestamp: detail.latest_updated_at,
+      summary: formatCommandSummary(detail.family_specific_outcome_summary),
+      tone: buildStatusTone(detail.command_status),
+    },
+  ];
+}
+
+function buildEventExecutionTrace(detail: EventDetail) {
+  return [
+    {
+      label: "Occurred",
+      timestamp: detail.occurred_at,
+      summary: "Source activity was observed by the current event pipeline.",
+      tone: buildStatusTone(`${detail.severity} ${detail.event_state}`),
+    },
+    {
+      label: "Received",
+      timestamp: detail.received_at,
+      summary: "Payload was received into the bounded event projection.",
+      tone: "neutral" as const,
+    },
+  ];
 }
 
 function buildRetryRemediationHref({
@@ -385,6 +499,19 @@ export function ActivityDetailModule({
       detail.type === "job_run" ? detail.record.status : detail.record.command_status;
     return isRetryWorthyStatus(currentStatus);
   }, [detail, initialEntryContext]);
+  const executionTraceItems = useMemo(() => {
+    if (!detail) {
+      return [];
+    }
+
+    if (detail.type === "job_run") {
+      return buildJobRunExecutionTrace(detail.record);
+    }
+    if (detail.type === "command") {
+      return buildCommandExecutionTrace(detail.record);
+    }
+    return buildEventExecutionTrace(detail.record);
+  }, [detail]);
 
   return (
     <section className="panel">
@@ -663,6 +790,202 @@ export function ActivityDetailModule({
                 <div className="command-list-item-meta">
                   <span>Correlation {detail.record.correlation_id ?? "Not available"}</span>
                   <span>Batch {detail.record.related_batch_id ?? "Not available"}</span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Execution log workspace</h2>
+              <p className="muted">
+                Compact diagnostics view over trace, timing, progression, and outcome details for
+                the selected operational activity.
+              </p>
+            </div>
+          </div>
+
+          {isLoadingDetail ? (
+            <p className="muted">Loading execution log workspace...</p>
+          ) : null}
+
+          {!isLoadingDetail && !detail && !pageError ? (
+            <p className="muted">No execution log context available.</p>
+          ) : null}
+
+          {!isLoadingDetail && detail?.type === "job_run" ? (
+            <div className="detail-stack">
+              <div className="detail-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Execution status</span>
+                  <strong>{formatStatusLabel(detail.record.status)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Duration</span>
+                  <strong>
+                    {buildDurationLabel(detail.record.started_at, detail.record.completed_at)}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Worker</span>
+                  <strong>{detail.record.worker_identifier ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Correlation ID</span>
+                  <strong>{detail.record.correlation_id ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Retry posture</span>
+                  <strong>{`Retries ${detail.record.retry_count}/${detail.record.max_retries}`}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Error detail</span>
+                  <strong>
+                    {detail.record.latest_error_message ??
+                      detail.record.latest_error_code ??
+                      "No error summary recorded."}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="command-list-item">
+                <div className="command-list-item-header">
+                  <strong>Execution trace</strong>
+                  <span className={`status-pill ${buildStatusTone(detail.record.status)}`}>
+                    {formatStatusLabel(detail.record.status)}
+                  </span>
+                </div>
+                <div className="detail-stack">
+                  {executionTraceItems.map((item) => (
+                    <div key={`${item.label}-${item.timestamp}`} className="command-list-item">
+                      <div className="command-list-item-header">
+                        <strong>{item.label}</strong>
+                        <span className={`status-pill ${item.tone}`}>{formatDateTime(item.timestamp)}</span>
+                      </div>
+                      <div className="command-list-item-meta">
+                        <span>{item.summary}</span>
+                        <span>{detail.record.id}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {!isLoadingDetail && detail?.type === "command" ? (
+            <div className="detail-stack">
+              <div className="detail-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Execution status</span>
+                  <strong>{formatStatusLabel(detail.record.command_status)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Latest attempt</span>
+                  <strong>
+                    {formatStatusLabel(
+                      detail.record.latest_command_execution_attempt_status ?? "No attempt",
+                    )}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Runtime record</span>
+                  <strong>{detail.record.runtime_execution_record_id ?? "Not recorded"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Created</span>
+                  <strong>{formatDateTime(detail.record.created_at)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Updated</span>
+                  <strong>{formatDateTime(detail.record.latest_updated_at)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Artifacts</span>
+                  <strong>
+                    {[
+                      detail.record.orchestration_artifact_present ? "orchestration" : null,
+                      detail.record.terminalization_artifact_present ? "terminalization" : null,
+                      detail.record.execute_now_artifact_present ? "execute-now" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(", ") || "No artifacts"}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="command-list-item">
+                <div className="command-list-item-header">
+                  <strong>Execution trace</strong>
+                  <span className={`status-pill ${buildStatusTone(detail.record.command_status)}`}>
+                    {formatStatusLabel(detail.record.command_status)}
+                  </span>
+                </div>
+                <div className="detail-stack">
+                  {executionTraceItems.map((item) => (
+                    <div key={`${item.label}-${item.timestamp}`} className="command-list-item">
+                      <div className="command-list-item-header">
+                        <strong>{item.label}</strong>
+                        <span className={`status-pill ${item.tone}`}>{formatDateTime(item.timestamp)}</span>
+                      </div>
+                      <div className="command-list-item-meta">
+                        <span>{item.summary}</span>
+                        <span>{detail.record.command_id}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {!isLoadingDetail && detail?.type === "event" ? (
+            <div className="detail-stack">
+              <div className="detail-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Trace status</span>
+                  <strong>{formatStatusLabel(`${detail.record.severity} ${detail.record.event_state}`)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Occurred</span>
+                  <strong>{formatDateTime(detail.record.occurred_at)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Received</span>
+                  <strong>{formatDateTime(detail.record.received_at)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Correlation ID</span>
+                  <strong>{detail.record.correlation_id ?? "Not available"}</strong>
+                </div>
+              </div>
+
+              <div className="command-list-item">
+                <div className="command-list-item-header">
+                  <strong>Execution trace</strong>
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      `${detail.record.severity} ${detail.record.event_state}`,
+                    )}`}
+                  >
+                    {detail.record.event_name ?? detail.record.event_code}
+                  </span>
+                </div>
+                <div className="detail-stack">
+                  {executionTraceItems.map((item) => (
+                    <div key={`${item.label}-${item.timestamp}`} className="command-list-item">
+                      <div className="command-list-item-header">
+                        <strong>{item.label}</strong>
+                        <span className={`status-pill ${item.tone}`}>{formatDateTime(item.timestamp)}</span>
+                      </div>
+                      <div className="command-list-item-meta">
+                        <span>{item.summary}</span>
+                        <span>{detail.record.id}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

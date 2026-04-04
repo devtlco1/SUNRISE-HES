@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OperationalShell } from "../../../../operational-shell";
@@ -201,6 +201,29 @@ describe("ActivityDetailModule", () => {
       expect(screen.getByText("Projection record")).toBeInTheDocument();
     });
 
+    const executionLogsPanel = (
+      await screen.findByRole("heading", { name: "Execution log workspace" })
+    ).closest("section");
+    expect(executionLogsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Latest attempt"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Runtime record"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Execution trace"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Command created"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Execution attempt"),
+      ).toBeInTheDocument();
+    });
+
     expect(screen.getByRole("link", { name: "Open meter detail" })).toHaveAttribute(
       "href",
       "/meters/meter-1",
@@ -225,10 +248,41 @@ describe("ActivityDetailModule", () => {
     });
 
     expect(await screen.findByText("job_run")).toBeInTheDocument();
-    expect(screen.getByText("job-run-1")).toBeInTheDocument();
+    expect(screen.getAllByText("job-run-1").length).toBeGreaterThan(0);
     expect(screen.getByText("command-1")).toBeInTheDocument();
     expect(screen.getByText("Result summary")).toBeInTheDocument();
     expect(screen.getAllByText("Failed")).not.toHaveLength(0);
+
+    const executionLogsPanel = (
+      await screen.findByRole("heading", { name: "Execution log workspace" })
+    ).closest("section");
+    expect(executionLogsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Duration"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Worker"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Correlation ID"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Execution trace"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Scheduled"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Finished"),
+      ).toBeInTheDocument();
+      expect(within(executionLogsPanel as HTMLElement).getByText("1 min")).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getAllByText("job-run-1").length,
+      ).toBeGreaterThan(0);
+    });
+
     expect(screen.getByRole("link", { name: "Open remediation context" })).toHaveAttribute(
       "href",
       "/commands?selectedCommandId=command-1&retrySource=jobs_retry_queue&retryItemType=job_run&retryReason=Association+rejected&retryContext=Meter+meter-1.+Retries+1%2F3.&retryOriginActivityType=job_run&retryOriginActivityId=job-run-1",
@@ -292,7 +346,7 @@ describe("ActivityDetailModule", () => {
       activityId: "job-run-1",
     });
 
-    await screen.findByText("job-run-1");
+    await screen.findByText("Result summary");
     expect(
       screen.queryByText(
         "Returned from the commands remediation context for this retry-worthy activity.",
@@ -315,7 +369,7 @@ describe("ActivityDetailModule", () => {
       activityId: "job-run-1",
     });
 
-    await screen.findByText("job-run-1");
+    await screen.findByText("Result summary");
     expect(
       screen.queryByText(
         "Opened from the retry queue list for this job run detail. Continue bounded review here or jump into the existing remediation context.",
@@ -353,6 +407,7 @@ describe("ActivityDetailModule", () => {
     });
 
     expect(await screen.findByText("Loading activity detail...")).toBeInTheDocument();
+    expect(screen.getByText("Loading execution log workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading related operational surfaces...")).toBeInTheDocument();
   });
 
