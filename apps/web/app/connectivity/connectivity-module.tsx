@@ -121,6 +121,30 @@ function formatLatestSessionSummary(session: ConnectivitySession | null): string
   return `${session.status} (${session.session_purpose})`;
 }
 
+function isLiveSession(session: ConnectivitySession | null): boolean {
+  return session?.status === "started" && session.ended_at === null;
+}
+
+function buildSessionHealthLabel(
+  session: ConnectivitySession | null,
+  freshnessContext: FreshnessContext | null,
+): string {
+  if (!session) {
+    return "No live session";
+  }
+  if (freshnessContext?.tone === "danger") {
+    return "Live session with no recent signal";
+  }
+  if (freshnessContext?.tone === "warning") {
+    return "Live session needs freshness review";
+  }
+  return "Live session healthy";
+}
+
+function buildSessionHealthTone(freshnessContext: FreshnessContext | null): StatusTone {
+  return freshnessContext?.tone ?? "neutral";
+}
+
 function formatStatusLabel(value: string): string {
   return value
     .split("_")
@@ -402,6 +426,29 @@ export function ConnectivityModule({
         : null,
     [selectedRow, selectedRowFreshnessContext],
   );
+  const liveSessionRows = useMemo(
+    () =>
+      rows
+        .filter((row) => isLiveSession(row.latestSession))
+        .sort((left, right) => {
+          const leftStartedAt = new Date(left.latestSession?.started_at ?? 0).getTime();
+          const rightStartedAt = new Date(right.latestSession?.started_at ?? 0).getTime();
+          return rightStartedAt - leftStartedAt;
+        }),
+    [rows],
+  );
+  const liveSessionStats = useMemo(() => {
+    const withRecentSignal = liveSessionRows.filter((row) => {
+      const freshness = getFreshnessContext(row.meter.last_seen_at);
+      return freshness.tone === "positive";
+    }).length;
+    const withEndpoint = liveSessionRows.filter((row) => row.primaryEndpoint !== null).length;
+    return {
+      total: liveSessionRows.length,
+      withRecentSignal,
+      withEndpoint,
+    };
+  }, [liveSessionRows]);
 
   const overviewCards = useMemo(
     () => [
@@ -426,6 +473,11 @@ export function ConnectivityModule({
         note: "Most recent session closed successfully",
       },
       {
+        label: "Live sessions in view",
+        value: String(liveSessionStats.total),
+        note: "Latest session is still started and has not ended",
+      },
+      {
         label: "Incident contexts",
         value: String(overviewStats.incidentCount),
         note: "Offline, stale, or degraded rows needing operator review",
@@ -438,7 +490,7 @@ export function ConnectivityModule({
           : "Inspect a meter to review connectivity context",
       },
     ],
-    [overviewStats, rows.length, selectedRow, totalMeters],
+    [liveSessionStats.total, overviewStats, rows.length, selectedRow, totalMeters],
   );
   const incidentFilterSummary = useMemo(() => {
     if (incidentFilter === "all") {
@@ -480,6 +532,110 @@ export function ConnectivityModule({
               ))}
             </div>
           ) : null}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Connectivity live sessions workspace</h2>
+              <p className="muted">
+                Active session visibility using the current latest-session read model for each
+                meter in scope.
+              </p>
+            </div>
+            <span className="artifact-pill">{liveSessionRows.length} live sessions</span>
+          </div>
+
+          {isLoadingOverview ? (
+            <p className="muted">Loading live sessions workspace...</p>
+          ) : (
+            <div className="detail-stack">
+              <div className="connectivity-overview-grid">
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Live sessions in view</span>
+                  <strong>{String(liveSessionStats.total)}</strong>
+                  <p className="muted">Latest session is still active</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">With recent signal</span>
+                  <strong>{String(liveSessionStats.withRecentSignal)}</strong>
+                  <p className="muted">Active sessions with fresh last-seen context</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">With endpoint context</span>
+                  <strong>{String(liveSessionStats.withEndpoint)}</strong>
+                  <p className="muted">Active sessions with a primary or active endpoint hint</p>
+                </div>
+              </div>
+
+              <div className="command-list">
+                {liveSessionRows.length === 0 ? (
+                  <p className="muted">
+                    No active connectivity sessions are currently visible in the bounded scope.
+                  </p>
+                ) : null}
+
+                {liveSessionRows.map((row) => {
+                  const freshnessContext = getFreshnessContext(row.meter.last_seen_at);
+                  const healthLabel = buildSessionHealthLabel(row.latestSession, freshnessContext);
+                  const healthTone = buildSessionHealthTone(freshnessContext);
+                  return (
+                    <article key={row.meter.id} className="command-list-item">
+                      <div className="command-list-item-header">
+                        <strong>{row.meter.serial_number}</strong>
+                        <span className={`status-pill ${buildStatusTone(row.latestSession?.status ?? null)}`}>
+                          {row.latestSession
+                            ? `Session ${formatStatusLabel(row.latestSession.status)}`
+                            : "No recent session"}
+                        </span>
+                      </div>
+                      <div className="command-list-item-badges">
+                        <span className={`status-pill ${freshnessContext.tone}`}>
+                          {freshnessContext.label}
+                        </span>
+                        <span className={`status-pill ${healthTone}`}>
+                          {healthLabel}
+                        </span>
+                        <span className="artifact-pill">
+                          {row.primaryEndpoint?.endpoint_display_name ??
+                            row.primaryEndpoint?.endpoint_code ??
+                            "No active endpoint"}
+                        </span>
+                      </div>
+                      <div className="command-list-item-meta">
+                        <span>
+                          {row.latestSession
+                            ? `${formatStatusLabel(row.latestSession.session_purpose)} session`
+                            : "No recent session"}
+                        </span>
+                        <span>Started {formatDateTime(row.latestSession?.started_at ?? null)}</span>
+                      </div>
+                      <div className="command-list-item-meta">
+                        <span>
+                          {row.meter.communication_profile_code ??
+                            row.meter.meter_profile_code ??
+                            "No communication summary"}
+                        </span>
+                        <span>Last seen {formatDateTime(row.meter.last_seen_at)}</span>
+                      </div>
+                      <div className="artifact-row">
+                        <button
+                          className="secondary-button"
+                          onClick={() => setSelectedMeterId(row.meter.id)}
+                          type="button"
+                        >
+                          Inspect live session
+                        </button>
+                        <Link className="secondary-button" href={`/meters/${row.meter.id}`}>
+                          Open meter detail
+                        </Link>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="subpanel">

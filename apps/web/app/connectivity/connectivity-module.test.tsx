@@ -241,6 +241,112 @@ describe("ConnectivityModule", () => {
     });
   });
 
+  it("renders a dedicated live sessions workspace with identity, freshness, and health visibility", async () => {
+    const { fetchMock } = createMockApi({
+      meterItems: [
+        {
+          id: "meter-1",
+          serial_number: "SN-1001",
+          utility_meter_number: "UMN-1001",
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-1",
+          communication_profile_code: "dlms-primary",
+          meter_profile_code: "residential-default",
+          current_status: "commissioned",
+          last_seen_at: "2099-01-01T11:45:00.000Z",
+          is_active: true,
+        },
+        {
+          id: "meter-2",
+          serial_number: "SN-1002",
+          utility_meter_number: null,
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-2",
+          communication_profile_code: null,
+          meter_profile_code: "industrial-default",
+          current_status: "registered",
+          last_seen_at: null,
+          is_active: false,
+        },
+      ],
+      endpointAssignmentsByMeter: {
+        "meter-1": [
+          {
+            id: "assignment-1",
+            endpoint_code: "tcp-primary",
+            endpoint_display_name: "TCP Primary",
+            assignment_status: "active",
+            is_primary: true,
+          },
+        ],
+        "meter-2": [],
+      },
+      sessionsByMeter: {
+        "meter-1": [
+          {
+            id: "session-1",
+            started_at: "2026-03-31T11:46:00.000Z",
+            ended_at: null,
+            status: "started",
+            session_purpose: "manual_diagnostic",
+          },
+        ],
+        "meter-2": [
+          {
+            id: "session-2",
+            started_at: "2026-03-31T11:40:00.000Z",
+            ended_at: "2026-03-31T11:41:00.000Z",
+            status: "failed",
+            session_purpose: "connectivity_test",
+          },
+        ],
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderConnectivityModuleInShell();
+
+    const liveSessionsSection = await screen.findByRole("heading", {
+      name: "Connectivity live sessions workspace",
+    });
+    const liveSessionsPanel = liveSessionsSection.closest("section");
+    expect(liveSessionsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(liveSessionsPanel as HTMLElement).getAllByText(includesText("1 live sessions")).length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(liveSessionsPanel as HTMLElement).getByText("Live sessions in view"),
+      ).toBeInTheDocument();
+      expect(within(liveSessionsPanel as HTMLElement).getByText("SN-1001")).toBeInTheDocument();
+      expect(
+        within(liveSessionsPanel as HTMLElement).getByText("Session Started"),
+      ).toBeInTheDocument();
+      expect(
+        within(liveSessionsPanel as HTMLElement).getByText("Live session healthy"),
+      ).toBeInTheDocument();
+      expect(
+        within(liveSessionsPanel as HTMLElement).getByText("Manual Diagnostic session"),
+      ).toBeInTheDocument();
+      expect(within(liveSessionsPanel as HTMLElement).getByText("TCP Primary")).toBeInTheDocument();
+    });
+
+    await user.click(
+      within(liveSessionsPanel as HTMLElement).getByRole("button", { name: "Inspect live session" }),
+    );
+
+    const detailPanel = screen.getByRole("heading", { name: "Connectivity detail" }).closest("section");
+    expect(detailPanel).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        within(detailPanel as HTMLElement).getAllByText("SN-1001"),
+      ).not.toHaveLength(0);
+      expect(within(detailPanel as HTMLElement).getByText("Session Started")).toBeInTheDocument();
+    });
+  });
+
   it("renders incident-state filters inside the connectivity incidents section", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
@@ -548,6 +654,7 @@ describe("ConnectivityModule", () => {
     expect(
       await screen.findByText("Loading connectivity overview..."),
     ).toBeInTheDocument();
+    expect(await screen.findByText("Loading live sessions workspace...")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Connectivity-focused meters")).toBeInTheDocument();
@@ -563,6 +670,9 @@ describe("ConnectivityModule", () => {
     await waitFor(() => {
       expect(
         screen.getByText("No connectivity overview items available."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("No active connectivity sessions are currently visible in the bounded scope."),
       ).toBeInTheDocument();
       expect(
         screen.getByText("No offline meters or connectivity incidents match the current bounded scope."),
@@ -616,6 +726,9 @@ describe("ConnectivityModule", () => {
     await waitFor(() => {
       expect(
         screen.getByText("No offline meters or connectivity incidents match the current bounded scope."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("No active connectivity sessions are currently visible in the bounded scope."),
       ).toBeInTheDocument();
     });
   });
