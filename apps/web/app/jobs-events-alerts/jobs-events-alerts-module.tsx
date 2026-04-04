@@ -379,6 +379,19 @@ function buildJobDefinitionLatestRunSummary(jobRun: JobRunItem | null): string {
   )}`;
 }
 
+function buildJobRunLifecycleLabel(jobRun: JobRunItem): string {
+  if (jobRun.completed_at) {
+    return `Finished ${formatDateTime(jobRun.completed_at)}`;
+  }
+  if (jobRun.started_at) {
+    return `Started ${formatDateTime(jobRun.started_at)}`;
+  }
+  if (jobRun.claimed_at) {
+    return `Claimed ${formatDateTime(jobRun.claimed_at)}`;
+  }
+  return `Scheduled ${formatDateTime(jobRun.scheduled_for)}`;
+}
+
 function buildRetryRemediationHref({
   commandId,
   itemType,
@@ -929,6 +942,18 @@ export function JobsEventsAlertsModule({
       selectedJobDefinitionRuns.find((jobRun) => isRetryWorthyStatus(jobRun.status)) ?? null,
     [selectedJobDefinitionRuns],
   );
+  const selectedJobDefinitionFailedRuns = useMemo(
+    () =>
+      selectedJobDefinitionRuns.filter((jobRun) => isRetryWorthyStatus(jobRun.status)),
+    [selectedJobDefinitionRuns],
+  );
+  const selectedJobDefinitionSucceededRuns = useMemo(
+    () =>
+      selectedJobDefinitionRuns.filter((jobRun) =>
+        ["succeeded", "completed"].includes(jobRun.status),
+      ),
+    [selectedJobDefinitionRuns],
+  );
 
   const activityStatus = useMemo(() => {
     if (isLoadingActivity) {
@@ -1332,6 +1357,18 @@ export function JobsEventsAlertsModule({
                       : "No failed run visible"}
                   </strong>
                 </div>
+                <div className="stat-card">
+                  <span className="stat-label">Visible recent runs</span>
+                  <strong>{String(selectedJobDefinitionRuns.length)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Visible failed runs</span>
+                  <strong>{String(selectedJobDefinitionFailedRuns.length)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Visible succeeded runs</span>
+                  <strong>{String(selectedJobDefinitionSucceededRuns.length)}</strong>
+                </div>
               </div>
 
               <div className="command-list-item">
@@ -1404,6 +1441,126 @@ export function JobsEventsAlertsModule({
                     </article>
                   ))}
                 </div>
+              </div>
+
+              <div className="jobs-activity-layout">
+                <section className="subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Activity history workspace</h3>
+                      <p className="muted">
+                        Recent execution history for the selected job definition with lifecycle,
+                        duration, and outcome cues.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="jobs-overview-grid">
+                    <div className="stat-card jobs-overview-card">
+                      <span className="stat-label">Recent runs in view</span>
+                      <strong>{String(selectedJobDefinitionRuns.length)}</strong>
+                    </div>
+                    <div className="stat-card jobs-overview-card">
+                      <span className="stat-label">Failed runs in view</span>
+                      <strong>{String(selectedJobDefinitionFailedRuns.length)}</strong>
+                    </div>
+                    <div className="stat-card jobs-overview-card">
+                      <span className="stat-label">Successful runs in view</span>
+                      <strong>{String(selectedJobDefinitionSucceededRuns.length)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="command-list">
+                    {selectedJobDefinitionRuns.length === 0 ? (
+                      <p className="muted">
+                        No recent job activity history is visible for this definition.
+                      </p>
+                    ) : null}
+
+                    {selectedJobDefinitionRuns.slice(0, 5).map((jobRun) => (
+                      <article key={`history-${jobRun.id}`} className="command-list-item">
+                        <div className="command-list-item-header">
+                          <strong>{jobRun.id}</strong>
+                          <span className={`status-pill ${buildStatusTone(jobRun.status)}`}>
+                            {formatStatusLabel(jobRun.status)}
+                          </span>
+                        </div>
+                        <div className="command-list-item-badges">
+                          <span className="artifact-pill">{buildJobRunLifecycleLabel(jobRun)}</span>
+                          <span className="artifact-pill">
+                            Duration {buildJobRunDurationLabel(jobRun)}
+                          </span>
+                        </div>
+                        <div className="command-list-item-meta">
+                          <span>{buildJobRunOutcomeSummary(jobRun)}</span>
+                          <span>Retries {jobRun.retry_count}/{jobRun.max_retries}</span>
+                        </div>
+                        <div className="artifact-row">
+                          <Link
+                            className="secondary-button"
+                            href={buildActivityDetailHref("job_run", jobRun.id)}
+                          >
+                            Open execution log
+                          </Link>
+                          {isRetryWorthyStatus(jobRun.status) ? (
+                            <Link
+                              className="secondary-button"
+                              href={buildActivityDetailHref("job_run", jobRun.id)}
+                            >
+                              Open failed run detail
+                            </Link>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Failure history lane</h3>
+                      <p className="muted">
+                        Recent failed execution contexts for the selected job definition.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="command-list">
+                    {selectedJobDefinitionFailedRuns.length === 0 ? (
+                      <p className="muted">
+                        No failed job activity is currently visible for this definition.
+                      </p>
+                    ) : null}
+
+                    {selectedJobDefinitionFailedRuns.slice(0, 3).map((jobRun) => (
+                      <article key={`failed-${jobRun.id}`} className="command-list-item">
+                        <div className="command-list-item-header">
+                          <strong>{jobRun.id}</strong>
+                          <span className={`status-pill ${buildStatusTone(jobRun.status)}`}>
+                            {formatStatusLabel(jobRun.status)}
+                          </span>
+                        </div>
+                        <div className="command-list-item-meta">
+                          <span>{buildJobRunFailureSummary(jobRun)}</span>
+                          <span>{jobRun.latest_error_code ?? "No error code"}</span>
+                        </div>
+                        <div className="command-list-item-meta">
+                          <span>{buildJobRunOutcomeSummary(jobRun)}</span>
+                          <span>{formatRetrySummary(jobRun.retry_count, jobRun.max_retries)}</span>
+                        </div>
+                        <div className="artifact-row">
+                          <Link
+                            className="secondary-button"
+                            href={buildActivityDetailHref("job_run", jobRun.id)}
+                          >
+                            Open failed run detail
+                          </Link>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
               </div>
 
               <div className="artifact-row">

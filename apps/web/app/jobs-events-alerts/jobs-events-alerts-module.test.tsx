@@ -444,8 +444,28 @@ describe("JobsEventsAlertsModule", () => {
         within(workspacePanel as HTMLElement).getByText("Visible execution context"),
       ).toBeInTheDocument();
       expect(
+        within(workspacePanel as HTMLElement).getByText("Activity history workspace"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Failure history lane"),
+      ).toBeInTheDocument();
+      expect(
         within(workspacePanel as HTMLElement).getByText(/Latest run Failed at .*2026/),
       ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Recent runs in view"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Failed runs in view"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText("Successful runs in view"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByRole("link", {
+          name: "Open execution log",
+        }),
+      ).toHaveAttribute("href", "/jobs-events-alerts/activity/job_run/job-run-1");
     });
 
     expect(
@@ -479,6 +499,16 @@ describe("JobsEventsAlertsModule", () => {
       ).toBeInTheDocument();
       expect(
         within(workspacePanel as HTMLElement).getByText("No failed run visible"),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText(
+          "No recent job activity history is visible for this definition.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(workspacePanel as HTMLElement).getByText(
+          "No failed job activity is currently visible for this definition.",
+        ),
       ).toBeInTheDocument();
     });
   });
