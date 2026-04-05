@@ -674,6 +674,17 @@ a:hover {
   background: var(--ws-surface);
 }
 
+.ws-btn-secondary {
+  border: 1px solid var(--ws-border);
+  color: var(--ws-text);
+  background: var(--ws-bg);
+  font-weight: 600;
+}
+
+.ws-btn-secondary:hover {
+  background: #e8eaf0;
+}
+
 .ws-btn-block {
   width: 100%;
 }
@@ -791,6 +802,22 @@ a:hover {
   margin-bottom: 1.25rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--ws-border);
+}
+
+.ws-meters-header-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0.65rem 1rem;
+}
+
+.ws-meters-asof {
+  margin: 0;
+}
+
+.ws-meters-add {
+  font-weight: 600;
 }
 
 .ws-meters-summary {
@@ -979,4 +1006,225 @@ a:hover {
 .ws-chip--muted {
   background: var(--ws-bg);
   color: var(--ws-tone-muted);
+}
+
+/* ——— Meters row actions & drawer ——— */
+
+.ws-meters-th-actions {
+  width: 4.5rem;
+  text-align: right;
+}
+
+.ws-meters-actions {
+  position: relative;
+  text-align: right;
+  vertical-align: middle;
+}
+
+.ws-row-actions {
+  position: relative;
+  display: inline-block;
+  text-align: left;
+}
+
+.ws-row-actions-trigger {
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--ws-border);
+  border-radius: 4px;
+  background: var(--ws-surface);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--ws-muted);
+}
+
+.ws-row-actions-trigger:hover {
+  background: var(--ws-bg);
+  color: var(--ws-text);
+}
+
+.ws-row-actions-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin: 0.2rem 0 0;
+  padding: 0.25rem 0;
+  min-width: 11rem;
+  list-style: none;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1);
+  z-index: 25;
+}
+
+.ws-row-actions-menu li {
+  margin: 0;
+}
+
+.ws-row-actions-item {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.75rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  text-decoration: none;
+  color: var(--ws-text);
+  cursor: pointer;
+}
+
+.ws-row-actions-item:hover {
+  background: var(--ws-bg);
+}
+
+a.ws-row-actions-item {
+  color: var(--ws-text);
+}
+
+.ws-row-actions-item--secondary {
+  color: var(--ws-muted);
+}
+
+.ws-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.ws-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.35);
+  cursor: pointer;
+}
+
+.ws-drawer-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(26rem, 100vw);
+  background: var(--ws-surface);
+  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--ws-border);
+}
+
+.ws-drawer-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.ws-drawer-close {
+  border: 0;
+  background: none;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--ws-muted);
+  padding: 0.15rem;
+}
+
+.ws-drawer-close:hover {
+  color: var(--ws-text);
+}
+
+.ws-drawer-body {
+  padding: 1rem;
+  overflow: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ws-drawer-banner {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  background: var(--ws-danger-bg);
+  color: var(--ws-danger-text);
+  font-size: 0.8125rem;
+}
+
+.ws-drawer-meta {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ws-muted);
+}
+
+.ws-drawer-meta-sep {
+  margin: 0 0.35rem;
+  opacity: 0.5;
+}
+
+.ws-drawer-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ws-drawer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ws-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ws-drawer-field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+  color: var(--ws-text);
+}
+
+.ws-drawer-field input,
+.ws-drawer-field select,
+.ws-drawer-field textarea {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--ws-border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--ws-text);
+  background: var(--ws-surface);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.ws-drawer-field textarea {
+  resize: vertical;
+  min-height: 4rem;
+}
+
+.ws-drawer-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }

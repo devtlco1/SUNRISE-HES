@@ -51,16 +51,23 @@ describe("MetersRegistryClient", () => {
                 id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
                 serial_number: "SN-1",
                 utility_meter_number: null,
+                badge_number: null,
+                manufacturer_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
                 manufacturer_code: "ACME",
+                meter_model_id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
                 meter_model_code: "M100",
+                firmware_version_id: null,
                 firmware_version: "1.0",
+                communication_profile_id: null,
                 communication_profile_code: "CELL-A",
+                meter_profile_id: null,
                 meter_profile_code: "PROF-1",
                 current_status: "active",
                 service_point_id: null,
                 transformer_id: null,
                 last_seen_at: now,
                 is_active: true,
+                notes: null,
               },
             ],
           });
@@ -86,5 +93,6 @@ describe("MetersRegistryClient", () => {
     expect(await screen.findByText("SN-1")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Serial" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Meters" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add meter" })).toBeInTheDocument();
   });
 });

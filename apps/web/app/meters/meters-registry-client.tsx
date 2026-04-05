@@ -4,25 +4,37 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { classifyReachabilityFromLastSeen } from "../dashboard/dashboard-utils";
+import {
+  MeterRegistryDrawer,
+  type MeterRegistryRow,
+  type RegistryDrawerMode,
+} from "./meter-registry-drawer";
 import { useSession } from "../session-provider";
 import { WorkspaceShell } from "../workspace-shell";
 
-const PAGE_LIMITS = [25, 50, 100] as const;
+const PAGE_LIMITS = [10, 25, 50, 100] as const;
 
 type MeterRow = {
   id: string;
   serial_number: string;
   utility_meter_number: string | null;
+  badge_number: string | null;
+  manufacturer_id: string;
   manufacturer_code: string;
+  meter_model_id: string;
   meter_model_code: string;
+  firmware_version_id: string | null;
   firmware_version: string | null;
+  communication_profile_id: string | null;
   communication_profile_code: string | null;
+  meter_profile_id: string | null;
   meter_profile_code: string | null;
   current_status: string;
   service_point_id: string | null;
   transformer_id: string | null;
   last_seen_at: string | null;
   is_active: boolean;
+  notes: string | null;
 };
 
 type MeterListResponse = { total: number; items: MeterRow[] };
@@ -70,6 +82,28 @@ function formatShortDate(iso: string | null): string {
 
 function humanizeStatus(s: string): string {
   return s.replace(/_/g, " ");
+}
+
+function toRegistryRow(m: MeterRow): MeterRegistryRow {
+  return {
+    id: m.id,
+    serial_number: m.serial_number,
+    utility_meter_number: m.utility_meter_number,
+    badge_number: m.badge_number,
+    manufacturer_id: m.manufacturer_id,
+    manufacturer_code: m.manufacturer_code,
+    meter_model_id: m.meter_model_id,
+    meter_model_code: m.meter_model_code,
+    firmware_version_id: m.firmware_version_id,
+    firmware_version: m.firmware_version,
+    communication_profile_id: m.communication_profile_id,
+    communication_profile_code: m.communication_profile_code,
+    meter_profile_id: m.meter_profile_id,
+    meter_profile_code: m.meter_profile_code,
+    current_status: m.current_status,
+    notes: m.notes,
+    is_active: m.is_active,
+  };
 }
 
 function lifecycleChipTone(status: string): "success" | "info" | "muted" {
@@ -154,13 +188,17 @@ function MetersRegistryBody() {
   const [statusFilter, setStatusFilter] = useState("");
   const [reachFilter, setReachFilter] = useState("");
   const [gisFilter, setGisFilter] = useState("");
-  const [limit, setLimit] = useState<(typeof PAGE_LIMITS)[number]>(50);
+  const [limit, setLimit] = useState<(typeof PAGE_LIMITS)[number]>(25);
   const [offset, setOffset] = useState(0);
   const [list, setList] = useState<MeterListResponse | null>(null);
   const [gisByMeterId, setGisByMeterId] = useState<Map<string, boolean>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [asOf, setAsOf] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<RegistryDrawerMode>("create");
+  const [drawerMeter, setDrawerMeter] = useState<MeterRegistryRow | null>(null);
+  const [menuRowId, setMenuRowId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -194,6 +232,28 @@ function MetersRegistryBody() {
       setLoading(false);
     }
   }, [authorizedFetch, limit, offset, searchApplied]);
+
+  const openDrawer = (mode: RegistryDrawerMode, meter: MeterRegistryRow | null) => {
+    setDrawerMode(mode);
+    setDrawerMeter(meter);
+    setDrawerOpen(true);
+    setMenuRowId(null);
+  };
+
+  useEffect(() => {
+    if (!menuRowId) {
+      return;
+    }
+    const close = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t?.closest?.(".ws-row-actions")) {
+        return;
+      }
+      setMenuRowId(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuRowId]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -298,11 +358,20 @@ function MetersRegistryBody() {
           <h1 className="ws-page-title">Meters</h1>
           <p className="ws-page-subtitle">Inventory and operational registry.</p>
         </div>
-        {asOf ? (
-          <p className="ws-dash-asof">
-            Updated {formatShortDate(asOf)}
-          </p>
-        ) : null}
+        <div className="ws-meters-header-right">
+          <button
+            type="button"
+            className="ws-btn ws-btn-ghost ws-meters-add"
+            onClick={() => openDrawer("create", null)}
+          >
+            Add meter
+          </button>
+          {asOf ? (
+            <p className="ws-dash-asof ws-meters-asof">
+              Updated {formatShortDate(asOf)}
+            </p>
+          ) : null}
+        </div>
       </header>
 
       {error ? (
@@ -432,12 +501,15 @@ function MetersRegistryBody() {
                   <th scope="col">Service point</th>
                   <th scope="col">Transformer</th>
                   <th scope="col">GIS</th>
+                  <th scope="col" className="ws-meters-th-actions">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {displayed.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="ws-meters-table-empty">
+                    <td colSpan={15} className="ws-meters-table-empty">
                       {list.items.length === 0
                         ? "No meters found."
                         : "No matching meters."}
@@ -494,6 +566,69 @@ function MetersRegistryBody() {
                             {gisLabel}
                           </span>
                         </td>
+                        <td className="ws-meters-actions">
+                          <div className="ws-row-actions">
+                            <button
+                              type="button"
+                              className="ws-row-actions-trigger"
+                              aria-expanded={menuRowId === m.id}
+                              aria-haspopup="menu"
+                              onClick={() =>
+                                setMenuRowId((id) => (id === m.id ? null : m.id))
+                              }
+                            >
+                              ⋯
+                            </button>
+                            {menuRowId === m.id ? (
+                              <ul className="ws-row-actions-menu" role="menu">
+                                <li role="none">
+                                  <Link
+                                    role="menuitem"
+                                    href={`/meters/${m.id}`}
+                                    className="ws-row-actions-item"
+                                    onClick={() => setMenuRowId(null)}
+                                  >
+                                    View details
+                                  </Link>
+                                </li>
+                                <li role="none">
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="ws-row-actions-item"
+                                    onClick={() => openDrawer("edit", toRegistryRow(m))}
+                                  >
+                                    Edit registry
+                                  </button>
+                                </li>
+                                <li role="none">
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="ws-row-actions-item"
+                                    onClick={() =>
+                                      openDrawer("lifecycle", toRegistryRow(m))
+                                    }
+                                  >
+                                    Change lifecycle
+                                  </button>
+                                </li>
+                                <li role="none">
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="ws-row-actions-item ws-row-actions-item--secondary"
+                                    onClick={() =>
+                                      openDrawer("toggle-active", toRegistryRow(m))
+                                    }
+                                  >
+                                    {m.is_active ? "Set inactive" : "Set active"}
+                                  </button>
+                                </li>
+                              </ul>
+                            ) : null}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
@@ -545,6 +680,18 @@ function MetersRegistryBody() {
           </div>
         </>
       ) : null}
+
+      <MeterRegistryDrawer
+        open={drawerOpen}
+        mode={drawerMode}
+        meter={drawerMeter}
+        onClose={() => {
+          setDrawerOpen(false);
+          setDrawerMeter(null);
+        }}
+        onSuccess={() => void fetchData()}
+        authorizedFetch={authorizedFetch}
+      />
     </div>
   );
 }
