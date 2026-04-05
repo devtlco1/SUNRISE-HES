@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
+import { DashboardHomeView } from "./dashboard/dashboard-home-view";
+import {
+  fetchDashboardSnapshot,
+  type DashboardSnapshot,
+} from "./dashboard/fetch-dashboard-data";
 import { useSession } from "./session-provider";
 import { WorkspaceShell } from "./workspace-shell";
 
@@ -14,7 +20,35 @@ export function HomePageClient() {
 }
 
 function HomeBody() {
-  const { currentUser, isCheckingSession } = useSession();
+  const { currentUser, isCheckingSession, authorizedFetch } = useSession();
+  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const next = await fetchDashboardSnapshot(authorizedFetch);
+      setSnapshot(next);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Dashboard snapshot failed.";
+      setLoadError(message);
+      setSnapshot(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [authorizedFetch]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setSnapshot(null);
+      setLoadError(null);
+      setLoading(false);
+      return;
+    }
+    void load();
+  }, [currentUser, load]);
 
   if (isCheckingSession) {
     return <p className="ws-muted">Checking session…</p>;
@@ -31,12 +65,5 @@ function HomeBody() {
     );
   }
 
-  return (
-    <div className="ws-canvas">
-      <h1 className="ws-page-title">Dashboard</h1>
-      <p className="ws-page-subtitle">
-        Empty workspace — modules will be added here as they are rebuilt.
-      </p>
-    </div>
-  );
+  return <DashboardHomeView snapshot={snapshot} loading={loading} loadError={loadError} />;
 }
