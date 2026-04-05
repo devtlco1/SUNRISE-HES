@@ -1004,7 +1004,19 @@ function createMockApi({
   return { fetchMock, requests };
 }
 
-function renderMeterTabInShell() {
+function renderMeterTabInShell(
+  initialTab:
+    | "summary"
+    | "attachments"
+    | "configuration"
+    | "connectivity"
+    | "gis"
+    | "commercial"
+    | "events"
+    | "readings"
+    | "audit"
+    | "commands" = "summary",
+) {
   render(
     <OperationalShell
       eyebrow="Operational Pages"
@@ -1015,6 +1027,7 @@ function renderMeterTabInShell() {
       {({ authorizedFetch }) => (
         <MeterDetailsCommandsTab
           meterId="meter-1"
+          initialTab={initialTab}
           authorizedFetch={authorizedFetch}
         />
       )}
@@ -1526,6 +1539,23 @@ describe("MeterDetailsCommandsTab", () => {
     expect(
       screen.getByRole("link", { name: "Open readings workspace" }),
     ).toHaveAttribute("href", "/readings?meterId=meter-1");
+  });
+
+  it("opens directly into the readings tab when the readings workspace hands off tab context", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderMeterTabInShell("readings");
+
+    expect(await screen.findByRole("heading", { name: "Readings context" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Readings/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("heading", { name: "Recent raw readings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Billing and interval follow-through" }),
+    ).toBeInTheDocument();
   });
 
   it("renders the GIS tab with meter-scoped mapping and network context", async () => {

@@ -295,7 +295,10 @@ export function MeterDetailsReadingsTab({
     <div className="detail-stack">
       {readingsContextError ? <p className="error-banner">{readingsContextError}</p> : null}
 
-      <section className="subpanel audit-center-overview-panel">
+      <section
+        className="subpanel audit-center-overview-panel"
+        id="meter-readings-context-section"
+      >
         <div className="section-heading">
           <div>
             <h2>Readings context</h2>
@@ -353,7 +356,7 @@ export function MeterDetailsReadingsTab({
         ) : null}
       </section>
 
-      <section className="subpanel meter-summary-panel">
+      <section className="subpanel meter-summary-panel" id="meter-raw-readings-section">
         <div className="section-heading">
           <div>
             <h2>Recent raw readings</h2>
@@ -390,7 +393,10 @@ export function MeterDetailsReadingsTab({
         )}
       </section>
 
-      <section className="subpanel meter-summary-panel">
+      <section
+        className="subpanel meter-summary-panel"
+        id="meter-billing-interval-follow-through-section"
+      >
         <div className="section-heading">
           <div>
             <h2>Billing and interval follow-through</h2>

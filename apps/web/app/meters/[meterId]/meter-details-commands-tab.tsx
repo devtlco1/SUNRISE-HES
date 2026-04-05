@@ -219,6 +219,24 @@ type TabKey =
   | "audit"
   | "commands";
 type FamilyFilter = "all" | CommandOperationalFamily;
+
+function normalizeTabKey(value: string | null | undefined): TabKey {
+  switch (value) {
+    case "attachments":
+    case "configuration":
+    case "connectivity":
+    case "gis":
+    case "commercial":
+    case "events":
+    case "readings":
+    case "audit":
+    case "commands":
+      return value;
+    case "summary":
+    default:
+      return "summary";
+  }
+}
 type RelayOperation = "disconnect" | "reconnect";
 
 function toLocalDatetimeInputValue(value: Date): string {
@@ -435,11 +453,13 @@ function buildActionReadinessItem(
 export function MeterDetailsCommandsTab({
   meterId,
   authorizedFetch,
+  initialTab = "summary",
 }: {
   meterId: string;
   authorizedFetch: AuthorizedFetch;
+  initialTab?: TabKey;
 }) {
-  const [activeTab, setActiveTab] = useState<TabKey>("summary");
+  const [activeTab, setActiveTab] = useState<TabKey>(normalizeTabKey(initialTab));
   const [meter, setMeter] = useState<MeterDetail | null>(null);
   const [consumerLinkage, setConsumerLinkage] =
     useState<MeterConsumerLinkage | null>(null);

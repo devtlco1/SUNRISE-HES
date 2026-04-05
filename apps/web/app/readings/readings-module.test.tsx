@@ -312,11 +312,18 @@ describe("ReadingsModule", () => {
       "#billing-reads-section",
     );
     expect(
-      screen.getAllByRole("link", { name: "Open meter detail" })[0],
-    ).toHaveAttribute("href", "/meters/meter-1");
-    expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
+      screen.getAllByRole("link", { name: "Open meter detail readings" })[0],
+    ).toHaveAttribute("href", "/meters/meter-1?tab=readings#meter-readings-context-section");
+    expect(
+      screen.getByRole("link", { name: "Return to meter detail readings" }),
+    ).toHaveAttribute("href", "/meters/meter-1?tab=readings#meter-readings-context-section");
+    expect(screen.getByRole("link", { name: "Open raw readings detail" })).toHaveAttribute(
       "href",
-      "/meters/meter-1",
+      "/meters/meter-1?tab=readings#meter-raw-readings-section",
+    );
+    expect(screen.getByRole("link", { name: "Open billing / interval detail" })).toHaveAttribute(
+      "href",
+      "/meters/meter-1?tab=readings#meter-billing-interval-follow-through-section",
     );
     expect(screen.getByText("Focused report subject")).toBeInTheDocument();
     expect(screen.getByText("Selected meter SN-1001")).toBeInTheDocument();
@@ -394,6 +401,9 @@ describe("ReadingsModule", () => {
       expect(screen.getAllByText("15 min cadence").length).toBeGreaterThan(0);
       expect(screen.getAllByText("Lead 2 min").length).toBeGreaterThan(0);
       expect(screen.getAllByText("Interval Quality Flagged").length).toBeGreaterThan(0);
+      expect(
+        screen.getAllByRole("link", { name: "Open meter detail drill-through" })[0],
+      ).toHaveAttribute("href", "/meters/meter-1?tab=readings#meter-billing-interval-follow-through-section");
     });
   });
 
@@ -540,10 +550,9 @@ describe("ReadingsModule", () => {
       expect(screen.getByText("1 filtered meter in scope")).toBeInTheDocument();
       expect(screen.getByText("Selected meter SN-1002")).toBeInTheDocument();
       expect(screen.getByText("Overview reflects missing billing context")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
-        "href",
-        "/meters/meter-2",
-      );
+      expect(
+        screen.getByRole("link", { name: "Return to meter detail readings" }),
+      ).toHaveAttribute("href", "/meters/meter-2?tab=readings#meter-readings-context-section");
     });
 
     expect(screen.queryByText("SN-1001")).not.toBeInTheDocument();
@@ -735,10 +744,9 @@ describe("ReadingsModule", () => {
       expect(screen.getByText("Primary value Total Import: 456.789")).toBeInTheDocument();
       expect(screen.getAllByText("Total Import 456.789 • Reset Reason manual_close")).not.toHaveLength(0);
     });
-    expect(screen.getByRole("link", { name: "Return to meter detail" })).toHaveAttribute(
-      "href",
-      "/meters/meter-2",
-    );
+    expect(
+      screen.getByRole("link", { name: "Return to meter detail readings" }),
+    ).toHaveAttribute("href", "/meters/meter-2?tab=readings#meter-readings-context-section");
   });
 
   it("renders a stale interval-window issue inside the recovery queue when interval coverage lags behind readings", async () => {

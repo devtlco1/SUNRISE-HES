@@ -167,6 +167,20 @@ function buildRecoveryActionHref(meterId: string, issue: MissingReadsIssue): str
   return `/commands?${searchParams.toString()}`;
 }
 
+function buildMeterReadingsWorkspaceHref(
+  meterId: string,
+  section: "overview" | "raw-readings" | "billing-interval" = "overview",
+): string {
+  const baseHref = `/meters/${meterId}?tab=readings`;
+  if (section === "raw-readings") {
+    return `${baseHref}#meter-raw-readings-section`;
+  }
+  if (section === "billing-interval") {
+    return `${baseHref}#meter-billing-interval-follow-through-section`;
+  }
+  return `${baseHref}#meter-readings-context-section`;
+}
+
 function buildBulkRecoveryActionHref(selectedIssues: SelectedRecoveryIssue[]): string {
   const selectedMeterIds = Array.from(new Set(selectedIssues.map((issue) => issue.meterId)));
   const selectedMeterLabels = Array.from(
@@ -996,6 +1010,15 @@ export function ReadingsModule({
     : loadProfileChannels.length > 0
       ? `Interval channel context is visible (${intervalChannelsSummary}) but no recent interval records are currently loaded.`
       : "No interval channel or interval horizon is currently visible for the selected meter.";
+  const selectedMeterReadingsDetailHref = selectedMeter
+    ? buildMeterReadingsWorkspaceHref(selectedMeter.id)
+    : null;
+  const selectedMeterRawReadingsHref = selectedMeter
+    ? buildMeterReadingsWorkspaceHref(selectedMeter.id, "raw-readings")
+    : null;
+  const selectedMeterBillingIntervalHref = selectedMeter
+    ? buildMeterReadingsWorkspaceHref(selectedMeter.id, "billing-interval")
+    : null;
   const toggleRecoveryIssueSelection = useCallback(
     (issue: MissingReadsIssue) => {
       if (!selectedMeter) {
@@ -1393,8 +1416,11 @@ export function ReadingsModule({
                     >
                       Inspect readings
                     </button>
-                    <Link className="nav-link" href={`/meters/${meter.id}`}>
-                      Open meter detail
+                    <Link
+                      className="nav-link"
+                      href={buildMeterReadingsWorkspaceHref(meter.id)}
+                    >
+                      Open meter detail readings
                     </Link>
                   </div>
                 </article>
@@ -1462,6 +1488,16 @@ export function ReadingsModule({
                     <span className="artifact-pill">
                       Last signal {formatDateTime(selectedMeter.last_seen_at)}
                     </span>
+                    {selectedMeterReadingsDetailHref ? (
+                      <Link className="secondary-button" href={selectedMeterReadingsDetailHref}>
+                        Open meter detail readings
+                      </Link>
+                    ) : null}
+                    {selectedMeterBillingIntervalHref ? (
+                      <Link className="secondary-button" href={selectedMeterBillingIntervalHref}>
+                        Open billing / interval follow-through
+                      </Link>
+                    ) : null}
                   </div>
                 </section>
 
@@ -1557,6 +1593,22 @@ export function ReadingsModule({
                               <Link className="secondary-button" href={cue.relatedSectionHref}>
                                 {cue.relatedActionLabel}
                               </Link>
+                              {selectedMeterReadingsDetailHref ? (
+                                <Link
+                                  className="secondary-button"
+                                  href={
+                                    cue.relatedSectionHref === "#recent-reading-context-section"
+                                      ? selectedMeterRawReadingsHref ?? selectedMeterReadingsDetailHref
+                                      : cue.relatedSectionHref === "#billing-reads-section" ||
+                                          cue.relatedSectionHref === "#interval-reads-section"
+                                        ? selectedMeterBillingIntervalHref ??
+                                          selectedMeterReadingsDetailHref
+                                        : selectedMeterReadingsDetailHref
+                                  }
+                                >
+                                  Open meter detail drill-through
+                                </Link>
+                              ) : null}
                             </div>
                           </div>
                         ))}
@@ -2024,9 +2076,22 @@ export function ReadingsModule({
                 </div>
 
                 <div className="artifact-row">
-                  <Link className="primary-button" href={`/meters/${selectedMeter.id}`}>
-                    Return to meter detail
+                  <Link
+                    className="primary-button"
+                    href={selectedMeterReadingsDetailHref ?? `/meters/${selectedMeter.id}`}
+                  >
+                    Return to meter detail readings
                   </Link>
+                  {selectedMeterRawReadingsHref ? (
+                    <Link className="secondary-button" href={selectedMeterRawReadingsHref}>
+                      Open raw readings detail
+                    </Link>
+                  ) : null}
+                  {selectedMeterBillingIntervalHref ? (
+                    <Link className="secondary-button" href={selectedMeterBillingIntervalHref}>
+                      Open billing / interval detail
+                    </Link>
+                  ) : null}
                 </div>
 
                 <section className="subpanel" id="billing-reads-section">
