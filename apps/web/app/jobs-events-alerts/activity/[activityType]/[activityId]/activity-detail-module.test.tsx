@@ -387,13 +387,54 @@ describe("ActivityDetailModule", () => {
       activityId: "event-1",
     });
 
-    expect(await screen.findByText("tamper_open")).toBeInTheDocument();
+    expect((await screen.findAllByText("tamper_open")).length).toBeGreaterThan(0);
     expect(screen.getByText("critical / open")).toBeInTheDocument();
     expect(screen.getByText("Normalized payload")).toBeInTheDocument();
     expect(screen.getAllByText("Critical Open")).not.toHaveLength(0);
+    const diagnosticsPanel = (
+      await screen.findByRole("heading", { name: "Urgent event diagnostics workspace" })
+    ).closest("section");
+    expect(diagnosticsPanel).not.toBeNull();
+
+    const executionLogsPanel = (
+      await screen.findByRole("heading", { name: "Execution log workspace" })
+    ).closest("section");
+    expect(executionLogsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(diagnosticsPanel as HTMLElement).getByText("Acknowledgement posture"),
+      ).toBeInTheDocument();
+      expect(
+        within(diagnosticsPanel as HTMLElement).getAllByText("Unacknowledged").length,
+      ).toBeGreaterThan(0);
+      expect(within(diagnosticsPanel as HTMLElement).getByText("Ingest lag")).toBeInTheDocument();
+      expect(within(diagnosticsPanel as HTMLElement).getByText("30 sec")).toBeInTheDocument();
+      expect(
+        within(diagnosticsPanel as HTMLElement).getByText("Affected entity"),
+      ).toBeInTheDocument();
+      expect(
+        within(diagnosticsPanel as HTMLElement).getByText("Payload posture"),
+      ).toBeInTheDocument();
+      expect(
+        within(diagnosticsPanel as HTMLElement).getByText("Normalized and raw payload available"),
+      ).toBeInTheDocument();
+      expect(
+        within(diagnosticsPanel as HTMLElement).getByText("Troubleshooting summary"),
+      ).toBeInTheDocument();
+      expect(
+        within(executionLogsPanel as HTMLElement).getByText("Acknowledgement posture"),
+      ).toBeInTheDocument();
+      expect(within(executionLogsPanel as HTMLElement).getByText("Ingest lag")).toBeInTheDocument();
+    });
+
     expect(screen.getByRole("link", { name: "Open meter detail" })).toHaveAttribute(
       "href",
       "/meters/meter-2",
+    );
+    expect(screen.getByRole("link", { name: "Review urgent events workspace" })).toHaveAttribute(
+      "href",
+      "/jobs-events-alerts#critical-events-workspace",
     );
   });
 
@@ -408,6 +449,7 @@ describe("ActivityDetailModule", () => {
 
     expect(await screen.findByText("Loading activity detail...")).toBeInTheDocument();
     expect(screen.getByText("Loading execution log workspace...")).toBeInTheDocument();
+    expect(screen.getByText("Loading urgent event diagnostics workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading related operational surfaces...")).toBeInTheDocument();
   });
 

@@ -259,6 +259,53 @@ function buildEventExecutionTrace(detail: EventDetail) {
   ];
 }
 
+function buildEventAcknowledgementLabel(eventState: string): string {
+  if (eventState === "open") {
+    return "Unacknowledged";
+  }
+  if (["acknowledged", "closed", "resolved"].includes(eventState)) {
+    return "Acknowledged / closed";
+  }
+  return formatStatusLabel(eventState);
+}
+
+function buildEventUrgentPostureLabel(detail: EventDetail): string {
+  if (detail.severity === "critical" && detail.event_state === "open") {
+    return "Critical and unacknowledged";
+  }
+  if (detail.severity === "critical") {
+    return "Critical event";
+  }
+  if (detail.event_state === "open") {
+    return "Unacknowledged event";
+  }
+  return `${formatStatusLabel(detail.severity)} / ${formatStatusLabel(detail.event_state)}`;
+}
+
+function buildEventIngestLagLabel(occurredAt: string, receivedAt: string): string {
+  const occurred = new Date(occurredAt);
+  const received = new Date(receivedAt);
+  if (Number.isNaN(occurred.getTime()) || Number.isNaN(received.getTime())) {
+    return "Not available";
+  }
+  return formatDurationFromMs(received.getTime() - occurred.getTime());
+}
+
+function buildEventPayloadPostureLabel(detail: EventDetail): string {
+  const hasNormalized = detail.normalized_payload !== null;
+  const hasRaw = detail.raw_payload !== null;
+  if (hasNormalized && hasRaw) {
+    return "Normalized and raw payload available";
+  }
+  if (hasNormalized) {
+    return "Normalized payload available";
+  }
+  if (hasRaw) {
+    return "Raw payload available";
+  }
+  return "No payload recorded";
+}
+
 function buildRetryRemediationHref({
   commandId,
   itemType,
@@ -410,9 +457,18 @@ export function ActivityDetailModule({
     }
 
     if (!detail.record.meter_id) {
-      return [];
+      return [
+        {
+          href: "/jobs-events-alerts#critical-events-workspace",
+          label: "Review urgent events workspace",
+        },
+      ];
     }
     return [
+      {
+        href: "/jobs-events-alerts#critical-events-workspace",
+        label: "Review urgent events workspace",
+      },
       {
         href: `/meters/${detail.record.meter_id}`,
         label: "Open meter detail",
@@ -960,6 +1016,16 @@ export function ActivityDetailModule({
                   <span className="stat-label">Correlation ID</span>
                   <strong>{detail.record.correlation_id ?? "Not available"}</strong>
                 </div>
+                <div className="stat-card">
+                  <span className="stat-label">Acknowledgement posture</span>
+                  <strong>{buildEventAcknowledgementLabel(detail.record.event_state)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Ingest lag</span>
+                  <strong>
+                    {buildEventIngestLagLabel(detail.record.occurred_at, detail.record.received_at)}
+                  </strong>
+                </div>
               </div>
 
               <div className="command-list-item">
@@ -986,6 +1052,129 @@ export function ActivityDetailModule({
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Urgent event diagnostics workspace</h2>
+              <p className="muted">
+                Focused diagnostics for severity, acknowledgement posture, timing, and affected
+                entity context on the selected event.
+              </p>
+            </div>
+          </div>
+
+          {isLoadingDetail ? (
+            <p className="muted">Loading urgent event diagnostics workspace...</p>
+          ) : null}
+
+          {!isLoadingDetail && !detail && !pageError ? (
+            <p className="muted">No urgent event diagnostics context available.</p>
+          ) : null}
+
+          {!isLoadingDetail && detail?.type === "event" ? (
+            <div className="detail-stack">
+              <section className="jobs-activity-hero">
+                <div className="jobs-activity-hero-row">
+                  <div>
+                    <p className="eyebrow">Urgent Event</p>
+                    <h3>{detail.record.event_name ?? detail.record.event_code}</h3>
+                    <p className="muted">
+                      Diagnostics visibility over severity, acknowledgement posture, ingest timing,
+                      and affected entity linkage in the current bounded event detail route.
+                    </p>
+                  </div>
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      `${detail.record.severity} ${detail.record.event_state}`,
+                    )}`}
+                  >
+                    {buildEventUrgentPostureLabel(detail.record)}
+                  </span>
+                </div>
+
+                <div className="command-list-item-badges">
+                  <span className={`status-pill ${buildStatusTone(detail.record.severity)}`}>
+                    {formatStatusLabel(detail.record.severity)}
+                  </span>
+                  <span className={`status-pill ${buildStatusTone(detail.record.event_state)}`}>
+                    {buildEventAcknowledgementLabel(detail.record.event_state)}
+                  </span>
+                  <span className="artifact-pill">
+                    {detail.record.meter_id ? `Meter ${detail.record.meter_id}` : "No affected meter"}
+                  </span>
+                </div>
+              </section>
+
+              <div className="detail-grid">
+                <div className="stat-card">
+                  <span className="stat-label">Severity posture</span>
+                  <strong>{formatStatusLabel(detail.record.severity)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Acknowledgement posture</span>
+                  <strong>{buildEventAcknowledgementLabel(detail.record.event_state)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Occurred</span>
+                  <strong>{formatDateTime(detail.record.occurred_at)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Received</span>
+                  <strong>{formatDateTime(detail.record.received_at)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Ingest lag</span>
+                  <strong>
+                    {buildEventIngestLagLabel(
+                      detail.record.occurred_at,
+                      detail.record.received_at,
+                    )}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Affected entity</span>
+                  <strong>
+                    {detail.record.meter_id
+                      ? `Meter ${detail.record.meter_id}`
+                      : detail.record.related_attempt_id
+                        ? `Attempt ${detail.record.related_attempt_id}`
+                        : "Not available"}
+                  </strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Batch context</span>
+                  <strong>{detail.record.related_batch_id ?? "Not available"}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Payload posture</span>
+                  <strong>{buildEventPayloadPostureLabel(detail.record)}</strong>
+                </div>
+              </div>
+
+              <div className="command-list-item">
+                <div className="command-list-item-header">
+                  <strong>Troubleshooting summary</strong>
+                  <span
+                    className={`status-pill ${buildStatusTone(
+                      `${detail.record.severity} ${detail.record.event_state}`,
+                    )}`}
+                  >
+                    {detail.record.event_code}
+                  </span>
+                </div>
+                <div className="command-list-item-meta">
+                  <span>{buildEventUrgentPostureLabel(detail.record)}</span>
+                  <span>Correlation {detail.record.correlation_id ?? "Not available"}</span>
+                </div>
+                <div className="command-list-item-meta">
+                  <span>Attempt {detail.record.related_attempt_id ?? "Not available"}</span>
+                  <span>Batch {detail.record.related_batch_id ?? "Not available"}</span>
                 </div>
               </div>
             </div>
