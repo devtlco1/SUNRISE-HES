@@ -122,9 +122,11 @@ describe("ServicePointsModule", () => {
       await screen.findAllByText("SP-1001"),
     ).not.toHaveLength(0);
     expect(screen.getAllByText("SP-1002")).not.toHaveLength(0);
+    expect(screen.getAllByText("Coordinates available").length).toBeGreaterThan(0);
     expect(
       screen.getAllByRole("link", { name: "Open service point detail" }),
     ).not.toHaveLength(0);
+    expect(screen.getAllByRole("link", { name: "Open GIS Lite surface" }).length).toBeGreaterThan(0);
   });
 
   it("keeps the bounded navigation path into service-point detail clear", async () => {
@@ -144,12 +146,23 @@ describe("ServicePointsModule", () => {
       .closest("section");
     expect(summaryPanel).not.toBeNull();
 
-    expect(within(summaryPanel as HTMLElement).getByText("SP-1002")).toBeInTheDocument();
+    expect(within(summaryPanel as HTMLElement).getAllByText("SP-1002").length).toBeGreaterThan(0);
     expect(
       within(summaryPanel as HTMLElement).getByRole("link", {
         name: "Open service point detail",
       }),
     ).toHaveAttribute("href", "/service-points/service-point-2");
+    expect(
+      within(summaryPanel as HTMLElement).getAllByText("Location summary incomplete").length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(summaryPanel as HTMLElement).getByText("No primary meter"),
+    ).toBeInTheDocument();
+    expect(
+      within(summaryPanel as HTMLElement).getByRole("link", {
+        name: "Open GIS Lite surface",
+      }),
+    ).toHaveAttribute("href", "/gis-lite");
   });
 
   it("renders an empty state when no service points are available", async () => {

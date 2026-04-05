@@ -55,6 +55,25 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function formatCountLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatCoordinates(latitude: number | null, longitude: number | null): string {
+  if (latitude === null || longitude === null) {
+    return "Not available";
+  }
+  return `${latitude}, ${longitude}`;
+}
+
+function buildLocationPosture(item: ServicePointListItem): string {
+  return item.latitude !== null && item.longitude !== null
+    ? "Coordinates available"
+    : item.address_line
+      ? "Address only"
+      : "Location summary incomplete";
+}
+
 export function ServicePointsModule({
   authorizedFetch,
 }: {
@@ -150,6 +169,63 @@ export function ServicePointsModule({
       items.find((item) => item.id === selectedServicePointId) ?? items[0] ?? null,
     [items, selectedServicePointId],
   );
+  const selectedServicePointCards = useMemo(() => {
+    if (!selectedServicePoint) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Service point identity",
+        value: selectedServicePoint.service_point_code,
+        note: `${selectedServicePoint.is_active ? "Active" : "Inactive"} • ${selectedServicePoint.id}`,
+      },
+      {
+        label: "Premise posture",
+        value: formatStatusLabel(selectedServicePoint.premises_type ?? "premise"),
+        note: selectedServicePoint.address_line ?? "No address summary recorded",
+      },
+      {
+        label: "Location posture",
+        value: buildLocationPosture(selectedServicePoint),
+        note: formatCoordinates(selectedServicePoint.latitude, selectedServicePoint.longitude),
+      },
+      {
+        label: "Commercial linkage",
+        value: `${selectedServicePoint.linked_subscriber_count} subscriber(s) / ${selectedServicePoint.linked_account_count} account(s)`,
+        note:
+          selectedServicePoint.primary_subscriber_display_name ?? "No primary subscriber cue visible",
+      },
+      {
+        label: "Operational linkage",
+        value: `${selectedServicePoint.linked_meter_count} meter(s)`,
+        note: selectedServicePoint.primary_meter_serial_number
+          ? `Primary meter ${selectedServicePoint.primary_meter_serial_number}`
+          : "No primary meter cue visible",
+      },
+    ];
+  }, [selectedServicePoint]);
+  const selectedServicePointNarrative = useMemo(() => {
+    if (!selectedServicePoint) {
+      return null;
+    }
+
+    return `${selectedServicePoint.is_active ? "Active" : "Inactive"} ${formatStatusLabel(
+      selectedServicePoint.premises_type ?? "premise",
+    ).toLowerCase()} ${selectedServicePoint.service_point_code} has ${formatCountLabel(
+      selectedServicePoint.linked_meter_count,
+      "linked meter",
+      "linked meters",
+    )}, ${formatCountLabel(
+      selectedServicePoint.linked_subscriber_count,
+      "linked subscriber",
+      "linked subscribers",
+    )}, and ${formatCountLabel(
+      selectedServicePoint.linked_account_count,
+      "linked account",
+      "linked accounts",
+    )} visible before opening the detail route.`;
+  }, [selectedServicePoint]);
 
   return (
     <section className="panel">
@@ -240,6 +316,9 @@ export function ServicePointsModule({
                     <span className="artifact-pill">
                       {formatStatusLabel(item.premises_type ?? "premise")}
                     </span>
+                    <span className={`status-pill ${buildStatusTone(buildLocationPosture(item))}`}>
+                      {buildLocationPosture(item)}
+                    </span>
                     <span className="artifact-pill">
                       {item.primary_subscriber_display_name ?? "No linked subscriber"}
                     </span>
@@ -265,6 +344,14 @@ export function ServicePointsModule({
                     <span>{item.linked_meter_count} linked meter(s)</span>
                     <span>{item.linked_subscriber_count} linked subscriber(s)</span>
                   </div>
+                  <div className="command-list-item-meta">
+                    <span>{item.linked_account_count} linked account(s)</span>
+                    <span>
+                      {item.primary_meter_serial_number
+                        ? `Primary meter cue ${item.primary_meter_serial_number}`
+                        : "No primary meter cue"}
+                    </span>
+                  </div>
                   <div className="artifact-row">
                     <button
                       className="secondary-button"
@@ -275,6 +362,9 @@ export function ServicePointsModule({
                     </button>
                     <Link className="secondary-button" href={`/service-points/${item.id}`}>
                       Open service point detail
+                    </Link>
+                    <Link className="secondary-button" href="/gis-lite">
+                      Open GIS Lite surface
                     </Link>
                   </div>
                 </div>
@@ -291,6 +381,15 @@ export function ServicePointsModule({
                   linkage before opening the existing service-point detail route.
                 </p>
               </div>
+              {selectedServicePoint ? (
+                <span
+                  className={`status-pill ${buildStatusTone(
+                    selectedServicePoint.is_active ? "active" : "inactive",
+                  )}`}
+                >
+                  {selectedServicePoint.is_active ? "Active" : "Inactive"}
+                </span>
+              ) : null}
             </div>
 
             {isLoadingItems ? (
@@ -335,30 +434,35 @@ export function ServicePointsModule({
                   </div>
                 </section>
 
+                {selectedServicePointNarrative ? (
+                  <p className="muted">{selectedServicePointNarrative}</p>
+                ) : null}
+
+                <div className="artifact-row">
+                  <span className="artifact-pill">
+                    {buildLocationPosture(selectedServicePoint)}
+                  </span>
+                  <span className="artifact-pill">
+                    {formatStatusLabel(selectedServicePoint.premises_type ?? "premise")}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedServicePoint.primary_subscriber_display_name ?? "No primary subscriber"}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedServicePoint.primary_meter_serial_number
+                      ? `Primary meter ${selectedServicePoint.primary_meter_serial_number}`
+                      : "No primary meter"}
+                  </span>
+                </div>
+
                 <div className="detail-grid">
-                  <div className="stat-card">
-                    <span className="stat-label">Service point ID</span>
-                    <strong>{selectedServicePoint.id}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Premises type</span>
-                    <strong>
-                      {formatStatusLabel(selectedServicePoint.premises_type ?? "premise")}
-                    </strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Coordinates</span>
-                    <strong>
-                      {selectedServicePoint.latitude !== null &&
-                      selectedServicePoint.longitude !== null
-                        ? `${selectedServicePoint.latitude}, ${selectedServicePoint.longitude}`
-                        : "Not available"}
-                    </strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Linked accounts</span>
-                    <strong>{selectedServicePoint.linked_account_count}</strong>
-                  </div>
+                  {selectedServicePointCards.map((card) => (
+                    <div key={card.label} className="stat-card">
+                      <span className="stat-label">{card.label}</span>
+                      <strong>{card.value}</strong>
+                      <p className="muted">{card.note}</p>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="artifact-row">
@@ -367,6 +471,9 @@ export function ServicePointsModule({
                     href={`/service-points/${selectedServicePoint.id}`}
                   >
                     Open service point detail
+                  </Link>
+                  <Link className="secondary-button" href="/gis-lite">
+                    Open GIS Lite surface
                   </Link>
                 </div>
               </div>
