@@ -122,6 +122,18 @@ type AttentionQueueItem = {
   summary: string;
 };
 
+type WorkspaceLaunchGroup = {
+  id: string;
+  label: string;
+  title: string;
+  summary: string;
+  note: string;
+  links: Array<{
+    href: string;
+    label: string;
+  }>;
+};
+
 const STALE_SIGNAL_THRESHOLD_MS = 1000 * 60 * 60 * 24;
 
 function formatDateTime(value: string | null): string {
@@ -667,6 +679,57 @@ export function OperationalHomeModule({
     problematicRecentCommandCount,
     readingsSummary,
   ]);
+  const workspaceLaunchGroups = useMemo<WorkspaceLaunchGroup[]>(
+    () => [
+      {
+        id: "commercial",
+        label: "Commercial",
+        title: "Commercial workspaces",
+        summary:
+          "Subscribers, accounts, and service points now provide the clearest customer and premise follow-through from the dashboard.",
+        note:
+          "Use these surfaces when attention signals need customer/account/service context rather than meter-only review.",
+        links: [
+          { href: "/subscribers", label: "Open subscribers" },
+          { href: "/accounts", label: "Open accounts" },
+          { href: "/service-points", label: "Open service points" },
+        ],
+      },
+      {
+        id: "operations",
+        label: "Operations",
+        title: "Operational workspaces",
+        summary:
+          "Meters, readings, connectivity, commands, and jobs / events / alerts remain the primary operational drill-down surfaces.",
+        note:
+          "Open these first when the dashboard highlights incidents, approvals, validation issues, or command activity.",
+        links: [
+          { href: "/meters", label: "Open meters" },
+          { href: "/readings", label: "Open readings" },
+          { href: "/connectivity", label: "Open connectivity" },
+          { href: "/commands", label: "Open commands" },
+          { href: "/jobs-events-alerts", label: "Open jobs / events / alerts" },
+        ],
+      },
+      {
+        id: "infrastructure",
+        label: "Infrastructure",
+        title: "Infrastructure workspaces",
+        summary:
+          "GIS Lite plus transformer and substation surfaces now provide the clearest network and location follow-through.",
+        note:
+          "Use these when operator review needs current spatial or feeder/substation context instead of commercial triage.",
+        links: [
+          { href: "/gis-lite", label: "Open GIS Lite" },
+          {
+            href: "/transformers-substations",
+            label: "Open transformers / substations",
+          },
+        ],
+      },
+    ],
+    [],
+  );
 
   return (
     <section className="panel">
@@ -678,8 +741,8 @@ export function OperationalHomeModule({
             <div>
               <h2>Operations dashboard</h2>
               <p className="muted">
-                First bounded operational dashboard for the home surface, summarizing the
-                already-stable commands, connectivity, readings, and meter foundations.
+                Operator-first overview for the home surface, summarizing the current stable
+                commands, connectivity, readings, and meter foundations before deeper drill-through.
               </p>
             </div>
             <span className="artifact-pill">{overviewStatus}</span>
@@ -698,6 +761,46 @@ export function OperationalHomeModule({
               ))}
             </div>
           ) : null}
+        </section>
+
+        <section className="subpanel">
+          <div className="section-heading">
+            <div>
+              <h2>Workspace launchpads</h2>
+              <p className="muted">
+                Clean grouped entry points into the now-mature commercial, operational, and
+                infrastructure surfaces without inventing a new dashboard subsystem.
+              </p>
+            </div>
+            <div className="artifact-row">
+              {workspaceLaunchGroups.map((group) => (
+                <span key={group.id} className="artifact-pill">
+                  {group.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="meter-summary-grid dashboard-module-grid">
+            {workspaceLaunchGroups.map((group) => (
+              <article key={group.id} className="stat-card">
+                <span className="stat-label">{group.label}</span>
+                <strong>{group.title}</strong>
+                <p className="muted">{group.summary}</p>
+                <div className="command-list-item-meta">
+                  <span>{formatCountLabel(group.links.length, "entry point", "entry points")}</span>
+                  <span>{group.note}</span>
+                </div>
+                <div className="artifact-row">
+                  {group.links.map((link) => (
+                    <Link key={link.href} className="secondary-button" href={link.href}>
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className="subpanel">

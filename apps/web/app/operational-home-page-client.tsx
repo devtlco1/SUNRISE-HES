@@ -8,7 +8,7 @@ export function OperationalHomePageClient() {
     <OperationalShell
       eyebrow="Operational Pages"
       title="Operational Dashboard"
-      description="Blueprint-aware product dashboard tying together the current operational, customer, GIS, and infrastructure modules."
+      description="Operator-first overview tying together the current operational, commercial, GIS, and infrastructure workspaces."
     >
       {({ authorizedFetch }) => (
         <OperationalHomeModule authorizedFetch={authorizedFetch} />

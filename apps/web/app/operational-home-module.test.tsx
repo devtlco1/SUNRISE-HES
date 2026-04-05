@@ -414,6 +414,7 @@ describe("OperationalHomeModule", () => {
       expect(screen.getAllByText("Connectivity incidents").length).toBeGreaterThan(0);
       expect(screen.getByText("Open validation issues")).toBeInTheDocument();
       expect(screen.getByText("Open recovery issues")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Workspace launchpads" })).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Needs operator attention" })).toBeInTheDocument();
     });
   });
@@ -424,27 +425,53 @@ describe("OperationalHomeModule", () => {
 
     renderOperationalHomeInShell();
 
-    expect(await screen.findByRole("link", { name: "Open meters" })).toHaveAttribute(
+    expect(
+      (await screen.findAllByRole("link", { name: "Open meters" })).some(
+        (link) => link.getAttribute("href") === "/meters",
+      ),
+    ).toBe(true);
+    expect(await screen.findByRole("link", { name: "Open subscribers" })).toHaveAttribute(
       "href",
-      "/meters",
+      "/subscribers",
     );
-    expect(screen.getByRole("link", { name: "Open readings" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "Open accounts" })).toHaveAttribute(
       "href",
-      "/readings",
+      "/accounts",
     );
-    expect(screen.getByRole("link", { name: "Open commands" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "Open service points" })).toHaveAttribute(
       "href",
-      "/commands",
+      "/service-points",
     );
-    expect(screen.getByRole("link", { name: "Open connectivity" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "Open GIS Lite" })).toHaveAttribute(
       "href",
-      "/connectivity",
+      "/gis-lite",
     );
-    expect(await screen.findByRole("link", { name: "Open jobs / events / alerts" })).toHaveAttribute(
-      "href",
-      "/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention",
-    );
-    expect(screen.getByRole("link", { name: "Open import wizard" })).toHaveAttribute(
+    expect(
+      await screen.findByRole("link", { name: "Open transformers / substations" }),
+    ).toHaveAttribute("href", "/transformers-substations");
+    expect(
+      (await screen.findAllByRole("link", { name: "Open readings" })).some(
+        (link) => link.getAttribute("href") === "/readings",
+      ),
+    ).toBe(true);
+    expect(
+      (await screen.findAllByRole("link", { name: "Open commands" })).some(
+        (link) => link.getAttribute("href") === "/commands",
+      ),
+    ).toBe(true);
+    expect(
+      (await screen.findAllByRole("link", { name: "Open connectivity" })).some(
+        (link) => link.getAttribute("href") === "/connectivity",
+      ),
+    ).toBe(true);
+    expect(
+      (await screen.findAllByRole("link", { name: "Open jobs / events / alerts" })).some(
+        (link) =>
+          link.getAttribute("href") ===
+          "/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention",
+      ),
+    ).toBe(true);
+    expect(await screen.findByRole("link", { name: "Open import wizard" })).toHaveAttribute(
       "href",
       "/meters/import",
     );
@@ -473,7 +500,9 @@ describe("OperationalHomeModule", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("6 validation issues")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open readings" })).toHaveAttribute("href", "/readings");
+    expect(
+      screen.getAllByRole("link", { name: "Open readings" }).some((link) => link.getAttribute("href") === "/readings"),
+    ).toBe(true);
     expect(screen.getAllByText("Pending approvals").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Connectivity incidents").length).toBeGreaterThan(0);
     expect(screen.getByText("Validation issues")).toBeInTheDocument();
