@@ -122,9 +122,11 @@ describe("TransformersSubstationsModule", () => {
     ).toBeInTheDocument();
     expect(await screen.findAllByText(/TX-1001/i)).not.toHaveLength(0);
     expect(screen.getAllByText(/TX-1002/i)).not.toHaveLength(0);
+    expect(screen.getAllByText("Location hint available").length).toBeGreaterThan(0);
     expect(
       screen.getAllByRole("link", { name: "Open infrastructure detail" }),
     ).not.toHaveLength(0);
+    expect(screen.getAllByRole("link", { name: "Open GIS Lite surface" }).length).toBeGreaterThan(0);
   });
 
   it("keeps the bounded navigation path into infrastructure detail clear", async () => {
@@ -145,13 +147,24 @@ describe("TransformersSubstationsModule", () => {
     expect(summaryPanel).not.toBeNull();
 
     expect(
-      within(summaryPanel as HTMLElement).getByText(/TX-1002/i),
-    ).toBeInTheDocument();
+      within(summaryPanel as HTMLElement).getAllByText(/TX-1002/i).length,
+    ).toBeGreaterThan(0);
     expect(
       within(summaryPanel as HTMLElement).getByRole("link", {
         name: "Open infrastructure detail",
       }),
     ).toHaveAttribute("href", "/transformers-substations/transformer-2");
+    expect(
+      within(summaryPanel as HTMLElement).getAllByText("Location hint unavailable").length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(summaryPanel as HTMLElement).getByText("No primary linked asset"),
+    ).toBeInTheDocument();
+    expect(
+      within(summaryPanel as HTMLElement).getByRole("link", {
+        name: "Open GIS Lite surface",
+      }),
+    ).toHaveAttribute("href", "/gis-lite");
   });
 
   it("renders an empty state when no infrastructure items are available", async () => {

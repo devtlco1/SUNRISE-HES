@@ -57,6 +57,14 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function formatCountLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function buildLocationPosture(item: TransformerSubstationListItem): string {
+  return item.location_hint ? "Location hint available" : "Location hint unavailable";
+}
+
 export function TransformersSubstationsModule({
   authorizedFetch,
 }: {
@@ -146,6 +154,63 @@ export function TransformersSubstationsModule({
     () => items.find((item) => item.id === selectedInfrastructureId) ?? items[0] ?? null,
     [items, selectedInfrastructureId],
   );
+  const selectedInfrastructureCards = useMemo(() => {
+    if (!selectedInfrastructure) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Network asset",
+        value: `${selectedInfrastructure.code} · ${selectedInfrastructure.name}`,
+        note: `${formatStatusLabel(selectedInfrastructure.status)} transformer • ${selectedInfrastructure.id}`,
+      },
+      {
+        label: "Feeder / substation",
+        value: `${selectedInfrastructure.feeder_code} • ${selectedInfrastructure.substation_code}`,
+        note: `${selectedInfrastructure.substation_code} · ${selectedInfrastructure.substation_name}`,
+      },
+      {
+        label: "Location posture",
+        value: buildLocationPosture(selectedInfrastructure),
+        note: selectedInfrastructure.location_hint ?? "No list-level location hint is available",
+      },
+      {
+        label: "Linked operational estate",
+        value: `${selectedInfrastructure.linked_meter_count} meter(s) / ${selectedInfrastructure.linked_service_point_count} service point(s)`,
+        note: `${selectedInfrastructure.primary_meter_serial_number ?? "No primary meter"} • ${selectedInfrastructure.primary_service_point_code ?? "No primary service point"}`,
+      },
+      {
+        label: "Primary follow-through",
+        value:
+          selectedInfrastructure.primary_meter_serial_number ??
+          selectedInfrastructure.primary_service_point_code ??
+          "No primary linked asset",
+        note: selectedInfrastructure.primary_meter_serial_number
+          ? selectedInfrastructure.primary_service_point_code
+            ? "Primary meter and service-point cues are visible in list context"
+            : "Primary meter cue is visible in list context"
+          : selectedInfrastructure.primary_service_point_code
+            ? "Primary service-point cue is visible in list context"
+            : "No primary linked asset is visible in list context",
+      },
+    ];
+  }, [selectedInfrastructure]);
+  const selectedInfrastructureNarrative = useMemo(() => {
+    if (!selectedInfrastructure) {
+      return null;
+    }
+
+    return `${formatStatusLabel(selectedInfrastructure.status)} transformer ${selectedInfrastructure.code} sits on feeder ${selectedInfrastructure.feeder_code} under ${selectedInfrastructure.substation_code}, with ${formatCountLabel(
+      selectedInfrastructure.linked_meter_count,
+      "linked meter",
+      "linked meters",
+    )} and ${formatCountLabel(
+      selectedInfrastructure.linked_service_point_count,
+      "linked service point",
+      "linked service points",
+    )} visible before opening the detail route.`;
+  }, [selectedInfrastructure]);
 
   return (
     <section className="panel">
@@ -237,6 +302,9 @@ export function TransformersSubstationsModule({
                     <span className="artifact-pill">
                       {item.substation_code} · {item.substation_name}
                     </span>
+                    <span className={`status-pill ${buildStatusTone(buildLocationPosture(item))}`}>
+                      {buildLocationPosture(item)}
+                    </span>
                     <span className="artifact-pill">
                       {item.location_hint ?? "No location hint"}
                     </span>
@@ -261,6 +329,18 @@ export function TransformersSubstationsModule({
                     <span>{item.linked_meter_count} linked meter(s)</span>
                     <span>{item.linked_service_point_count} linked service point(s)</span>
                   </div>
+                  <div className="command-list-item-meta">
+                    <span>
+                      {item.primary_meter_serial_number
+                        ? `Primary meter cue ${item.primary_meter_serial_number}`
+                        : "No primary meter cue"}
+                    </span>
+                    <span>
+                      {item.primary_service_point_code
+                        ? `Primary service-point cue ${item.primary_service_point_code}`
+                        : "No primary service-point cue"}
+                    </span>
+                  </div>
                   <div className="artifact-row">
                     <button
                       className="secondary-button"
@@ -271,6 +351,9 @@ export function TransformersSubstationsModule({
                     </button>
                     <Link className="secondary-button" href={`/transformers-substations/${item.id}`}>
                       Open infrastructure detail
+                    </Link>
+                    <Link className="secondary-button" href="/gis-lite">
+                      Open GIS Lite surface
                     </Link>
                   </div>
                 </div>
@@ -287,6 +370,11 @@ export function TransformersSubstationsModule({
                   linked operational context before opening the existing detail route.
                 </p>
               </div>
+              {selectedInfrastructure ? (
+                <span className={`status-pill ${buildStatusTone(selectedInfrastructure.status)}`}>
+                  {formatStatusLabel(selectedInfrastructure.status)}
+                </span>
+              ) : null}
             </div>
 
             {isLoadingItems ? (
@@ -334,23 +422,37 @@ export function TransformersSubstationsModule({
                   </div>
                 </section>
 
+                {selectedInfrastructureNarrative ? (
+                  <p className="muted">{selectedInfrastructureNarrative}</p>
+                ) : null}
+
+                <div className="artifact-row">
+                  <span className="artifact-pill">
+                    {buildLocationPosture(selectedInfrastructure)}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedInfrastructure.substation_code} · {selectedInfrastructure.substation_name}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedInfrastructure.primary_meter_serial_number
+                      ? `Primary meter ${selectedInfrastructure.primary_meter_serial_number}`
+                      : "No primary meter"}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedInfrastructure.primary_service_point_code
+                      ? `Primary service point ${selectedInfrastructure.primary_service_point_code}`
+                      : "No primary service point"}
+                  </span>
+                </div>
+
                 <div className="detail-grid">
-                  <div className="stat-card">
-                    <span className="stat-label">Transformer ID</span>
-                    <strong>{selectedInfrastructure.id}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Feeder</span>
-                    <strong>{selectedInfrastructure.feeder_code}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Linked meters</span>
-                    <strong>{selectedInfrastructure.linked_meter_count}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Linked service points</span>
-                    <strong>{selectedInfrastructure.linked_service_point_count}</strong>
-                  </div>
+                  {selectedInfrastructureCards.map((card) => (
+                    <div key={card.label} className="stat-card">
+                      <span className="stat-label">{card.label}</span>
+                      <strong>{card.value}</strong>
+                      <p className="muted">{card.note}</p>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="artifact-row">
@@ -359,6 +461,9 @@ export function TransformersSubstationsModule({
                     href={`/transformers-substations/${selectedInfrastructure.id}`}
                   >
                     Open infrastructure detail
+                  </Link>
+                  <Link className="secondary-button" href="/gis-lite">
+                    Open GIS Lite surface
                   </Link>
                 </div>
               </div>
