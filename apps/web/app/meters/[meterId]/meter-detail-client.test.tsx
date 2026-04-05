@@ -110,6 +110,7 @@ describe("MeterDetailClient", () => {
     expect(await screen.findByRole("heading", { name: "SN-DETAIL" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByText("Registry")).toBeInTheDocument();
-    expect(screen.getByText("ACME M100")).toBeInTheDocument();
+    expect(screen.getByText("ACME · M100")).toBeInTheDocument();
+    expect(screen.getByText("Meter detail")).toBeInTheDocument();
   });
 });

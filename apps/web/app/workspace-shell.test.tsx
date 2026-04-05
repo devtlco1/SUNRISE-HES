@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -36,6 +36,11 @@ describe("WorkspaceShell", () => {
     );
 
     expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("link", { name: "Sunhope HES — home" })).toHaveAttribute("href", "/");
+    expect(document.querySelector(".ws-sidebar-logo")).toHaveAttribute(
+      "src",
+      "/brand/sunhope-tlco-logo.svg",
+    );
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Meters" })).toHaveAttribute("href", "/meters");
@@ -83,7 +88,7 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>,
     );
 
-    expect(await screen.findByRole("contentinfo")).toBeInTheDocument();
-    expect(screen.getByText("Operational workspace")).toBeInTheDocument();
+    const footer = await screen.findByRole("contentinfo");
+    expect(within(footer).getByText("Sunhope HES")).toBeInTheDocument();
   });
 });

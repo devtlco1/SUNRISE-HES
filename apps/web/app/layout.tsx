@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Sunrise HES",
-  description: "Sunrise HES operational workspace",
+  title: "Sunhope HES",
+  description: "Sunhope HES operational workspace",
 };
 
 type RootLayoutProps = {

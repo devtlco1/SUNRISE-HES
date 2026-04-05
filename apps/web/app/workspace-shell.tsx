@@ -36,13 +36,20 @@ function WorkspaceChrome({ children }: { children: ReactNode }) {
       ) : null}
 
       <aside className={`ws-sidebar${mobileNavOpen ? " is-open" : ""}`}>
-        <div className="ws-sidebar-brand">
-          <span className="ws-sidebar-mark">SH</span>
-          <div>
-            <div className="ws-sidebar-title">Sunrise HES</div>
-            <div className="ws-sidebar-tag">Operations</div>
-          </div>
-        </div>
+        <Link
+          href="/"
+          className="ws-sidebar-brand"
+          aria-label="Sunhope HES — home"
+        >
+          <img
+            src="/brand/sunhope-tlco-logo.svg"
+            alt=""
+            className="ws-sidebar-logo"
+            width={180}
+            height={48}
+            decoding="async"
+          />
+        </Link>
         <nav id="ws-sidebar-nav" className="ws-nav" aria-label="Primary">
           <Link
             href="/"
@@ -73,7 +80,7 @@ function WorkspaceChrome({ children }: { children: ReactNode }) {
             >
               Menu
             </button>
-            <span className="ws-header-context">Sunrise HES</span>
+            <span className="ws-header-context">Sunhope HES</span>
           </div>
           <div className="ws-header-right">
             {isCheckingSession ? (
@@ -103,9 +110,7 @@ function WorkspaceChrome({ children }: { children: ReactNode }) {
         </main>
 
         <footer className="ws-footer" role="contentinfo">
-          <span>Sunrise HES</span>
-          <span className="ws-footer-sep">·</span>
-          <span>Operational workspace</span>
+          <span>Sunhope HES</span>
         </footer>
       </div>
     </div>

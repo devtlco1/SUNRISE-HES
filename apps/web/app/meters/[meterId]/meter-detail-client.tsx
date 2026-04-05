@@ -185,6 +185,10 @@ function shortId(id: string): string {
   return `${id.slice(0, 8)}…`;
 }
 
+function normId(s: string | null | undefined): string {
+  return (s ?? "").trim().toLowerCase();
+}
+
 async function fetchOptional<T>(
   authorizedFetch: AuthorizedFetch,
   path: string,
@@ -414,6 +418,17 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
   }
 
   const detail = meter.data;
+  const serialNorm = normId(detail.serial_number);
+  const headerUtility =
+    detail.utility_meter_number && normId(detail.utility_meter_number) !== serialNorm
+      ? detail.utility_meter_number
+      : null;
+  const headerBadge =
+    detail.badge_number &&
+    normId(detail.badge_number) !== serialNorm &&
+    normId(detail.badge_number) !== normId(headerUtility)
+      ? detail.badge_number
+      : null;
 
   return (
     <div className="ws-meter-detail">
@@ -424,7 +439,7 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
           <span className="ws-meter-detail-bc-sep" aria-hidden>
             /
           </span>
-          <span className="ws-meter-detail-bc-current">{detail.serial_number}</span>
+          <span className="ws-meter-detail-bc-static">Meter detail</span>
         </div>
 
         <header className="ws-meter-detail-header">
@@ -432,28 +447,28 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
             <h1 className="ws-meter-detail-title">{detail.serial_number}</h1>
             <p className="ws-meter-detail-sub">
               <span className="ws-meter-detail-sub-mono" title={detail.id}>
-                {detail.id}
+                ID {shortId(detail.id)}
               </span>
               <span className="ws-meter-detail-sub-sep" aria-hidden>
                 ·
               </span>
               <span>
-                {detail.manufacturer_code} {detail.meter_model_code}
+                {detail.manufacturer_code} · {detail.meter_model_code}
               </span>
-              {detail.utility_meter_number ? (
+              {headerUtility ? (
                 <>
                   <span className="ws-meter-detail-sub-sep" aria-hidden>
                     ·
                   </span>
-                  <span className="ws-meter-detail-sub-mono">U# {detail.utility_meter_number}</span>
+                  <span className="ws-meter-detail-sub-mono">U# {headerUtility}</span>
                 </>
               ) : null}
-              {detail.badge_number ? (
+              {headerBadge ? (
                 <>
                   <span className="ws-meter-detail-sub-sep" aria-hidden>
                     ·
                   </span>
-                  <span className="ws-meter-detail-sub-mono">Badge {detail.badge_number}</span>
+                  <span className="ws-meter-detail-sub-mono">Badge {headerBadge}</span>
                 </>
               ) : null}
             </p>
@@ -463,10 +478,10 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
               </span>
               <span className={`ws-chip ws-chip--${reachTone(reachBucket)}`}>
                 {reachBucket === "online"
-                  ? "Reachable"
+                  ? "Online"
                   : reachBucket === "offline"
                     ? "Stale"
-                    : "Reach unknown"}
+                    : "Unknown"}
               </span>
               <span className={`ws-chip ws-chip--${detail.is_active ? "success" : "muted"}`}>
                 {detail.is_active ? "Active" : "Inactive"}
@@ -475,7 +490,7 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
                 <span
                   className={`ws-chip ws-chip--${gisRow.has_coordinates ? "success" : "muted"}`}
                 >
-                  {gisRow.has_coordinates ? "GIS located" : "GIS unlocated"}
+                  {gisRow.has_coordinates ? "Mapped" : "Unmapped"}
                 </span>
               ) : null}
             </div>
@@ -486,14 +501,7 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
                   <span className="ws-meter-detail-sub-sep" aria-hidden>
                     ·
                   </span>
-                  <span>Last reading {formatWhen(latestReadAt)}</span>
-                </>
-              ) : readings.state === "ok" && readings.data.items.length === 0 ? (
-                <>
-                  <span className="ws-meter-detail-sub-sep" aria-hidden>
-                    ·
-                  </span>
-                  <span className="ws-muted">No readings in registry</span>
+                  <span>Last read {formatWhen(latestReadAt)}</span>
                 </>
               ) : null}
             </p>
@@ -523,9 +531,12 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
         <div className="ws-meter-detail-panel">
           {tab === "summary" ? (
             <div className="ws-meter-detail-sections">
-              <section className="ws-meter-detail-section" aria-labelledby="meter-summary-h">
-                <h2 id="meter-summary-h" className="ws-meter-detail-section-title">
-                  Registry
+              <section
+                className="ws-meter-detail-section ws-meter-detail-section--group"
+                aria-labelledby="meter-identity-h"
+              >
+                <h2 id="meter-identity-h" className="ws-meter-detail-section-title">
+                  Identity
                 </h2>
                 <dl className="ws-meter-detail-dl">
                   <DetailField label="Serial" value={detail.serial_number} mono />
@@ -538,6 +549,17 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
                   <DetailField label="Badge" value={detail.badge_number ?? "—"} mono />
                   <DetailField label="Manufacturer" value={detail.manufacturer_code} />
                   <DetailField label="Model" value={detail.meter_model_code} />
+                </dl>
+              </section>
+
+              <section
+                className="ws-meter-detail-section ws-meter-detail-section--group"
+                aria-labelledby="meter-registry-h"
+              >
+                <h2 id="meter-registry-h" className="ws-meter-detail-section-title">
+                  Registry
+                </h2>
+                <dl className="ws-meter-detail-dl">
                   <DetailField
                     label="Firmware"
                     value={detail.firmware_version ?? "—"}
@@ -558,9 +580,55 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
                     value={humanizeEnum(detail.current_status)}
                   />
                   <DetailField
-                    label="Registry state"
-                    value={detail.is_active ? "Active" : "Inactive"}
+                    label="Active in registry"
+                    value={detail.is_active ? "Yes" : "No"}
                   />
+                  <DetailField label="Installed" value={formatWhen(detail.installed_at)} />
+                  <DetailField label="Commissioned" value={formatWhen(detail.commissioned_at)} />
+                  <DetailField label="Notes" value={detail.notes?.trim() ? detail.notes : "—"} />
+                </dl>
+                {detail.metadata_json && Object.keys(detail.metadata_json).length > 0 ? (
+                  <pre className="ws-meter-detail-meta-json">
+                    {JSON.stringify(detail.metadata_json, null, 2)}
+                  </pre>
+                ) : null}
+              </section>
+
+              <section
+                className="ws-meter-detail-section ws-meter-detail-section--group"
+                aria-labelledby="meter-connectivity-summary-h"
+              >
+                <h2 id="meter-connectivity-summary-h" className="ws-meter-detail-section-title">
+                  Connectivity
+                </h2>
+                <dl className="ws-meter-detail-dl ws-meter-detail-dl--compact">
+                  <DetailField label="Last seen" value={formatWhen(detail.last_seen_at)} />
+                  <DetailField
+                    label="Reachability"
+                    value={
+                      reachBucket === "online"
+                        ? "Online (within 24h)"
+                        : reachBucket === "offline"
+                          ? "Stale (no recent check-in)"
+                          : "Unknown"
+                    }
+                  />
+                  <DetailField
+                    label="Communication profile"
+                    value={detail.communication_profile_code ?? "—"}
+                    mono
+                  />
+                </dl>
+              </section>
+
+              <section
+                className="ws-meter-detail-section ws-meter-detail-section--group"
+                aria-labelledby="meter-asset-h"
+              >
+                <h2 id="meter-asset-h" className="ws-meter-detail-section-title">
+                  Asset / linkage
+                </h2>
+                <dl className="ws-meter-detail-dl">
                   <DetailField
                     label="Service point"
                     value={
@@ -587,16 +655,7 @@ function MeterDetailBody({ meterId }: { meterId: string }) {
                     }
                     mono
                   />
-                  <DetailField label="Installed" value={formatWhen(detail.installed_at)} />
-                  <DetailField label="Commissioned" value={formatWhen(detail.commissioned_at)} />
-                  <DetailField label="Last seen" value={formatWhen(detail.last_seen_at)} />
-                  <DetailField label="Notes" value={detail.notes?.trim() ? detail.notes : "—"} />
                 </dl>
-                {detail.metadata_json && Object.keys(detail.metadata_json).length > 0 ? (
-                  <pre className="ws-meter-detail-meta-json">
-                    {JSON.stringify(detail.metadata_json, null, 2)}
-                  </pre>
-                ) : null}
               </section>
 
               <section className="ws-meter-detail-section" aria-labelledby="meter-lifecycle-h">

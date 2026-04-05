@@ -78,32 +78,25 @@ a:hover {
 }
 
 .ws-sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  display: block;
+  line-height: 0;
+  text-decoration: none;
+  outline-offset: 2px;
 }
 
-.ws-sidebar-mark {
-  width: 2.25rem;
-  height: 2.25rem;
+.ws-sidebar-brand:focus-visible {
   border-radius: 6px;
-  background: var(--ws-text);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-  letter-spacing: -0.02em;
+  outline: 2px solid var(--ws-text);
 }
 
-.ws-sidebar-title {
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-
-.ws-sidebar-tag {
-  font-size: 0.75rem;
-  color: var(--ws-muted);
+.ws-sidebar-logo {
+  display: block;
+  width: 100%;
+  max-width: 11.25rem;
+  height: auto;
+  max-height: 2.75rem;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .ws-nav {
@@ -1308,6 +1301,11 @@ a.ws-row-actions-item {
   font-weight: 500;
 }
 
+.ws-meter-detail-bc-static {
+  color: var(--ws-muted);
+  font-weight: 500;
+}
+
 .ws-meter-detail-header {
   margin-bottom: 1rem;
   padding-bottom: 0.85rem;
@@ -1391,7 +1389,17 @@ a.ws-row-actions-item {
 .ws-meter-detail-sections {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.35rem;
+}
+
+.ws-meter-detail-section--group {
+  padding-bottom: 0.15rem;
+  border-bottom: 1px solid var(--ws-border);
+}
+
+.ws-meter-detail-section--group:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .ws-meter-detail-section-title {
