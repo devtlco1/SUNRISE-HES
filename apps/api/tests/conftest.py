@@ -198,6 +198,7 @@ def auth_settings(local_test_service_settings: None) -> Generator[None, None, No
     settings.cors_allowed_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://187.124.187.156:3000",
     ]
     settings.internal_api_token = "test-internal-token"
     settings.bootstrap_super_admin_username = None

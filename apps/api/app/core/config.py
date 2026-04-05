@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://187.124.187.156:3000",
     ]
     jwt_secret_key: str = "change-me-before-production-with-at-least-32-characters"
     jwt_algorithm: str = "HS256"

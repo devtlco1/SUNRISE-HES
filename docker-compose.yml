@@ -44,6 +44,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sunrise}:${POSTGRES_PASSWORD:-sunrise}@postgres:5432/${POSTGRES_DB:-sunrise_hes}
       REDIS_URL: redis://redis:6379/0
       LOG_LEVEL: INFO
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://187.124.187.156:3000}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-before-production-with-at-least-32-characters}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
