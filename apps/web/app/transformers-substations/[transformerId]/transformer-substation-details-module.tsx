@@ -119,6 +119,8 @@ export function TransformerSubstationDetailsModule({
     void loadDetail();
   }, [loadDetail]);
 
+  const primaryLinkedMeter = detail?.linked_meters[0] ?? null;
+
   return (
     <section className="panel">
       {detailError ? <p className="error-banner">{detailError}</p> : null}
@@ -236,8 +238,15 @@ export function TransformerSubstationDetailsModule({
               <p className="muted">No infrastructure description is available.</p>
             )}
             <div className="artifact-row">
-              <Link className="secondary-button" href="/gis-lite">
-                Open GIS Lite
+              <Link
+                className="secondary-button"
+                href={
+                  primaryLinkedMeter
+                    ? `/gis-lite?meterId=${primaryLinkedMeter.id}`
+                    : "/gis-lite"
+                }
+              >
+                Open GIS Lite context
               </Link>
             </div>
           </section>

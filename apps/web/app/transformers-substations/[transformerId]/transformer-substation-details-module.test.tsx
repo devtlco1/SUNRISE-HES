@@ -128,9 +128,9 @@ describe("TransformerSubstationDetailsModule", () => {
       await screen.findAllByText("TX-1001 · Airport Transformer"),
     ).not.toHaveLength(0);
     expect(screen.getAllByText("Active")).not.toHaveLength(0);
-    expect(screen.getByRole("link", { name: "Open GIS Lite" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open GIS Lite context" })).toHaveAttribute(
       "href",
-      "/gis-lite",
+      "/gis-lite?meterId=meter-1",
     );
     const linkedServicePointsPanel = screen.getByRole("heading", {
       name: "Linked service points",

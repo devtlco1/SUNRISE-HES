@@ -99,22 +99,29 @@ function normalizeCoordinate(
 
 export function GisLiteModule({
   authorizedFetch,
+  initialMeterId = null,
 }: {
   authorizedFetch: AuthorizedFetch;
+  initialMeterId?: string | null;
 }) {
   const [items, setItems] = useState<GisLiteEntity[]>([]);
   const [selectedMeterId, setSelectedMeterId] = useState<string | null>(null);
   const [totalItems, setTotalItems] = useState(0);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isLoadingEntities, setIsLoadingEntities] = useState(false);
+  const handedOffMeterId = initialMeterId?.trim() || null;
 
   const loadEntities = useCallback(async () => {
     setIsLoadingEntities(true);
     setPageError(null);
 
     try {
+      const searchParams = new URLSearchParams({ limit: "24" });
+      if (handedOffMeterId) {
+        searchParams.set("meter_id", handedOffMeterId);
+      }
       const response = await authorizedFetch<GisLiteEntityListResponse>(
-        "/api/v1/gis-lite/entities?limit=24",
+        `/api/v1/gis-lite/entities?${searchParams.toString()}`,
       );
       setItems(response.items);
       setTotalItems(response.total);
@@ -127,7 +134,7 @@ export function GisLiteModule({
     } finally {
       setIsLoadingEntities(false);
     }
-  }, [authorizedFetch]);
+  }, [authorizedFetch, handedOffMeterId]);
 
   useEffect(() => {
     void loadEntities();
@@ -169,9 +176,12 @@ export function GisLiteModule({
       if (currentSelectedMeterId && items.some((item) => item.meter_id === currentSelectedMeterId)) {
         return currentSelectedMeterId;
       }
+      if (handedOffMeterId && items.some((item) => item.meter_id === handedOffMeterId)) {
+        return handedOffMeterId;
+      }
       return items[0]?.meter_id ?? null;
     });
-  }, [items]);
+  }, [handedOffMeterId, items]);
 
   const selectedEntity = useMemo(
     () => items.find((item) => item.meter_id === selectedMeterId) ?? items[0] ?? null,
@@ -192,7 +202,20 @@ export function GisLiteModule({
                 service-point context.
               </p>
             </div>
-            <span className="artifact-pill">{totalItems} entities in scope</span>
+            <div className="artifact-row">
+              <span className="artifact-pill">
+                {handedOffMeterId
+                  ? selectedEntity
+                    ? `Focused handoff preserved for ${selectedEntity.meter_serial_number}`
+                    : "Focused meter handoff in scope"
+                  : `${totalItems} entities in scope`}
+              </span>
+              {handedOffMeterId ? (
+                <Link className="secondary-button" href="/gis-lite">
+                  Open full GIS Lite surface
+                </Link>
+              ) : null}
+            </div>
           </div>
 
           {isLoadingEntities ? (
@@ -357,9 +380,28 @@ export function GisLiteModule({
               </div>
 
               <div className="artifact-row">
-                <Link className="secondary-button" href={`/meters/${selectedEntity.meter_id}`}>
-                  Open meter detail
+                <Link
+                  className="secondary-button"
+                  href={`/meters/${selectedEntity.meter_id}?tab=gis`}
+                >
+                  Open meter GIS detail
                 </Link>
+                {selectedEntity.service_point_id ? (
+                  <Link
+                    className="secondary-button"
+                    href={`/service-points/${selectedEntity.service_point_id}`}
+                  >
+                    Open service point detail
+                  </Link>
+                ) : null}
+                {selectedEntity.account_id ? (
+                  <Link
+                    className="secondary-button"
+                    href={`/accounts/${selectedEntity.account_id}`}
+                  >
+                    Open account detail
+                  </Link>
+                ) : null}
                 {selectedEntity.subscriber_id ? (
                   <Link
                     className="secondary-button"
@@ -452,9 +494,25 @@ export function GisLiteModule({
                   >
                     Inspect summary
                   </button>
-                  <Link className="secondary-button" href={`/meters/${item.meter_id}`}>
-                    Open meter detail
+                  <Link
+                    className="secondary-button"
+                    href={`/meters/${item.meter_id}?tab=gis`}
+                  >
+                    Open meter GIS detail
                   </Link>
+                  {item.service_point_id ? (
+                    <Link
+                      className="secondary-button"
+                      href={`/service-points/${item.service_point_id}`}
+                    >
+                      Open service point detail
+                    </Link>
+                  ) : null}
+                  {item.account_id ? (
+                    <Link className="secondary-button" href={`/accounts/${item.account_id}`}>
+                      Open account detail
+                    </Link>
+                  ) : null}
                   {item.subscriber_id ? (
                     <Link
                       className="secondary-button"

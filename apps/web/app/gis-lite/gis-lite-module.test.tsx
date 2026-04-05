@@ -82,9 +82,14 @@ function createMockApi({
       if (endpointStatus !== 200) {
         return jsonResponse({ detail: endpointDetail }, endpointStatus);
       }
+      const parsedUrl = new URL(url);
+      const meterIdFilter = parsedUrl.searchParams.get("meter_id");
+      const filteredItems = meterIdFilter
+        ? items.filter((item) => item.meter_id === meterIdFilter)
+        : items;
       return jsonResponse({
-        total: items.length,
-        items,
+        total: filteredItems.length,
+        items: filteredItems,
       });
     }
 
@@ -94,14 +99,16 @@ function createMockApi({
   return { fetchMock };
 }
 
-function renderGisLiteModuleInShell() {
+function renderGisLiteModuleInShell(initialMeterId?: string | null) {
   render(
     <OperationalShell
       eyebrow="Operational Pages"
       title="GIS Lite MVP"
       description="Bounded GIS Lite view"
     >
-      {({ authorizedFetch }) => <GisLiteModule authorizedFetch={authorizedFetch} />}
+      {({ authorizedFetch }) => (
+        <GisLiteModule authorizedFetch={authorizedFetch} initialMeterId={initialMeterId} />
+      )}
     </OperationalShell>,
   );
 }
@@ -157,9 +164,9 @@ describe("GisLiteModule", () => {
       expect(within(summaryPanel as HTMLElement).getByText("SN-1002")).toBeInTheDocument();
       expect(
         within(summaryPanel as HTMLElement).getByRole("link", {
-          name: "Open meter detail",
+          name: "Open meter GIS detail",
         }),
-      ).toHaveAttribute("href", "/meters/meter-2");
+      ).toHaveAttribute("href", "/meters/meter-2?tab=gis");
     });
   });
 
@@ -177,11 +184,64 @@ describe("GisLiteModule", () => {
     await waitFor(() => {
       expect(
         within(entitiesPanel as HTMLElement).getAllByRole("link", {
-          name: "Open meter detail",
+          name: "Open meter GIS detail",
         })[0],
-      ).toHaveAttribute("href", "/meters/meter-1");
+      ).toHaveAttribute("href", "/meters/meter-1?tab=gis");
+      expect(
+        within(entitiesPanel as HTMLElement).getAllByRole("link", {
+          name: "Open service point detail",
+        })[0],
+      ).toHaveAttribute("href", "/service-points/service-point-1");
       expect(
         within(entitiesPanel as HTMLElement).getByRole("link", {
+          name: "Open account detail",
+        }),
+      ).toHaveAttribute("href", "/accounts/account-1");
+      expect(
+        within(entitiesPanel as HTMLElement).getByRole("link", {
+          name: "Open subscriber detail",
+        }),
+      ).toHaveAttribute("href", "/subscribers/subscriber-1");
+    });
+  });
+
+  it("preserves a focused meter handoff and exposes GIS return links", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderGisLiteModuleInShell("meter-1");
+
+    expect(
+      await screen.findByText("Focused handoff preserved for SN-1001"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open full GIS Lite surface" })).toHaveAttribute(
+      "href",
+      "/gis-lite",
+    );
+
+    const summaryPanel = screen
+      .getByRole("heading", { name: "Selected spatial entity" })
+      .closest("section");
+    expect(summaryPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(summaryPanel as HTMLElement).getByRole("link", {
+          name: "Open meter GIS detail",
+        }),
+      ).toHaveAttribute("href", "/meters/meter-1?tab=gis");
+      expect(
+        within(summaryPanel as HTMLElement).getByRole("link", {
+          name: "Open service point detail",
+        }),
+      ).toHaveAttribute("href", "/service-points/service-point-1");
+      expect(
+        within(summaryPanel as HTMLElement).getByRole("link", {
+          name: "Open account detail",
+        }),
+      ).toHaveAttribute("href", "/accounts/account-1");
+      expect(
+        within(summaryPanel as HTMLElement).getByRole("link", {
           name: "Open subscriber detail",
         }),
       ).toHaveAttribute("href", "/subscribers/subscriber-1");

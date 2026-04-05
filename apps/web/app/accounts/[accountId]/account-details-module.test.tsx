@@ -123,6 +123,10 @@ describe("AccountDetailsModule", () => {
     expect(
       screen.getByRole("link", { name: "Open linked subscriber detail" }),
     ).toHaveAttribute("href", "/subscribers/consumer-1");
+    expect(screen.getByRole("link", { name: "Open GIS Lite context" })).toHaveAttribute(
+      "href",
+      "/gis-lite?meterId=meter-1",
+    );
     expect(
       screen.getByRole("link", { name: "Open linked service point detail" }),
     ).toHaveAttribute("href", "/service-points/service-point-1");

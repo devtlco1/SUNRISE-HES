@@ -1664,7 +1664,7 @@ describe("MeterDetailsCommandsTab", () => {
     expect(within(gisPanel as HTMLElement).getByText("transformer-1")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open GIS Lite surface" })).toHaveAttribute(
       "href",
-      "/gis-lite",
+      "/gis-lite?meterId=meter-1",
     );
 
     const navigationPanel = screen

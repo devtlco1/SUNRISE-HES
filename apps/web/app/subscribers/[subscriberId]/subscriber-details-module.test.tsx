@@ -143,6 +143,10 @@ describe("SubscriberDetailsModule", () => {
       "href",
       "/meters/meter-1",
     );
+    expect(screen.getByRole("link", { name: "Open GIS Lite context" })).toHaveAttribute(
+      "href",
+      "/gis-lite?meterId=meter-1",
+    );
     expect(
       within(currentMeterPanel as HTMLElement).getByRole("link", {
         name: "Open meter detail",

@@ -199,6 +199,16 @@ export function AccountDetailsModule({
 
               <div className="artifact-row">
                 <Link
+                  className="secondary-button"
+                  href={
+                    primaryLinkedMeter
+                      ? `/gis-lite?meterId=${primaryLinkedMeter.id}`
+                      : "/gis-lite"
+                  }
+                >
+                  Open GIS Lite context
+                </Link>
+                <Link
                   className="primary-button"
                   href={`/subscribers/${detail.subscriber.id}`}
                 >

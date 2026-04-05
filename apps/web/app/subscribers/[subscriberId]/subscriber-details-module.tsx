@@ -246,6 +246,16 @@ export function SubscriberDetailsModule({
             </div>
 
             <div className="artifact-row">
+              <Link
+                className="secondary-button"
+                href={
+                  detail.current_operational_meter
+                    ? `/gis-lite?meterId=${detail.current_operational_meter.id}`
+                    : "/gis-lite"
+                }
+              >
+                Open GIS Lite context
+              </Link>
               {detail.current_operational_meter ? (
                 <Link
                   className="primary-button"

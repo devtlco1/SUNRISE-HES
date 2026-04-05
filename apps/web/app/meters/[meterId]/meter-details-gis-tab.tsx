@@ -206,7 +206,7 @@ export function MeterDetailsGisTab({
                 ? "Loading GIS context"
                 : `${gisTotal} GIS-linked entit${gisTotal === 1 ? "y" : "ies"} in scope`}
             </span>
-            <Link className="secondary-button" href="/gis-lite">
+            <Link className="secondary-button" href={`/gis-lite?meterId=${meterId}`}>
               Open GIS Lite surface
             </Link>
           </div>
