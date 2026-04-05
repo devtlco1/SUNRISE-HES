@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { MetersRegistryClient } from "./meters-registry-client";
 
-export default function MetersRetired() {
-  redirect("/");
+export default function MetersPage() {
+  return <MetersRegistryClient />;
 }

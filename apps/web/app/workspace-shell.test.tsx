@@ -38,6 +38,7 @@ describe("WorkspaceShell", () => {
     expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Meters" })).toHaveAttribute("href", "/meters");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

@@ -22,6 +22,7 @@ function WorkspaceChrome({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   const dashboardActive = pathname === "/";
+  const metersActive = pathname === "/meters" || pathname.startsWith("/meters/");
 
   return (
     <div className="ws-root">
@@ -49,6 +50,13 @@ function WorkspaceChrome({ children }: { children: ReactNode }) {
             aria-current={dashboardActive ? "page" : undefined}
           >
             Dashboard
+          </Link>
+          <Link
+            href="/meters"
+            className={`ws-nav-item${metersActive ? " is-active" : ""}`}
+            aria-current={metersActive ? "page" : undefined}
+          >
+            Meters
           </Link>
         </nav>
       </aside>
