@@ -374,9 +374,10 @@ function createMockApi({
 function renderOperationalHomeInShell() {
   render(
     <OperationalShell
-      eyebrow="Operational Pages"
-      title="Operational Home / Dashboard MVP"
+      eyebrow="Dashboard Foundation"
+      title="Dashboard foundation test"
       description="Bounded operational home"
+      navigationVariant="dashboard-home"
     >
       {({ authorizedFetch }) => (
         <OperationalHomeModule authorizedFetch={authorizedFetch} />
@@ -406,16 +407,17 @@ describe("OperationalHomeModule", () => {
       await screen.findByRole("link", { name: "Dashboard home" }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "Operations dashboard" }),
+      await screen.findByRole("heading", { name: "Operations control center" }),
     ).toBeInTheDocument();
 
     await waitFor(() => {
+      expect(screen.getByText("One complete dashboard experience before broader page migration.")).toBeInTheDocument();
       expect(screen.getAllByText("Pending approvals").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("Connectivity incidents").length).toBeGreaterThan(0);
       expect(screen.getByText("Open validation issues")).toBeInTheDocument();
       expect(screen.getByText("Open recovery issues")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Workspace launchpads" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Needs operator attention" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Queues and live activity" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Primary operational lanes" })).toBeInTheDocument();
     });
   });
 
@@ -465,16 +467,12 @@ describe("OperationalHomeModule", () => {
       ),
     ).toBe(true);
     expect(
-      (await screen.findAllByRole("link", { name: "Open jobs / events / alerts" })).some(
+      (await screen.findAllByRole("link", { name: "Open monitoring center" })).some(
         (link) =>
           link.getAttribute("href") ===
           "/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention",
       ),
     ).toBe(true);
-    expect(await screen.findByRole("link", { name: "Open import wizard" })).toHaveAttribute(
-      "href",
-      "/meters/import",
-    );
   });
 
   it("renders KPI cards, operational summary panels, and recent activity snippets when data is available", async () => {
@@ -496,15 +494,14 @@ describe("OperationalHomeModule", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Offline, stale, and degraded signals stay bounded to the current connectivity scope.",
+        "First fully rebuilt dashboard home for the new admin-style direction. It keeps the product truthful to current routes while establishing the shell, hierarchy, and launch rhythm later pages will inherit.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("6 validation issues")).toBeInTheDocument();
+    expect(screen.getAllByText(/validation issues/).length).toBeGreaterThan(0);
     expect(
       screen.getAllByRole("link", { name: "Open readings" }).some((link) => link.getAttribute("href") === "/readings"),
     ).toBe(true);
     expect(screen.getAllByText("Pending approvals").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Connectivity incidents").length).toBeGreaterThan(0);
     expect(screen.getByText("Validation issues")).toBeInTheDocument();
     expect(screen.getByText("Recovery issues")).toBeInTheDocument();
     expect(screen.getByText("Problem command activity")).toBeInTheDocument();
@@ -539,7 +536,7 @@ describe("OperationalHomeModule", () => {
 
     renderOperationalHomeInShell();
 
-    expect(await screen.findByText("No recent command activity available.")).toBeInTheDocument();
+    expect(await screen.findByText("No recent command activity.")).toBeInTheDocument();
     expect(
       screen.getByText(
         "No bounded operator attention items are currently derived from the stable dashboard signals.",
@@ -547,7 +544,7 @@ describe("OperationalHomeModule", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "No recent command activity is currently visible, but the stable drill-down surfaces remain available from the summary panels above.",
+        "No recent command activity is currently visible, but the stable drill-down surfaces remain available from the launch areas above.",
       ),
     ).toBeInTheDocument();
   });

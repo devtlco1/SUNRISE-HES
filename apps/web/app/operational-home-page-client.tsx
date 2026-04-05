@@ -6,9 +6,10 @@ import { OperationalShell } from "./operational-shell";
 export function OperationalHomePageClient() {
   return (
     <OperationalShell
-      eyebrow="Operational Pages"
-      title="Operational Dashboard"
-      description="Operator-first overview tying together the current operational, commercial, GIS, and infrastructure workspaces."
+      eyebrow="Dashboard Foundation"
+      title="Operations Control Center"
+      description="Phase 1 rebuilt dashboard home establishing the new admin-style shell, page rhythm, and launchpad experience."
+      navigationVariant="dashboard-home"
     >
       {({ authorizedFetch }) => (
         <OperationalHomeModule authorizedFetch={authorizedFetch} />

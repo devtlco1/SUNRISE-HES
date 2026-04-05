@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  DashboardLaunchCard,
+  DashboardMetricCard,
+  DashboardSection,
+} from "./dashboard-foundation-ui";
 import type { AuthorizedFetch } from "./operational-shell";
 
 type MeterListItem = {
@@ -122,12 +127,14 @@ type AttentionQueueItem = {
   summary: string;
 };
 
+type DashboardMetricAccent = "default" | "positive" | "warning" | "danger";
+
 type WorkspaceLaunchGroup = {
   id: string;
   label: string;
   title: string;
   summary: string;
-  note: string;
+  highlights: string[];
   links: Array<{
     href: string;
     label: string;
@@ -679,6 +686,68 @@ export function OperationalHomeModule({
     problematicRecentCommandCount,
     readingsSummary,
   ]);
+  const latestRecentCommandUpdatedAt = useMemo(() => {
+    if (!recentCommands?.length) {
+      return null;
+    }
+
+    return [...recentCommands]
+      .sort(
+        (left, right) =>
+          new Date(right.latest_updated_at).getTime() -
+          new Date(left.latest_updated_at).getTime(),
+      )[0]
+      ?.latest_updated_at;
+  }, [recentCommands]);
+  const heroSignals = useMemo<
+    Array<{
+      label: string;
+      value: string;
+      note: string;
+      accent: DashboardMetricAccent;
+    }>
+  >(
+    () => [
+      {
+        label: "Overview status",
+        value: overviewStatus,
+        note:
+          pageError && (meterOverview || recentCommands || connectivitySummary || readingsSummary)
+            ? "Some dashboard sources are partial, but the control center remains usable."
+            : "Dashboard shell, summary cards, and launch areas are aligned for the rebuilt home view.",
+        accent:
+          pageError && !meterOverview && !recentCommands ? "danger" : pageError ? "warning" : "positive",
+      },
+      {
+        label: "Attention queue",
+        value: formatCountLabel(attentionQueueItems.length, "priority lane", "priority lanes"),
+        note:
+          attentionQueueItems.length > 0
+            ? "Derived from existing approvals, connectivity, readings, and command-risk signals."
+            : "No derived attention queues are currently elevated in the bounded dashboard scope.",
+        accent: attentionQueueItems.length > 0 ? "warning" : "positive",
+      },
+      {
+        label: "Context coverage",
+        value: readingsSummary
+          ? formatCountLabel(readingsSummary.evaluatedMeters, "meter context", "meter contexts")
+          : "Coverage unavailable",
+        note: connectivitySummary
+          ? `${formatCountLabel(connectivitySummary.contextLoadedMeters, "connectivity context", "connectivity contexts")} currently feed the rebuilt home dashboard.`
+          : "Connectivity and readings coverage will appear once the current scope resolves.",
+        accent: readingsSummary || connectivitySummary ? "default" : "warning",
+      },
+    ],
+    [
+      attentionQueueItems.length,
+      connectivitySummary,
+      meterOverview,
+      overviewStatus,
+      pageError,
+      readingsSummary,
+      recentCommands,
+    ],
+  );
   const workspaceLaunchGroups = useMemo<WorkspaceLaunchGroup[]>(
     () => [
       {
@@ -687,8 +756,11 @@ export function OperationalHomeModule({
         title: "Commercial workspaces",
         summary:
           "Subscribers, accounts, and service points now provide the clearest customer and premise follow-through from the dashboard.",
-        note:
-          "Use these surfaces when attention signals need customer/account/service context rather than meter-only review.",
+        highlights: [
+          "3 customer-facing routes grouped for operator review.",
+          "Use these when alerts need subscriber, account, or premise follow-through.",
+          "Meter-only investigation can stay inside the operations workspace first.",
+        ],
         links: [
           { href: "/subscribers", label: "Open subscribers" },
           { href: "/accounts", label: "Open accounts" },
@@ -701,8 +773,17 @@ export function OperationalHomeModule({
         title: "Operational workspaces",
         summary:
           "Meters, readings, connectivity, commands, and jobs / events / alerts remain the primary operational drill-down surfaces.",
-        note:
-          "Open these first when the dashboard highlights incidents, approvals, validation issues, or command activity.",
+        highlights: [
+          pendingApprovalsCount !== null
+            ? `${pendingApprovalsCount} pending approvals visible right now.`
+            : "Pending approval context currently unavailable.",
+          connectivitySummary
+            ? `${connectivitySummary.incidentCount} connectivity incidents in the current bounded scope.`
+            : "Connectivity incident context currently unavailable.",
+          readingsSummary
+            ? `${readingsSummary.validationIssueCount} validation issues and ${readingsSummary.missingReadsIssueCount} recovery issues remain visible.`
+            : "Readings issue context currently unavailable.",
+        ],
         links: [
           { href: "/meters", label: "Open meters" },
           { href: "/readings", label: "Open readings" },
@@ -717,8 +798,11 @@ export function OperationalHomeModule({
         title: "Infrastructure workspaces",
         summary:
           "GIS Lite plus transformer and substation surfaces now provide the clearest network and location follow-through.",
-        note:
-          "Use these when operator review needs current spatial or feeder/substation context instead of commercial triage.",
+        highlights: [
+          "GIS Lite and transformer/substation routes stay available from the rebuilt home experience.",
+          "Use these when operator review needs feeder, location, or network asset context.",
+          "Commercial detail remains accessible from launch cards rather than dominating the shell.",
+        ],
         links: [
           { href: "/gis-lite", label: "Open GIS Lite" },
           {
@@ -728,7 +812,56 @@ export function OperationalHomeModule({
         ],
       },
     ],
-    [],
+    [connectivitySummary, pendingApprovalsCount, readingsSummary],
+  );
+  const launchAreaCards = useMemo(
+    () => [
+      {
+        label: "Readings review",
+        value: readingsSummary ? String(readingsSummary.validationIssueCount) : "Not available",
+        note: readingsSummary
+          ? `${readingsSummary.missingReadsIssueCount} recovery issues remain available through the readings workspace.`
+          : "Readings review context is not available right now.",
+        href: "/readings",
+        action: "Open readings review",
+      },
+      {
+        label: "Connectivity watch",
+        value: connectivitySummary ? String(connectivitySummary.incidentCount) : "Not available",
+        note: connectivitySummary
+          ? `${connectivitySummary.offlineCount} offline, ${connectivitySummary.staleCount} stale, and ${connectivitySummary.degradedCount} degraded contexts are currently visible.`
+          : "Connectivity watch context is not available right now.",
+        href: "/connectivity",
+        action: "Open connectivity watch",
+      },
+      {
+        label: "Command center",
+        value: pendingApprovalsCount !== null ? String(pendingApprovalsCount) : "Not available",
+        note: pendingApprovalsCount !== null
+          ? `${problematicRecentCommandCount ?? 0} recent command outcomes require closer review.`
+          : "Command queue context is not available right now.",
+        href: "/commands",
+        action: "Open command center",
+      },
+      {
+        label: "Monitoring center",
+        value: recentCommands ? formatCountLabel(recentCommands.length, "recent command", "recent commands") : "Unavailable",
+        note:
+          recentCommands && latestRecentCommandUpdatedAt
+            ? `Latest activity updated ${formatDurationFromMs(Date.now() - new Date(latestRecentCommandUpdatedAt).getTime())} ago in the current dashboard feed.`
+            : "Jobs, events, and alert activity remain available through the monitoring center.",
+        href: "/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention",
+        action: "Open monitoring center",
+      },
+    ],
+    [
+      connectivitySummary,
+      latestRecentCommandUpdatedAt,
+      pendingApprovalsCount,
+      problematicRecentCommandCount,
+      readingsSummary,
+      recentCommands,
+    ],
   );
 
   return (
@@ -736,42 +869,91 @@ export function OperationalHomeModule({
       {pageError ? <p className="error-banner">{pageError}</p> : null}
 
       <div className="detail-stack dashboard-home-stack">
-        <section className="subpanel">
-          <div className="section-heading">
-            <div>
-              <h2>Operations dashboard</h2>
-              <p className="muted">
-                Operator-first overview for the home surface, summarizing the current stable
-                commands, connectivity, readings, and meter foundations before deeper drill-through.
-              </p>
-            </div>
-            <span className="artifact-pill">{overviewStatus}</span>
-          </div>
+        <DashboardSection
+          eyebrow="Phase 1 foundation"
+          title="Operations control center"
+          description="First fully rebuilt dashboard home for the new admin-style direction. It keeps the product truthful to current routes while establishing the shell, hierarchy, and launch rhythm later pages will inherit."
+          aside={<span className="artifact-pill">{overviewStatus}</span>}
+          className="dashboard-foundation-hero-section"
+        >
+          <div className="dashboard-foundation-hero">
+            <article className="dashboard-foundation-hero-card">
+              <div className="dashboard-foundation-hero-copy">
+                <span className="dashboard-metric-label">Current rollout</span>
+                <h3>One complete dashboard experience before broader page migration.</h3>
+                <p className="muted">
+                  The rebuilt home page now acts as the operator entry point into mature
+                  operational, commercial, and infrastructure routes without forcing a
+                  broad page-by-page redesign in this step.
+                </p>
+              </div>
+              <div className="artifact-row">
+                <Link className="primary-button" href="/readings">
+                  Open readings review
+                </Link>
+                <Link
+                  className="secondary-button"
+                  href="/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention"
+                >
+                  Open monitoring center
+                </Link>
+              </div>
+            </article>
 
+            <div className="dashboard-foundation-hero-signals">
+              {heroSignals.map((signal) => (
+                <DashboardMetricCard
+                  key={signal.label}
+                  label={signal.label}
+                  value={signal.value}
+                  note={signal.note}
+                  accent={signal.accent}
+                />
+              ))}
+            </div>
+          </div>
+        </DashboardSection>
+
+        <DashboardSection
+          eyebrow="Snapshot"
+          title="Operations snapshot"
+          description="Top-level posture cards summarize the current bounded dashboard scope with a cleaner admin-dashboard rhythm."
+          aside={
+            !isLoadingOverview ? (
+              <span className="artifact-pill">
+                {formatCountLabel(overviewCards.length, "summary card", "summary cards")}
+              </span>
+            ) : null
+          }
+        >
           {isLoadingOverview ? <p className="muted">Loading operations dashboard...</p> : null}
 
           {!isLoadingOverview ? (
-            <div className="meter-summary-grid">
+            <div className="dashboard-foundation-metrics-grid">
               {overviewCards.map((card) => (
-                <div key={card.label} className="stat-card">
-                  <span className="stat-label">{card.label}</span>
-                  <strong>{card.value}</strong>
-                  <p className="muted">{card.note}</p>
-                </div>
+                <DashboardMetricCard
+                  key={card.label}
+                  label={card.label}
+                  value={card.value}
+                  note={card.note}
+                  accent={
+                    card.label.includes("Recovery") ||
+                    card.label.includes("Connectivity") ||
+                    card.label.includes("Pending")
+                      ? "warning"
+                      : "default"
+                  }
+                />
               ))}
             </div>
           ) : null}
-        </section>
+        </DashboardSection>
 
-        <section className="subpanel">
-          <div className="section-heading">
-            <div>
-              <h2>Workspace launchpads</h2>
-              <p className="muted">
-                Clean grouped entry points into the now-mature commercial, operational, and
-                infrastructure surfaces without inventing a new dashboard subsystem.
-              </p>
-            </div>
+        <DashboardSection
+          eyebrow="Launchpads"
+          title="Workspace launchpads"
+          description="Grouped route entry points keep the rebuilt dashboard experience coherent while unreworked pages remain available through intentional launch areas instead of dominating the shell."
+          aside={
             <div className="artifact-row">
               {workspaceLaunchGroups.map((group) => (
                 <span key={group.id} className="artifact-pill">
@@ -779,277 +961,207 @@ export function OperationalHomeModule({
                 </span>
               ))}
             </div>
-          </div>
-
-          <div className="meter-summary-grid dashboard-module-grid">
+          }
+        >
+          <div className="dashboard-foundation-launch-grid">
             {workspaceLaunchGroups.map((group) => (
-              <article key={group.id} className="stat-card">
-                <span className="stat-label">{group.label}</span>
-                <strong>{group.title}</strong>
-                <p className="muted">{group.summary}</p>
-                <div className="command-list-item-meta">
-                  <span>{formatCountLabel(group.links.length, "entry point", "entry points")}</span>
-                  <span>{group.note}</span>
-                </div>
-                <div className="artifact-row">
-                  {group.links.map((link) => (
-                    <Link key={link.href} className="secondary-button" href={link.href}>
-                      {link.label}
-                    </Link>
-                  ))}
-                </div>
-              </article>
+              <DashboardLaunchCard
+                key={group.id}
+                label={group.label}
+                title={group.title}
+                summary={group.summary}
+                highlights={group.highlights}
+                actions={
+                  <>
+                    {group.links.map((link) => (
+                      <Link key={link.href} className="secondary-button" href={link.href}>
+                        {link.label}
+                      </Link>
+                    ))}
+                  </>
+                }
+              />
             ))}
           </div>
-        </section>
+        </DashboardSection>
 
-        <section className="subpanel">
-          <div className="section-heading">
-            <div>
-              <h2>Needs operator attention</h2>
-              <p className="muted">
-                Compact handoff queue derived from existing dashboard signals before drilling into
-                the stable Jobs / Events / Alerts surface.
-              </p>
-            </div>
-            <span className="artifact-pill">
-              {attentionQueueItems.length} attention item
-              {attentionQueueItems.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          {isLoadingOverview ? <p className="muted">Loading operator attention handoff...</p> : null}
-
-          {!isLoadingOverview ? (
-            <>
-              {attentionQueueItems.length === 0 ? (
-                <p className="muted">
-                  No bounded operator attention items are currently derived from the stable
-                  dashboard signals.
-                </p>
-              ) : (
-                <div className="command-list">
-                  {attentionQueueItems.map((item) => (
-                    <article key={item.id} className="command-list-item">
-                      <div className="command-list-item-header">
-                        <strong>{item.label}</strong>
-                        <span className="status-pill warning">{item.count} attention</span>
-                      </div>
-                      <div className="command-list-item-meta">
-                        <span>
-                          {formatCountLabel(item.count, "derived context", "derived contexts")}
-                        </span>
-                        <span>Home dashboard handoff</span>
-                      </div>
-                      <p className="muted">{item.summary}</p>
-                    </article>
-                  ))}
+        <DashboardSection
+          eyebrow="Priority work"
+          title="Queues and live activity"
+          description="The rebuilt home view keeps operator attention and recent activity together so the first page feels production-shaped before deeper page migration."
+          aside={
+            !isLoadingOverview ? (
+              <span className="artifact-pill">
+                {formatCountLabel(attentionQueueItems.length, "attention lane", "attention lanes")}
+              </span>
+            ) : null
+          }
+        >
+          <div className="dashboard-foundation-priority-grid">
+            <div className="dashboard-foundation-priority-column">
+              <div className="dashboard-foundation-subsection-header">
+                <div>
+                  <h3>Needs operator attention</h3>
+                  <p className="muted">
+                    Derived from existing dashboard signals before drilling into the
+                    monitoring center.
+                  </p>
                 </div>
-              )}
-
-              <div className="artifact-row">
-                <Link
-                  className="secondary-button"
-                  href="/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention"
-                >
-                  Open jobs / events / alerts
-                </Link>
-                <span className="muted">
-                  Use the monitoring center for the bounded activity list and alert-oriented review.
-                </span>
               </div>
-            </>
-          ) : null}
-        </section>
 
-        <section className="subpanel">
-          <div className="section-heading">
-            <div>
-              <h2>Operational summary panels</h2>
-              <p className="muted">
-                Summary plus drill-down across the current stable operational slices, without
-                opening any new workflow architecture.
-              </p>
-            </div>
-          </div>
+              {isLoadingOverview ? <p className="muted">Loading operator attention handoff...</p> : null}
 
-          <div className="meter-summary-grid dashboard-module-grid">
-            <article className="stat-card">
-              <span className="stat-label">Commands queue</span>
-              <strong>
-                {pendingApprovalsCount !== null ? String(pendingApprovalsCount) : "Not available"}
-              </strong>
-              <p className="muted">
-                Pending approvals remain in the stable bulk commands and approvals flow.
-              </p>
-              <div className="command-list-item-meta">
-                <span>
-                  {recentCommands
-                    ? `${recentCommands.length} recent command items`
-                    : "Recent command activity unavailable"}
-                </span>
-                <span>
-                  {recentCommands
-                    ? `${new Set(recentCommands.map((item) => item.command_family)).size} stable families visible`
-                    : "Family mix unavailable"}
-                </span>
-              </div>
-              <div className="artifact-row">
-                <Link className="secondary-button" href="/commands">
-                  Open commands
-                </Link>
-              </div>
-            </article>
+              {!isLoadingOverview ? (
+                <>
+                  {attentionQueueItems.length === 0 ? (
+                    <div className="dashboard-foundation-empty-state">
+                      <strong>Attention queue is clear.</strong>
+                      <p className="muted">
+                        No bounded operator attention items are currently derived from the
+                        stable dashboard signals.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="command-list">
+                      {attentionQueueItems.map((item) => (
+                        <article key={item.id} className="command-list-item">
+                          <div className="command-list-item-header">
+                            <strong>{item.label}</strong>
+                            <span className="status-pill warning">{item.count} attention</span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>
+                              {formatCountLabel(item.count, "derived context", "derived contexts")}
+                            </span>
+                            <span>Dashboard handoff lane</span>
+                          </div>
+                          <p className="muted">{item.summary}</p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
 
-            <article className="stat-card">
-              <span className="stat-label">Connectivity incidents</span>
-              <strong>
-                {connectivitySummary ? String(connectivitySummary.incidentCount) : "Not available"}
-              </strong>
-              <p className="muted">
-                Offline, stale, and degraded signals stay bounded to the current connectivity scope.
-              </p>
-              <div className="command-list-item-meta">
-                <span>
-                  {connectivitySummary
-                    ? `${connectivitySummary.offlineCount} offline • ${connectivitySummary.staleCount} stale`
-                    : "Incident state mix unavailable"}
-                </span>
-                <span>
-                  {connectivitySummary
-                    ? `${connectivitySummary.degradedCount} degraded • ${connectivitySummary.metersWithRecentSignal} with recent signal`
-                    : "Signal freshness unavailable"}
-                </span>
-              </div>
-              <div className="artifact-row">
-                <Link className="secondary-button" href="/connectivity">
-                  Open connectivity
-                </Link>
-              </div>
-            </article>
-
-            <article className="stat-card">
-              <span className="stat-label">Readings review</span>
-              <strong>
-                {readingsSummary ? String(readingsSummary.validationIssueCount) : "Not available"}
-              </strong>
-              <p className="muted">
-                Validation and missing-reads recovery counts mirror the existing readings language.
-              </p>
-              <div className="command-list-item-meta">
-                <span>
-                  {readingsSummary
-                    ? `${readingsSummary.validationIssueCount} validation issues`
-                    : "Validation context unavailable"}
-                </span>
-                <span>
-                  {readingsSummary
-                    ? `${readingsSummary.missingReadsIssueCount} recovery issues`
-                    : "Recovery queue unavailable"}
-                </span>
-              </div>
-              <div className="artifact-row">
-                <Link className="secondary-button" href="/readings">
-                  Open readings
-                </Link>
-              </div>
-            </article>
-
-            <article className="stat-card">
-              <span className="stat-label">Meter inventory</span>
-              <strong>{meterOverview ? String(meterOverview.total) : "Not available"}</strong>
-              <p className="muted">
-                Current meter inventory context remains the bounded source for the dashboard scope.
-              </p>
-              <div className="command-list-item-meta">
-                <span>
-                  {meterOverview
-                    ? `${meterOverview.activeInventoryCount} active inventory items`
-                    : "Inventory state unavailable"}
-                </span>
-                <span>
-                  {meterOverview
-                    ? `${meterOverview.metersWithRecentSignal} with recent signal`
-                    : "Signal context unavailable"}
-                </span>
-              </div>
-              <div className="artifact-row">
-                <Link className="secondary-button" href="/meters">
-                  Open meters
-                </Link>
-                <Link className="secondary-button" href="/meters/import">
-                  Open import wizard
-                </Link>
-              </div>
-            </article>
-          </div>
-
-          {!isLoadingOverview && recentCommands?.length === 0 ? (
-            <p className="muted">
-              No recent command activity is currently visible, but the stable drill-down surfaces
-              remain available from the summary panels above.
-            </p>
-          ) : null}
-        </section>
-
-        <section className="subpanel">
-          <div className="section-heading">
-            <div>
-              <h2>Recent command activity</h2>
-              <p className="muted">
-                Lightweight command activity snippets from the stable recent-commands read model.
-              </p>
-            </div>
-            <span className="artifact-pill">
-              {recentCommands ? formatCountLabel(recentCommands.length, "item", "items") : "Unavailable"}
-            </span>
-          </div>
-
-          {isLoadingOverview ? <p className="muted">Loading recent command activity...</p> : null}
-
-          {!isLoadingOverview ? (
-            <div className="command-list">
-              {recentCommands === null ? <p className="muted">Recent command activity not available.</p> : null}
-
-              {recentCommands !== null && recentCommands.length === 0 ? (
-                <p className="muted">No recent command activity available.</p>
+                  <div className="artifact-row">
+                    <Link
+                      className="secondary-button"
+                      href="/jobs-events-alerts?attentionContext=dashboard_attention_queue&activityFilter=attention"
+                    >
+                      Open monitoring center
+                    </Link>
+                  </div>
+                </>
               ) : null}
-
-              {recentCommands?.map((command) => (
-                <div key={command.command_id} className="command-list-item">
-                  <div className="command-list-item-header">
-                    <strong>{command.command_template_code}</strong>
-                    <span className="status-pill">{formatStatusLabel(command.command_status)}</span>
-                  </div>
-                  <div className="command-list-item-meta">
-                    <span>{formatStatusLabel(command.command_family)}</span>
-                    <span>Meter {command.meter_id}</span>
-                  </div>
-                  <div className="command-list-item-meta">
-                    <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
-                    <span>Updated {formatDateTime(command.latest_updated_at)}</span>
-                  </div>
-                </div>
-              ))}
             </div>
-          ) : null}
 
-          {!isLoadingOverview && connectivitySummary?.contextLoadedMeters !== undefined ? (
-            <p className="muted">
-              Connectivity incidents were derived for{" "}
-              {formatCountLabel(
-                connectivitySummary.contextLoadedMeters,
-                "meter session context",
-                "meter session contexts",
-              )}
-              . Readings review was derived for{" "}
-              {readingsSummary
-                ? formatCountLabel(readingsSummary.evaluatedMeters, "meter context", "meter contexts")
-                : "0 meter contexts"}
-              {" "}inside the current bounded dashboard scope.
-            </p>
-          ) : null}
-        </section>
+            <div className="dashboard-foundation-priority-column">
+              <div className="dashboard-foundation-subsection-header">
+                <div>
+                  <h3>Recent command activity</h3>
+                  <p className="muted">
+                    Lightweight recent-commands feed kept close to priority lanes for a
+                    stronger dashboard scan pattern.
+                  </p>
+                </div>
+                <span className="artifact-pill">
+                  {recentCommands
+                    ? formatCountLabel(recentCommands.length, "item", "items")
+                    : "Unavailable"}
+                </span>
+              </div>
+
+              {isLoadingOverview ? <p className="muted">Loading recent command activity...</p> : null}
+
+              {!isLoadingOverview ? (
+                <>
+                  {recentCommands === null ? (
+                    <div className="dashboard-foundation-empty-state">
+                      <strong>Recent activity is unavailable.</strong>
+                      <p className="muted">Recent command activity not available.</p>
+                    </div>
+                  ) : null}
+
+                  {recentCommands !== null && recentCommands.length === 0 ? (
+                    <div className="dashboard-foundation-empty-state">
+                      <strong>No recent command activity.</strong>
+                      <p className="muted">
+                        No recent command activity is currently visible, but the stable
+                        drill-down surfaces remain available from the launch areas above.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {recentCommands?.length ? (
+                    <div className="command-list">
+                      {recentCommands.map((command) => (
+                        <div key={command.command_id} className="command-list-item">
+                          <div className="command-list-item-header">
+                            <strong>{command.command_template_code}</strong>
+                            <span className="status-pill">
+                              {formatStatusLabel(command.command_status)}
+                            </span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>{formatStatusLabel(command.command_family)}</span>
+                            <span>Meter {command.meter_id}</span>
+                          </div>
+                          <div className="command-list-item-meta">
+                            <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
+                            <span>Updated {formatDateTime(command.latest_updated_at)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {!isLoadingOverview && connectivitySummary?.contextLoadedMeters !== undefined ? (
+                    <p className="muted">
+                      Connectivity incidents were derived for{" "}
+                      {formatCountLabel(
+                        connectivitySummary.contextLoadedMeters,
+                        "meter session context",
+                        "meter session contexts",
+                      )}
+                      . Readings review was derived for{" "}
+                      {readingsSummary
+                        ? formatCountLabel(
+                            readingsSummary.evaluatedMeters,
+                            "meter context",
+                            "meter contexts",
+                          )
+                        : "0 meter contexts"}
+                      {" "}inside the current bounded dashboard scope.
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          </div>
+        </DashboardSection>
+
+        <DashboardSection
+          eyebrow="Operational lanes"
+          title="Primary operational lanes"
+          description="Focused drill-through cards keep the first rebuilt page useful on its own while later pages wait for full visual migration."
+        >
+          <div className="dashboard-foundation-lane-grid">
+            {launchAreaCards.map((card) => (
+              <DashboardMetricCard
+                key={card.label}
+                label={card.label}
+                value={card.value}
+                note={card.note}
+                accent={card.label.includes("Connectivity") ? "warning" : "default"}
+              />
+            ))}
+          </div>
+          <div className="dashboard-foundation-lane-actions">
+            {launchAreaCards.map((card) => (
+              <Link key={card.action} className="secondary-button" href={card.href}>
+                {card.action}
+              </Link>
+            ))}
+          </div>
+        </DashboardSection>
       </div>
     </section>
   );

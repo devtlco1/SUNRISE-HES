@@ -22,6 +22,7 @@ type OperationalShellProps = {
   title: string;
   description: string;
   currentMeterId?: string;
+  navigationVariant?: "default" | "dashboard-home";
   children: (props: OperationalShellRenderProps) => ReactNode;
 };
 
@@ -30,6 +31,7 @@ export function OperationalShell({
   title,
   description,
   currentMeterId,
+  navigationVariant = "default",
   children,
 }: OperationalShellProps) {
   return (
@@ -39,6 +41,7 @@ export function OperationalShell({
         title={title}
         description={description}
         currentMeterId={currentMeterId}
+        navigationVariant={navigationVariant}
         children={children}
       />
     </SessionProvider>
@@ -50,6 +53,7 @@ function OperationalShellInner({
   title,
   description,
   currentMeterId,
+  navigationVariant = "default",
   children,
 }: OperationalShellProps) {
   const {
@@ -61,7 +65,7 @@ function OperationalShellInner({
     logout,
   } = useSession();
 
-  const navigationSections = [
+  const fullNavigationSections = [
     {
       label: "Overview",
       items: [{ href: "/", label: "Dashboard home" }],
@@ -96,13 +100,43 @@ function OperationalShellInner({
       ],
     },
   ];
-  const navigationRouteCount = navigationSections.reduce(
+  const dashboardHomeNavigationSections = [
+    {
+      label: "Foundation",
+      items: [{ href: "/", label: "Dashboard home" }],
+    },
+    {
+      label: "Primary launch areas",
+      items: [
+        { href: "/readings", label: "Readings review" },
+        { href: "/connectivity", label: "Connectivity watch" },
+        { href: "/jobs-events-alerts", label: "Alerts and activity" },
+      ],
+    },
+    {
+      label: "Supporting routes",
+      items: [
+        { href: "/meters", label: "Meter registry" },
+        { href: "/commands", label: "Command center" },
+        { href: "/gis-lite", label: "GIS Lite context" },
+      ],
+    },
+  ];
+  const navigationSections =
+    navigationVariant === "dashboard-home"
+      ? dashboardHomeNavigationSections
+      : fullNavigationSections;
+  const navigationRouteCount = fullNavigationSections.reduce(
     (total, section) => total + section.items.length,
     0,
   );
 
   return (
-    <main className="dashboard-shell">
+    <main
+      className={`dashboard-shell${
+        navigationVariant === "dashboard-home" ? " dashboard-shell-foundation" : ""
+      }`}
+    >
       <aside className="dashboard-sidebar">
         <div className="dashboard-sidebar-scroll">
           <div className="dashboard-brand">
@@ -110,16 +144,30 @@ function OperationalShellInner({
               Sunrise HES
             </Link>
             <p className="muted">
-              Safe gradual admin-shell adoption layered over the existing platform
-              routes.
+              {navigationVariant === "dashboard-home"
+                ? "Phase 1 dashboard foundation for the new admin-style rollout."
+                : "Safe gradual admin-shell adoption layered over the existing platform routes."}
             </p>
             <div className="dashboard-brand-badges">
-              <span className="artifact-pill">Stable routes</span>
+              <span className="artifact-pill">
+                {navigationVariant === "dashboard-home" ? "Phase 1 foundation" : "Stable routes"}
+              </span>
               <span className="artifact-pill">
                 {navigationRouteCount} shared surfaces
               </span>
             </div>
           </div>
+
+          {navigationVariant === "dashboard-home" ? (
+            <section className="dashboard-nav-callout">
+              <p className="dashboard-nav-label">Current rollout</p>
+              <strong>New dashboard home experience</strong>
+              <p className="muted">
+                Other routes remain available through launch cards, but this shell is
+                intentionally centered on the rebuilt home experience first.
+              </p>
+            </section>
+          ) : null}
 
           <div className="dashboard-nav-groups">
             {navigationSections.map((section) => (
@@ -159,7 +207,11 @@ function OperationalShellInner({
                 <p className="lead">{description}</p>
               </div>
               <div className="dashboard-topbar-meta">
-                <span className="artifact-pill">Safe shell adoption</span>
+                <span className="artifact-pill">
+                  {navigationVariant === "dashboard-home"
+                    ? "Phase 1 new dashboard"
+                    : "Safe shell adoption"}
+                </span>
                 <span className="artifact-pill">{eyebrow}</span>
               </div>
             </div>

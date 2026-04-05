@@ -325,6 +325,77 @@ describe("OperationalShell", () => {
     );
   });
 
+  it("uses a tighter dashboard-home navigation variant for the rebuilt home experience", async () => {
+    window.localStorage.setItem("sunrise.web.accessToken", "token-1");
+    window.localStorage.setItem(
+      "sunrise.web.currentUser",
+      JSON.stringify({
+        id: "user-1",
+        username: "ops.user",
+        email: "ops@example.com",
+        full_name: "Ops User",
+        status: "active",
+        is_superuser: true,
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          id: "user-1",
+          username: "ops.user",
+          email: "ops@example.com",
+          full_name: "Ops User",
+          status: "active",
+          is_superuser: true,
+        }),
+      ),
+    );
+
+    render(
+      <OperationalShell
+        eyebrow="Dashboard Foundation"
+        title="Home"
+        description="Shell test"
+        navigationVariant="dashboard-home"
+      >
+        {() => <div>Protected child</div>}
+      </OperationalShell>,
+    );
+
+    expect(await screen.findByText("Protected child")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dashboard home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Readings review" })).toHaveAttribute(
+      "href",
+      "/readings",
+    );
+    expect(screen.getByRole("link", { name: "Connectivity watch" })).toHaveAttribute(
+      "href",
+      "/connectivity",
+    );
+    expect(screen.getByRole("link", { name: "Alerts and activity" })).toHaveAttribute(
+      "href",
+      "/jobs-events-alerts",
+    );
+    expect(screen.getByRole("link", { name: "Meter registry" })).toHaveAttribute(
+      "href",
+      "/meters",
+    );
+    expect(screen.getByRole("link", { name: "Command center" })).toHaveAttribute(
+      "href",
+      "/commands",
+    );
+    expect(screen.getByRole("link", { name: "GIS Lite context" })).toHaveAttribute(
+      "href",
+      "/gis-lite",
+    );
+    expect(screen.queryByRole("link", { name: "Subscribers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Accounts" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Transformers / Substations" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("hydrates the shell without mismatching stored API base URL text", async () => {
     window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:9000/");
     const fetchMock = vi.fn();
