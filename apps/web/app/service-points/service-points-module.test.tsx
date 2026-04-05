@@ -118,6 +118,7 @@ describe("ServicePointsModule", () => {
     expect(
       await screen.findByRole("heading", { name: "Service point operations center" }),
     ).toBeInTheDocument();
+    expect(await screen.findByText("2 service points in scope")).toBeInTheDocument();
     expect(
       await screen.findAllByText("SP-1001"),
     ).not.toHaveLength(0);
@@ -179,7 +180,7 @@ describe("ServicePointsModule", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("No service points available for the current query."),
+        screen.getByText("No service points available in the current scope."),
       ).toBeInTheDocument();
     });
   });

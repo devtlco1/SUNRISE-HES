@@ -127,9 +127,13 @@ export function SubscribersModule({
 
   const statusSummary = useMemo(() => {
     if (appliedSearch.trim()) {
-      return `${totalSubscribers} matching subscribers`;
+      return `${formatCountLabel(
+        totalSubscribers,
+        "matching subscriber",
+        "matching subscribers",
+      )} in scope`;
     }
-    return `${totalSubscribers} recent subscribers`;
+    return `${formatCountLabel(totalSubscribers, "subscriber", "subscribers")} in scope`;
   }, [appliedSearch, totalSubscribers]);
 
   const overviewCards = useMemo(() => {
@@ -303,7 +307,7 @@ export function SubscribersModule({
           </form>
 
           {isLoadingSubscribers ? (
-            <p className="muted">Loading subscribers...</p>
+            <p className="muted">Loading subscriber list...</p>
           ) : (
             <div className="subscribers-overview-grid">
               {overviewCards.map((card) => (
@@ -330,7 +334,11 @@ export function SubscribersModule({
 
             <div className="meter-list">
               {!isLoadingSubscribers && subscribers.length === 0 ? (
-                <p className="muted">No subscribers available for the current query.</p>
+                <p className="muted">
+                  {appliedSearch.trim()
+                    ? "No subscribers match the current query."
+                    : "No subscribers available in the current scope."}
+                </p>
               ) : null}
 
               {subscribers.map((subscriber) => (

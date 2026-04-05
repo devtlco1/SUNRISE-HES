@@ -137,9 +137,13 @@ export function ServicePointsModule({
 
   const statusSummary = useMemo(() => {
     if (appliedSearch.trim()) {
-      return `${totalItems} matching service points`;
+      return `${formatCountLabel(
+        totalItems,
+        "matching service point",
+        "matching service points",
+      )} in scope`;
     }
-    return `${totalItems} recent service points`;
+    return `${formatCountLabel(totalItems, "service point", "service points")} in scope`;
   }, [appliedSearch, totalItems]);
 
   const overviewCards = useMemo(() => {
@@ -279,7 +283,7 @@ export function ServicePointsModule({
           </form>
 
           {isLoadingItems ? (
-            <p className="muted">Loading service points...</p>
+            <p className="muted">Loading service point list...</p>
           ) : (
             <div className="service-points-overview-grid">
               {overviewCards.map((card) => (
@@ -306,7 +310,11 @@ export function ServicePointsModule({
 
             <div className="meter-list">
               {!isLoadingItems && items.length === 0 ? (
-                <p className="muted">No service points available for the current query.</p>
+                <p className="muted">
+                  {appliedSearch.trim()
+                    ? "No service points match the current query."
+                    : "No service points available in the current scope."}
+                </p>
               ) : null}
 
               {items.map((item) => (

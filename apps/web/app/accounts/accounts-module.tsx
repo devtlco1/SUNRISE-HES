@@ -123,9 +123,13 @@ export function AccountsModule({
 
   const statusSummary = useMemo(() => {
     if (appliedSearch.trim()) {
-      return `${totalAccounts} matching accounts`;
+      return `${formatCountLabel(
+        totalAccounts,
+        "matching account",
+        "matching accounts",
+      )} in scope`;
     }
-    return `${totalAccounts} recent accounts`;
+    return `${formatCountLabel(totalAccounts, "account", "accounts")} in scope`;
   }, [appliedSearch, totalAccounts]);
 
   const overviewCards = useMemo(() => {
@@ -278,7 +282,7 @@ export function AccountsModule({
           </form>
 
           {isLoadingAccounts ? (
-            <p className="muted">Loading accounts...</p>
+            <p className="muted">Loading account list...</p>
           ) : (
             <div className="accounts-overview-grid">
               {overviewCards.map((card) => (
@@ -305,7 +309,11 @@ export function AccountsModule({
 
             <div className="meter-list">
               {!isLoadingAccounts && accounts.length === 0 ? (
-                <p className="muted">No accounts available for the current query.</p>
+                <p className="muted">
+                  {appliedSearch.trim()
+                    ? "No accounts match the current query."
+                    : "No accounts available in the current scope."}
+                </p>
               ) : null}
 
               {accounts.map((account) => (

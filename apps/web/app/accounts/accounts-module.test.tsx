@@ -110,6 +110,7 @@ describe("AccountsModule", () => {
     expect(
       await screen.findByRole("heading", { name: "Account operations center" }),
     ).toBeInTheDocument();
+    expect(await screen.findByText("2 accounts in scope")).toBeInTheDocument();
     expect(await screen.findAllByText("ACC-1001")).not.toHaveLength(0);
     expect(screen.getAllByText("ACC-1002")).not.toHaveLength(0);
     expect(
@@ -164,7 +165,7 @@ describe("AccountsModule", () => {
     renderAccountsModuleInShell();
 
     await waitFor(() => {
-      expect(screen.getByText("No accounts available for the current query.")).toBeInTheDocument();
+      expect(screen.getByText("No accounts available in the current scope.")).toBeInTheDocument();
     });
   });
 

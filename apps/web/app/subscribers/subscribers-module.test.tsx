@@ -114,6 +114,7 @@ describe("SubscribersModule", () => {
     expect(
       await screen.findByRole("heading", { name: "Subscriber operations center" }),
     ).toBeInTheDocument();
+    expect(await screen.findByText("2 subscribers in scope")).toBeInTheDocument();
     expect(await screen.findAllByText("Amina Al Balushi")).not.toHaveLength(0);
     expect(screen.getAllByText("Beacon Bakery LLC")).not.toHaveLength(0);
     expect(
@@ -165,7 +166,7 @@ describe("SubscribersModule", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("No subscribers available for the current query."),
+        screen.getByText("No subscribers available in the current scope."),
       ).toBeInTheDocument();
     });
   });
