@@ -759,6 +759,114 @@ describe("JobsEventsAlertsModule", () => {
     });
   });
 
+  it("renders a critical and unacknowledged events workspace with severity, acknowledgement, and meter visibility", async () => {
+    const { fetchMock } = createMockApi({
+      recentEvents: [
+        {
+          id: "event-1",
+          meter_id: "meter-2",
+          event_code: "tamper_open",
+          event_name: "Tamper Open",
+          severity: "critical",
+          event_state: "open",
+          occurred_at: "2026-03-31T09:59:00.000Z",
+          received_at: "2026-03-31T09:59:30.000Z",
+        },
+        {
+          id: "event-2",
+          meter_id: "meter-3",
+          event_code: "power_loss",
+          event_name: "Power Loss",
+          severity: "warning",
+          event_state: "open",
+          occurred_at: "2026-03-31T09:54:00.000Z",
+          received_at: "2026-03-31T09:54:20.000Z",
+        },
+        {
+          id: "event-3",
+          meter_id: null,
+          event_code: "voltage_restored",
+          event_name: "Voltage Restored",
+          severity: "warning",
+          event_state: "closed",
+          occurred_at: "2026-03-31T09:40:00.000Z",
+          received_at: "2026-03-31T09:40:20.000Z",
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderJobsEventsAlertsModuleInShell();
+
+    const urgentEventsPanel = (
+      await screen.findByRole("heading", {
+        name: "Critical / unacknowledged events workspace",
+      })
+    ).closest("section");
+    expect(urgentEventsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(urgentEventsPanel as HTMLElement).getByText("Urgent events in view"),
+      ).toBeInTheDocument();
+      expect(
+        within(urgentEventsPanel as HTMLElement).getByText("Critical severity"),
+      ).toBeInTheDocument();
+      expect(
+        within(urgentEventsPanel as HTMLElement).getByText("Unacknowledged posture"),
+      ).toBeInTheDocument();
+      expect(
+        within(urgentEventsPanel as HTMLElement).getByText("With affected meter"),
+      ).toBeInTheDocument();
+      expect(
+        within(urgentEventsPanel as HTMLElement).getAllByText("Tamper Open").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(urgentEventsPanel as HTMLElement).getAllByText("Power Loss").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(urgentEventsPanel as HTMLElement).getAllByText("Unacknowledged").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(urgentEventsPanel as HTMLElement).getByText("Critical and unacknowledged"),
+      ).toBeInTheDocument();
+      expect(
+        within(urgentEventsPanel as HTMLElement).getByText(
+          "Event acknowledgement posture is derived from `event_state`; open events are treated as unacknowledged in this bounded workspace.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(urgentEventsPanel as HTMLElement).getAllByRole("link", {
+          name: "Open meter detail",
+        })[0],
+      ).toHaveAttribute("href", "/meters/meter-2");
+    });
+
+    await user.click(
+      within(urgentEventsPanel as HTMLElement).getAllByRole("button", {
+        name: "Inspect urgent event",
+      })[0],
+    );
+
+    const summaryPanel = screen
+      .getByRole("heading", { name: "Selected activity summary" })
+      .closest("section");
+    expect(summaryPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(summaryPanel as HTMLElement).getByText("Acknowledgement posture"),
+      ).toBeInTheDocument();
+      expect(
+        within(summaryPanel as HTMLElement).getAllByText("Unacknowledged").length,
+      ).toBeGreaterThan(0);
+      expect(within(summaryPanel as HTMLElement).getByText("tamper_open")).toBeInTheDocument();
+      expect(within(summaryPanel as HTMLElement).getByText("Occurred")).toBeInTheDocument();
+      expect(within(summaryPanel as HTMLElement).getByText("Received")).toBeInTheDocument();
+    });
+  });
+
   it("renders bounded job-run execution detail when a job run is selected", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
@@ -812,6 +920,9 @@ describe("JobsEventsAlertsModule", () => {
     expect(screen.getByText("Loading job runs workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading failed runs workspace...")).toBeInTheDocument();
     expect(screen.getByText("Loading job runs and retry queue...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Loading critical and unacknowledged events workspace..."),
+    ).toBeInTheDocument();
     expect(screen.getByText("Loading recent operational activity...")).toBeInTheDocument();
   });
 
@@ -844,6 +955,9 @@ describe("JobsEventsAlertsModule", () => {
     const failedRunsPanel = screen
       .getByRole("heading", { name: "Failed runs workspace" })
       .closest("section");
+    const urgentEventsPanel = screen
+      .getByRole("heading", { name: "Critical / unacknowledged events workspace" })
+      .closest("section");
     const activityPanel = screen
       .getByRole("heading", { name: "Recent operational activity" })
       .closest("section");
@@ -853,6 +967,7 @@ describe("JobsEventsAlertsModule", () => {
     expect(jobDefinitionPanel).not.toBeNull();
     expect(jobRunsPanel).not.toBeNull();
     expect(failedRunsPanel).not.toBeNull();
+    expect(urgentEventsPanel).not.toBeNull();
     expect(activityPanel).not.toBeNull();
 
     await waitFor(() => {
@@ -887,6 +1002,11 @@ describe("JobsEventsAlertsModule", () => {
       expect(
         within(retryPanel as HTMLElement).getByText(
           "No retry-worthy job runs or problematic command execution contexts are currently visible.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(urgentEventsPanel as HTMLElement).getByText(
+          "No critical or unacknowledged events are currently visible.",
         ),
       ).toBeInTheDocument();
       expect(

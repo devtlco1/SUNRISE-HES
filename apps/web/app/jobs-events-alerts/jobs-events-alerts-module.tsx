@@ -392,6 +392,33 @@ function buildJobRunLifecycleLabel(jobRun: JobRunItem): string {
   return `Scheduled ${formatDateTime(jobRun.scheduled_for)}`;
 }
 
+function isUrgentEvent(event: RecentEventItem): boolean {
+  return event.severity === "critical" || event.event_state === "open";
+}
+
+function buildEventAcknowledgementLabel(eventState: string): string {
+  if (eventState === "open") {
+    return "Unacknowledged";
+  }
+  if (["acknowledged", "closed", "resolved"].includes(eventState)) {
+    return "Acknowledged / closed";
+  }
+  return formatStatusLabel(eventState);
+}
+
+function buildUrgentEventPostureLabel(event: RecentEventItem): string {
+  if (event.severity === "critical" && event.event_state === "open") {
+    return "Critical and unacknowledged";
+  }
+  if (event.severity === "critical") {
+    return "Critical event";
+  }
+  if (event.event_state === "open") {
+    return "Unacknowledged event";
+  }
+  return `${formatStatusLabel(event.severity)} / ${formatStatusLabel(event.event_state)}`;
+}
+
 function buildRetryRemediationHref({
   commandId,
   itemType,
@@ -713,6 +740,27 @@ export function JobsEventsAlertsModule({
 
     return sortByTimestampDesc(items).slice(0, 8);
   }, [jobRuns, recentCommands]);
+  const urgentEventItems = useMemo(
+    () =>
+      [...(recentEvents ?? [])]
+        .filter((event) => isUrgentEvent(event))
+        .sort(
+          (left, right) =>
+            new Date(right.occurred_at).getTime() - new Date(left.occurred_at).getTime(),
+        )
+        .slice(0, 8),
+    [recentEvents],
+  );
+  const urgentEventStats = useMemo(
+    () => ({
+      visible: urgentEventItems.length,
+      critical: urgentEventItems.filter((event) => event.severity === "critical").length,
+      unacknowledged: urgentEventItems.filter((event) => event.event_state === "open").length,
+      withMeterContext: urgentEventItems.filter((event) => event.meter_id !== null).length,
+      latestReceivedAt: urgentEventItems[0]?.received_at ?? null,
+    }),
+    [urgentEventItems],
+  );
   const jobRunsWithRetryCapacity = useMemo(
     () =>
       (jobRuns ?? []).filter(
@@ -922,6 +970,13 @@ export function JobsEventsAlertsModule({
         ? (jobRuns ?? []).find((jobRun) => jobRun.id === selectedActivity.id) ?? null
         : null,
     [jobRuns, selectedActivity],
+  );
+  const selectedEvent = useMemo(
+    () =>
+      selectedActivity?.type === "event"
+        ? (recentEvents ?? []).find((event) => event.id === selectedActivity.id) ?? null
+        : null,
+    [recentEvents, selectedActivity],
   );
   const selectedJobDefinition = useMemo(
     () =>
@@ -2005,6 +2060,116 @@ export function JobsEventsAlertsModule({
           )}
         </section>
 
+        <section className="subpanel" id="critical-events-workspace">
+          <div className="section-heading">
+            <div>
+              <h2>Critical / unacknowledged events workspace</h2>
+              <p className="muted">
+                Urgent event visibility using the current recent-events feed for severity,
+                acknowledgement posture, timing, and affected meter context.
+              </p>
+            </div>
+            <span className="artifact-pill">{urgentEventStats.visible} urgent events</span>
+          </div>
+
+          {isLoadingActivity ? (
+            <p className="muted">Loading critical and unacknowledged events workspace...</p>
+          ) : (
+            <div className="detail-stack">
+              <div className="jobs-overview-grid">
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Urgent events in view</span>
+                  <strong>{String(urgentEventStats.visible)}</strong>
+                  <p className="muted">Critical severity or open event-state contexts</p>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Critical severity</span>
+                  <strong>{String(urgentEventStats.critical)}</strong>
+                  <p className="muted">Events currently marked critical in the bounded feed</p>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Unacknowledged posture</span>
+                  <strong>{String(urgentEventStats.unacknowledged)}</strong>
+                  <p className="muted">Open events treated as unacknowledged in this bounded view</p>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">With affected meter</span>
+                  <strong>{String(urgentEventStats.withMeterContext)}</strong>
+                  <p className="muted">Urgent events that already carry meter context</p>
+                </div>
+                <div className="stat-card jobs-overview-card">
+                  <span className="stat-label">Latest received</span>
+                  <strong>{formatDateTime(urgentEventStats.latestReceivedAt)}</strong>
+                  <p className="muted">Most recent urgent-event ingest timestamp in scope</p>
+                </div>
+              </div>
+
+              <div className="artifact-row">
+                <span className="artifact-pill">
+                  Event acknowledgement posture is derived from `event_state`; open events are
+                  treated as unacknowledged in this bounded workspace.
+                </span>
+              </div>
+
+              <div className="command-list">
+                {urgentEventItems.length === 0 ? (
+                  <p className="muted">
+                    No critical or unacknowledged events are currently visible.
+                  </p>
+                ) : null}
+
+                {urgentEventItems.map((event) => (
+                  <div key={event.id} className="command-list-item">
+                    <div className="command-list-item-header">
+                      <strong>{event.event_name ?? event.event_code}</strong>
+                      <span className={`status-pill ${buildStatusTone(event.severity)}`}>
+                        {formatStatusLabel(event.severity)}
+                      </span>
+                    </div>
+                    <div className="command-list-item-badges">
+                      <span className={`status-pill ${buildStatusTone(event.event_state)}`}>
+                        {buildEventAcknowledgementLabel(event.event_state)}
+                      </span>
+                      <span className="artifact-pill">{buildUrgentEventPostureLabel(event)}</span>
+                      <span className="artifact-pill">
+                        {event.meter_id ? `Meter ${event.meter_id}` : "No affected meter"}
+                      </span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>{formatStatusLabel(event.event_code)}</span>
+                      <span>Occurred {formatDateTime(event.occurred_at)}</span>
+                    </div>
+                    <div className="command-list-item-meta">
+                      <span>Received {formatDateTime(event.received_at)}</span>
+                      <span>{`${formatStatusLabel(event.severity)} / ${formatStatusLabel(event.event_state)}`}</span>
+                    </div>
+                    <div className="artifact-row">
+                      <button
+                        className="secondary-button"
+                        onClick={() => setSelectedActivityId(event.id)}
+                        type="button"
+                      >
+                        Inspect urgent event
+                      </button>
+                      <Link
+                        className="secondary-button"
+                        href={buildActivityDetailHref("event", event.id)}
+                      >
+                        Open event detail
+                      </Link>
+                      {event.meter_id ? (
+                        <Link className="secondary-button" href={`/meters/${event.meter_id}`}>
+                          Open meter detail
+                        </Link>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
         <div className="jobs-activity-layout">
         <section className="subpanel">
           <div className="section-heading">
@@ -2186,6 +2351,34 @@ export function JobsEventsAlertsModule({
                     <div className="stat-card">
                       <span className="stat-label">Outcome</span>
                       <strong>{buildJobRunOutcomeSummary(selectedJobRun)}</strong>
+                    </div>
+                  </>
+                ) : null}
+                {selectedEvent ? (
+                  <>
+                    <div className="stat-card">
+                      <span className="stat-label">Event code</span>
+                      <strong>{selectedEvent.event_code}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Severity posture</span>
+                      <strong>{formatStatusLabel(selectedEvent.severity)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Acknowledgement posture</span>
+                      <strong>{buildEventAcknowledgementLabel(selectedEvent.event_state)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Occurred</span>
+                      <strong>{formatDateTime(selectedEvent.occurred_at)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Received</span>
+                      <strong>{formatDateTime(selectedEvent.received_at)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Urgent posture</span>
+                      <strong>{buildUrgentEventPostureLabel(selectedEvent)}</strong>
                     </div>
                   </>
                 ) : null}
