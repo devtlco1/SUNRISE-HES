@@ -129,6 +129,9 @@ export function AccountsModule({
   }, [appliedSearch, totalAccounts]);
 
   const overviewCards = useMemo(() => {
+    const withBillingCycle = accounts.filter(
+      (account) => account.billing_cycle !== null,
+    ).length;
     const linkedMeters = accounts.reduce(
       (total, account) => total + account.linked_meter_count,
       0,
@@ -146,12 +149,16 @@ export function AccountsModule({
         value: String(accounts.length),
       },
       {
-        label: "Linked meters represented",
-        value: String(linkedMeters),
+        label: "Billing cycles visible",
+        value: String(withBillingCycle),
       },
       {
         label: "Service points visible",
         value: String(withServicePoint),
+      },
+      {
+        label: "Linked meters visible",
+        value: String(linkedMeters),
       },
       {
         label: "Primary meters visible",
@@ -315,13 +322,13 @@ export function AccountsModule({
                     </span>
                   </div>
                   <div className="command-list-item-badges">
-                    <span className="artifact-pill">
-                      {buildBillingPosture(account)}
-                    </span>
                     <span
                       className={`status-pill ${buildStatusTone(buildCommercialPosture(account))}`}
                     >
                       {buildCommercialPosture(account)}
+                    </span>
+                    <span className="artifact-pill">
+                      {buildBillingPosture(account)}
                     </span>
                     <span className="artifact-pill">{account.subscriber_display_name}</span>
                     <span className="artifact-pill">

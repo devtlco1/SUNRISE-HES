@@ -144,6 +144,9 @@ export function SubscribersModule({
     const withServicePoint = subscribers.filter(
       (subscriber) => subscriber.primary_service_point_code !== null,
     ).length;
+    const withIdentifiers = subscribers.filter(
+      (subscriber) => subscriber.external_ref !== null || subscriber.national_id !== null,
+    ).length;
 
     return [
       {
@@ -151,16 +154,20 @@ export function SubscribersModule({
         value: String(subscribers.length),
       },
       {
-        label: "Active accounts represented",
+        label: "Active accounts visible",
         value: String(activeAccounts),
-      },
-      {
-        label: "Linked meters represented",
-        value: String(linkedMeters),
       },
       {
         label: "Primary service points visible",
         value: String(withServicePoint),
+      },
+      {
+        label: "Linked meters visible",
+        value: String(linkedMeters),
+      },
+      {
+        label: "Identifiers visible",
+        value: String(withIdentifiers),
       },
     ];
   }, [subscribers]);
@@ -344,15 +351,15 @@ export function SubscribersModule({
                     </span>
                   </div>
                   <div className="command-list-item-badges">
-                    <span className="artifact-pill">
-                      {formatStatusLabel(subscriber.consumer_type)}
-                    </span>
                     <span
                       className={`status-pill ${buildStatusTone(
                         buildCommercialPosture(subscriber),
                       )}`}
                     >
                       {buildCommercialPosture(subscriber)}
+                    </span>
+                    <span className="artifact-pill">
+                      {formatStatusLabel(subscriber.consumer_type)}
                     </span>
                     <span className="artifact-pill">
                       {subscriber.primary_account_number

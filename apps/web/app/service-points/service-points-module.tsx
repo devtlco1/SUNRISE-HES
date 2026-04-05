@@ -158,10 +158,10 @@ export function ServicePointsModule({
 
     return [
       { label: "Service points in current view", value: String(items.length) },
-      { label: "Linked meters represented", value: String(linkedMeters) },
-      { label: "Linked subscribers represented", value: String(linkedSubscribers) },
+      { label: "Linked subscribers visible", value: String(linkedSubscribers) },
+      { label: "Linked accounts visible", value: String(linkedAccounts) },
       { label: "Coordinate-ready premises", value: String(mappedCoordinates) },
-      { label: "Linked accounts represented", value: String(linkedAccounts) },
+      { label: "Linked meters visible", value: String(linkedMeters) },
     ];
   }, [items]);
 
@@ -327,13 +327,13 @@ export function ServicePointsModule({
                     </span>
                   </div>
                   <div className="command-list-item-badges">
-                    <span className="artifact-pill">
-                      {formatStatusLabel(item.premises_type ?? "premise")}
-                    </span>
                     <span
                       className={`status-pill ${buildStatusTone(buildCommercialPosture(item))}`}
                     >
                       {buildCommercialPosture(item)}
+                    </span>
+                    <span className="artifact-pill">
+                      {formatStatusLabel(item.premises_type ?? "premise")}
                     </span>
                     <span className={`status-pill ${buildStatusTone(buildLocationPosture(item))}`}>
                       {buildLocationPosture(item)}
