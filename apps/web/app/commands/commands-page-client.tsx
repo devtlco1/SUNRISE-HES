@@ -45,7 +45,30 @@ type GisLiteRow = {
 
 type GisLiteListResponse = { total: number; items: GisLiteRow[] };
 
+type CommandTemplate = {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  is_active: boolean;
+};
+
+type CommandTemplateListResponse = { total: number; items: CommandTemplate[] };
+
+type BulkWizardResponse = {
+  submitted_total: number;
+  failed_total: number;
+  items: Array<{
+    meter_id: string;
+    command_id: string | null;
+    submission_status: string;
+    detail: string | null;
+  }>;
+};
+
 type KpiAccent = "neutral" | "success" | "danger" | "warning" | "info" | "muted";
+
+type BulkFamily = "relay_control" | "on_demand_read";
 
 function humanize(s: string): string {
   return s.replace(/_/g, " ");
@@ -149,6 +172,32 @@ function toneCount(n: number, pos: KpiAccent): KpiAccent {
   return n > 0 ? pos : "muted";
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseMeterIds(text: string): string[] {
+  const parts = text
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    if (!UUID_RE.test(p) || seen.has(p.toLowerCase())) {
+      continue;
+    }
+    seen.add(p.toLowerCase());
+    out.push(p);
+  }
+  return out;
+}
+
+function templatesForBulkFamily(family: BulkFamily, items: CommandTemplate[]): CommandTemplate[] {
+  if (family === "relay_control") {
+    return items.filter((t) => t.category === "remote_disconnect" || t.category === "remote_reconnect");
+  }
+  return items.filter((t) => t.category === "on_demand_read");
+}
+
 export function CommandsPageClient() {
   return (
     <WorkspaceShell>
@@ -199,6 +248,25 @@ function CommandsBody() {
   const [execClient, setExecClient] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
+
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [templates, setTemplates] = useState<CommandTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [bulkFamily, setBulkFamily] = useState<BulkFamily>("relay_control");
+  const [bulkTemplateId, setBulkTemplateId] = useState("");
+  const [bulkRelayOp, setBulkRelayOp] = useState<"disconnect" | "reconnect">("disconnect");
+  const [bulkMeterText, setBulkMeterText] = useState("");
+  const [bulkNotes, setBulkNotes] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
+  const [approvalOpen, setApprovalOpen] = useState<{
+    commandId: string;
+    mode: "approve" | "reject";
+  } | null>(null);
+  const [approvalNotes, setApprovalNotes] = useState("");
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -271,6 +339,48 @@ function CommandsBody() {
     return () => window.clearTimeout(t);
   }, [searchDraft]);
 
+  useEffect(() => {
+    if (!bulkOpen || !currentUser) {
+      return;
+    }
+    let cancelled = false;
+    setTemplatesLoading(true);
+    void (async () => {
+      try {
+        const res = await authorizedFetch<CommandTemplateListResponse>("/api/v1/command-templates");
+        if (!cancelled) {
+          setTemplates(res.items.filter((x) => x.is_active));
+        }
+      } catch {
+        if (!cancelled) {
+          setTemplates([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setTemplatesLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authorizedFetch, bulkOpen, currentUser]);
+
+  const bulkTemplateChoices = useMemo(
+    () => templatesForBulkFamily(bulkFamily, templates),
+    [bulkFamily, templates],
+  );
+
+  useEffect(() => {
+    if (bulkTemplateChoices.length === 0) {
+      setBulkTemplateId("");
+      return;
+    }
+    if (!bulkTemplateChoices.some((t) => t.id === bulkTemplateId)) {
+      setBulkTemplateId(bulkTemplateChoices[0]!.id);
+    }
+  }, [bulkTemplateChoices, bulkTemplateId]);
+
   const recentItems = recent?.items ?? [];
 
   const kpi = useMemo(() => {
@@ -331,6 +441,85 @@ function CommandsBody() {
     return rows.slice(0, 18);
   }, [pending?.items, recentItems]);
 
+  const closeBulk = () => {
+    setBulkOpen(false);
+    setBulkError(null);
+    setBulkMeterText("");
+    setBulkNotes("");
+  };
+
+  const submitBulk = async () => {
+    setBulkError(null);
+    const meterIds = parseMeterIds(bulkMeterText);
+    if (meterIds.length === 0) {
+      setBulkError("Enter at least one valid meter UUID.");
+      return;
+    }
+    if (!bulkTemplateId) {
+      setBulkError("Select a command template.");
+      return;
+    }
+    const body: Record<string, unknown> = {
+      family: bulkFamily,
+      meter_ids: meterIds,
+      command_template_id: bulkTemplateId,
+      notes: bulkNotes.trim() || null,
+    };
+    if (bulkFamily === "relay_control") {
+      body.relay_operation = bulkRelayOp;
+    } else {
+      body.on_demand_read_operation = "read_billing_snapshot";
+    }
+    setBulkBusy(true);
+    try {
+      await authorizedFetch<BulkWizardResponse>("/api/v1/commands/bulk-requests", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      closeBulk();
+      await load();
+    } catch (e) {
+      setBulkError(e instanceof Error ? e.message : "Request failed.");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const openApproval = (commandId: string, mode: "approve" | "reject") => {
+    setApprovalNotes("");
+    setApprovalError(null);
+    setApprovalOpen({ commandId, mode });
+  };
+
+  const closeApproval = () => {
+    setApprovalOpen(null);
+    setApprovalError(null);
+  };
+
+  const submitApproval = async () => {
+    if (!approvalOpen) {
+      return;
+    }
+    setApprovalBusy(true);
+    setApprovalError(null);
+    const path =
+      approvalOpen.mode === "approve"
+        ? `/api/v1/commands/${approvalOpen.commandId}/approvals/approve`
+        : `/api/v1/commands/${approvalOpen.commandId}/approvals/reject`;
+    try {
+      await authorizedFetch(path, {
+        method: "POST",
+        body: JSON.stringify({ approval_notes: approvalNotes.trim() || null }),
+      });
+      closeApproval();
+      await load();
+    } catch (e) {
+      setApprovalError(e instanceof Error ? e.message : "Request failed.");
+    } finally {
+      setApprovalBusy(false);
+    }
+  };
+
   if (isCheckingSession) {
     return <p className="ws-muted">Checking session…</p>;
   }
@@ -342,9 +531,16 @@ function CommandsBody() {
   return (
     <div className="ws-canvas ws-cmd-page">
       <header className="ws-cmd-header">
-        <div>
-          <h1 className="ws-cmd-title">Commands</h1>
-          <p className="ws-cmd-subtitle">Remote meter command submissions, approvals, and execution posture.</p>
+        <div className="ws-cmd-header-main">
+          <div>
+            <h1 className="ws-cmd-title">Commands</h1>
+            <p className="ws-cmd-subtitle">Review activity, pending approvals, and submit bounded relay or read requests.</p>
+          </div>
+          <div className="ws-cmd-header-actions">
+            <button type="button" className="ws-btn ws-btn-primary" onClick={() => setBulkOpen(true)}>
+              Request commands
+            </button>
+          </div>
         </div>
         {asOf ? <p className="ws-muted ws-cmd-asof">As of {fmtAsOf(asOf)}</p> : null}
       </header>
@@ -391,60 +587,6 @@ function CommandsBody() {
       </section>
 
       <div className="ws-cmd-stack">
-        <section className="ws-dash-panel ws-cmd-panel" aria-labelledby="cmd-overview-h">
-          <h2 className="ws-dash-panel-title" id="cmd-overview-h">
-            Command overview
-          </h2>
-          <div className="ws-dash-panel-body ws-cmd-overview-body">
-            {!recent && !loading ? (
-              <p className="ws-muted">Data not available yet.</p>
-            ) : (
-              <>
-                <p className="ws-cmd-overview-lead">
-                  Operational list shows up to <span className="ws-metric ws-metric--neutral">{RECENT_LIMIT}</span>{" "}
-                  recent commands for supported families. Approval queue samples up to{" "}
-                  <span className="ws-metric ws-metric--neutral">{PENDING_LIMIT}</span> pending reviews. KPI counts
-                  reflect the loaded window only.
-                </p>
-                <dl className="ws-cmd-dl">
-                  <div>
-                    <dt>Pending approval (sample)</dt>
-                    <dd>
-                      <span className={`ws-metric ws-metric--${kpi.pendingApprovalCount > 0 ? "warning" : "muted"}`}>
-                        {pending ? fmt(kpi.pendingApprovalCount) : "—"}
-                      </span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Active execution</dt>
-                    <dd>
-                      <span className={`ws-metric ws-metric--${kpi.queuedInProgress > 0 ? "info" : "muted"}`}>
-                        {recent ? fmt(kpi.queuedInProgress) : "—"}
-                      </span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Terminal success</dt>
-                    <dd>
-                      <span className={`ws-metric ws-metric--${kpi.succeeded > 0 ? "success" : "muted"}`}>
-                        {recent ? fmt(kpi.succeeded) : "—"}
-                      </span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Terminal failure</dt>
-                    <dd>
-                      <span className={`ws-metric ws-metric--${kpi.failed > 0 ? "danger" : "muted"}`}>
-                        {recent ? fmt(kpi.failed) : "—"}
-                      </span>
-                    </dd>
-                  </div>
-                </dl>
-              </>
-            )}
-          </div>
-        </section>
-
         <section className="ws-dash-panel ws-cmd-panel" aria-labelledby="cmd-registry-h">
           <h2 className="ws-dash-panel-title" id="cmd-registry-h">
             Command registry
@@ -601,6 +743,7 @@ function CommandsBody() {
                       <th scope="col">Meter</th>
                       <th scope="col">Issue</th>
                       <th scope="col">Updated</th>
+                      <th scope="col">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -615,6 +758,7 @@ function CommandsBody() {
                             : row.command_status === "timed_out"
                               ? "Timed out"
                               : "Needs review";
+                      const canApprove = row.approval_status === "submitted_for_approval";
                       return (
                         <tr key={`att-${row.command_id}`}>
                           <td className="ws-cmd-mono">{shortId(row.command_id)}</td>
@@ -633,6 +777,28 @@ function CommandsBody() {
                             </span>
                           </td>
                           <td className="ws-cmd-mono">{fmtWhen(row.latest_updated_at)}</td>
+                          <td className="ws-cmd-actions-cell">
+                            {canApprove ? (
+                              <div className="ws-cmd-inline-actions">
+                                <button
+                                  type="button"
+                                  className="ws-btn ws-btn-ghost ws-cmd-action-btn"
+                                  onClick={() => openApproval(row.command_id, "approve")}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ws-btn ws-btn-ghost ws-cmd-action-btn"
+                                  onClick={() => openApproval(row.command_id, "reject")}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -643,6 +809,128 @@ function CommandsBody() {
           </div>
         </section>
       </div>
+
+      {bulkOpen ? (
+        <div className="ws-cmd-dialog-backdrop" role="presentation" onClick={closeBulk}>
+          <div
+            className="ws-cmd-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cmd-bulk-title"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.key === "Escape" && closeBulk()}
+          >
+            <h2 id="cmd-bulk-title" className="ws-cmd-dialog-title">
+              Request commands
+            </h2>
+            <p className="ws-cmd-dialog-hint">
+              Relay control and on-demand read only. Submissions enter the approvals queue when required.
+            </p>
+            <label className="ws-cmd-dialog-field">
+              <span className="ws-cmd-dialog-label">Family</span>
+              <select value={bulkFamily} onChange={(e) => setBulkFamily(e.target.value as BulkFamily)}>
+                <option value="relay_control">Relay control</option>
+                <option value="on_demand_read">On-demand read</option>
+              </select>
+            </label>
+            {bulkFamily === "relay_control" ? (
+              <label className="ws-cmd-dialog-field">
+                <span className="ws-cmd-dialog-label">Relay operation</span>
+                <select value={bulkRelayOp} onChange={(e) => setBulkRelayOp(e.target.value as "disconnect" | "reconnect")}>
+                  <option value="disconnect">Disconnect</option>
+                  <option value="reconnect">Reconnect</option>
+                </select>
+              </label>
+            ) : null}
+            <label className="ws-cmd-dialog-field">
+              <span className="ws-cmd-dialog-label">Template</span>
+              <select
+                value={bulkTemplateId}
+                onChange={(e) => setBulkTemplateId(e.target.value)}
+                disabled={templatesLoading || bulkTemplateChoices.length === 0}
+              >
+                {bulkTemplateChoices.length === 0 ? (
+                  <option value="">No matching templates</option>
+                ) : (
+                  bulkTemplateChoices.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.code} — {t.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+            <label className="ws-cmd-dialog-field">
+              <span className="ws-cmd-dialog-label">Meter UUIDs</span>
+              <textarea
+                className="ws-cmd-dialog-textarea"
+                value={bulkMeterText}
+                onChange={(e) => setBulkMeterText(e.target.value)}
+                rows={4}
+                placeholder="One UUID per line or comma-separated"
+                autoComplete="off"
+              />
+            </label>
+            <label className="ws-cmd-dialog-field">
+              <span className="ws-cmd-dialog-label">Notes</span>
+              <input type="text" value={bulkNotes} onChange={(e) => setBulkNotes(e.target.value)} autoComplete="off" />
+            </label>
+            {bulkError ? (
+              <p className="ws-alert" role="alert">
+                {bulkError}
+              </p>
+            ) : null}
+            <div className="ws-cmd-dialog-footer">
+              <button type="button" className="ws-btn ws-btn-ghost" onClick={closeBulk} disabled={bulkBusy}>
+                Cancel
+              </button>
+              <button type="button" className="ws-btn ws-btn-primary" onClick={() => void submitBulk()} disabled={bulkBusy}>
+                {bulkBusy ? "Submitting…" : "Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {approvalOpen ? (
+        <div className="ws-cmd-dialog-backdrop" role="presentation" onClick={closeApproval}>
+          <div
+            className="ws-cmd-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cmd-appr-title"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.key === "Escape" && closeApproval()}
+          >
+            <h2 id="cmd-appr-title" className="ws-cmd-dialog-title">
+              {approvalOpen.mode === "approve" ? "Approve command" : "Reject command"}
+            </h2>
+            <p className="ws-cmd-dialog-hint ws-cmd-mono">{shortId(approvalOpen.commandId)}</p>
+            <label className="ws-cmd-dialog-field">
+              <span className="ws-cmd-dialog-label">Notes</span>
+              <input type="text" value={approvalNotes} onChange={(e) => setApprovalNotes(e.target.value)} autoComplete="off" />
+            </label>
+            {approvalError ? (
+              <p className="ws-alert" role="alert">
+                {approvalError}
+              </p>
+            ) : null}
+            <div className="ws-cmd-dialog-footer">
+              <button type="button" className="ws-btn ws-btn-ghost" onClick={closeApproval} disabled={approvalBusy}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={approvalOpen.mode === "approve" ? "ws-btn ws-btn-primary" : "ws-btn ws-btn-ghost"}
+                onClick={() => void submitApproval()}
+                disabled={approvalBusy}
+              >
+                {approvalBusy ? "Working…" : approvalOpen.mode === "approve" ? "Approve" : "Reject"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

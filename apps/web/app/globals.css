@@ -1801,6 +1801,21 @@ a.ws-row-actions-item {
   color: var(--ws-muted);
 }
 
+.ws-cmd-header-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.ws-cmd-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .ws-cmd-asof {
   margin: 0;
   font-size: 0.75rem;
@@ -1840,35 +1855,49 @@ a.ws-row-actions-item {
   min-height: 0;
 }
 
-.ws-cmd-overview-body {
-  font-size: 0.8125rem;
-  line-height: 1.5;
+.ws-cmd-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: rgba(15, 23, 42, 0.45);
 }
 
-.ws-cmd-overview-lead {
-  margin: 0 0 0.75rem;
+.ws-cmd-dialog {
+  width: min(32rem, 100%);
+  margin-top: 5vh;
+  padding: 1.1rem 1.15rem 1rem;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+}
+
+.ws-cmd-dialog-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: var(--ws-text);
 }
 
-.ws-cmd-dl {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.65rem 1rem;
-  margin: 0;
+.ws-cmd-dialog-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
 }
 
-@media (max-width: 900px) {
-  .ws-cmd-dl {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.ws-cmd-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.65rem;
 }
 
-.ws-cmd-dl > div {
-  margin: 0;
-}
-
-.ws-cmd-dl dt {
-  margin: 0 0 0.2rem;
+.ws-cmd-dialog-label {
   font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1876,9 +1905,42 @@ a.ws-row-actions-item {
   color: var(--ws-muted);
 }
 
-.ws-cmd-dl dd {
-  margin: 0;
-  font-size: 0.9375rem;
+.ws-cmd-dialog-field select,
+.ws-cmd-dialog-field input[type="text"] {
+  font-size: 0.8125rem;
+}
+
+.ws-cmd-dialog-textarea {
+  width: 100%;
+  min-height: 5rem;
+  resize: vertical;
+  font-family: var(--ws-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+}
+
+.ws-cmd-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--ws-border);
+}
+
+.ws-cmd-actions-cell {
+  white-space: nowrap;
+}
+
+.ws-cmd-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.ws-cmd-action-btn {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
 }
 
 .ws-cmd-registry-body {

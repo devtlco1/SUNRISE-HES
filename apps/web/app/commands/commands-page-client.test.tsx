@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandsPageClient } from "./commands-page-client";
@@ -99,7 +100,7 @@ describe("CommandsPageClient", () => {
     render(<CommandsPageClient />);
 
     expect(await screen.findByRole("heading", { name: "Commands" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Command overview" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Request commands" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Command registry" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Attention" })).toBeInTheDocument();
 
@@ -111,5 +112,55 @@ describe("CommandsPageClient", () => {
     const attentionPanel = screen.getByRole("heading", { name: "Attention" }).closest("section");
     expect(attentionPanel).toBeTruthy();
     expect(within(attentionPanel!).getByText("No commands need attention.")).toBeInTheDocument();
+  });
+
+  it("surfaces approve and reject for commands awaiting approval", async () => {
+    const user = userEvent.setup();
+    const pendingItem = {
+      ...recentItem,
+      command_id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      approval_status: "submitted_for_approval",
+      command_status: "pending",
+    };
+    window.localStorage.setItem("sunrise.web.accessToken", "token-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const u = input.toString();
+        if (u.includes("/api/v1/auth/me")) {
+          return jsonResponse(userPayload);
+        }
+        if (u.includes("/api/v1/commands/recent")) {
+          return jsonResponse({
+            total: 0,
+            limit: 100,
+            family_filter: null,
+            approval_filter: null,
+            items: [],
+          });
+        }
+        if (u.includes("/api/v1/commands/approvals/pending")) {
+          return jsonResponse({
+            total: 1,
+            limit: 50,
+            family_filter: null,
+            approval_filter: "submitted_for_approval",
+            items: [pendingItem],
+          });
+        }
+        if (u.includes("/api/v1/gis-lite/entities")) {
+          return jsonResponse({ total: 0, items: [] });
+        }
+        return jsonResponse({ detail: "unmocked" }, 404);
+      }),
+    );
+
+    render(<CommandsPageClient />);
+
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByRole("heading", { name: "Approve command" })).toBeInTheDocument();
   });
 });
