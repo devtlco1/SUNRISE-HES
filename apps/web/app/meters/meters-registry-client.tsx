@@ -552,7 +552,6 @@ function MetersRegistryBody() {
                 <tr>
                   <th scope="col">Serial</th>
                   <th scope="col">Utility #</th>
-                  <th scope="col">Meter ID</th>
                   <th scope="col">Manufacturer</th>
                   <th scope="col">Model</th>
                   <th scope="col">Comm profile</th>
@@ -576,7 +575,7 @@ function MetersRegistryBody() {
               <tbody>
                 {displayed.length === 0 ? (
                   <tr>
-                    <td colSpan={15} className="ws-meters-table-empty">
+                    <td colSpan={14} className="ws-meters-table-empty">
                       {list.items.length === 0
                         ? "No meters found."
                         : "No matching meters."}
@@ -603,11 +602,6 @@ function MetersRegistryBody() {
                           </Link>
                         </td>
                         <td className="ws-meters-mono">{m.utility_meter_number ?? "—"}</td>
-                        <td className="ws-meters-mono">
-                          <Link className="ws-meters-drilldown" href={`/meters/${m.id}`} title={m.id}>
-                            {shortId(m.id)}
-                          </Link>
-                        </td>
                         <td>{m.manufacturer_code}</td>
                         <td>{m.meter_model_code}</td>
                         <td className="ws-meters-mono">{m.communication_profile_code ?? "—"}</td>
