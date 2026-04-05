@@ -1,5 +1,5 @@
-import { DashboardPageClient } from "./dashboard-page-client";
+import { HomePageClient } from "./home-page-client";
 
 export default function HomePage() {
-  return <DashboardPageClient />;
+  return <HomePageClient />;
 }

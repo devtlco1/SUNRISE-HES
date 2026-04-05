@@ -1,5 +1,5 @@
-import { ConnectivityPageClient } from "./connectivity-page-client";
+import { redirect } from "next/navigation";
 
-export default function ConnectivityPage() {
-  return <ConnectivityPageClient />;
+export default function ConnectivityRetired() {
+  redirect("/");
 }

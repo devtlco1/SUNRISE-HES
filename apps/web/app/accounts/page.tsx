@@ -1,5 +1,5 @@
-import { AccountsPageClient } from "./accounts-page-client";
+import { redirect } from "next/navigation";
 
-export default function AccountsPage() {
-  return <AccountsPageClient />;
+export default function AccountsRetired() {
+  redirect("/");
 }

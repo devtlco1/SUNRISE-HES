@@ -32,7 +32,7 @@ describe("LoginPageClient", () => {
     window.localStorage.clear();
   });
 
-  it("pushes to the protected dashboard entry after successful login", async () => {
+  it("navigates home after successful login", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -59,11 +59,11 @@ describe("LoginPageClient", () => {
     render(<LoginPageClient />);
 
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Username or email"), "ops.user");
-    await user.type(screen.getByLabelText("Password"), "ChangeThisPassword123!");
+    await user.type(screen.getByLabelText(/username or email/i), "ops@example.com");
+    await user.type(screen.getByLabelText(/^password$/i), "secret");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
-    expect(await screen.findByText("Signed in as ops.user.")).toBeInTheDocument();
+    expect(await screen.findByText(/signed in as ops\.user/i)).toBeInTheDocument();
     expect(pushMock).toHaveBeenCalledWith("/");
   });
 });

@@ -1,11 +1,5 @@
-import { SubscriberDetailsPageClient } from "./subscriber-details-page-client";
+import { redirect } from "next/navigation";
 
-export default async function SubscriberDetailsPage({
-  params,
-}: {
-  params: Promise<{ subscriberId: string }>;
-}) {
-  const { subscriberId } = await params;
-
-  return <SubscriberDetailsPageClient subscriberId={subscriberId} />;
+export default function SubscriberDetailRetired() {
+  redirect("/");
 }

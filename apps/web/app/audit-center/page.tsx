@@ -1,5 +1,5 @@
-import { AuditCenterPageClient } from "./audit-center-page-client";
+import { redirect } from "next/navigation";
 
-export default function AuditCenterPage() {
-  return <AuditCenterPageClient />;
+export default function AuditCenterRetired() {
+  redirect("/");
 }

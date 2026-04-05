@@ -1,5 +1,5 @@
-import { TransformersSubstationsPageClient } from "./transformers-substations-page-client";
+import { redirect } from "next/navigation";
 
-export default function TransformersSubstationsPage() {
-  return <TransformersSubstationsPageClient />;
+export default function InfrastructureRetired() {
+  redirect("/");
 }

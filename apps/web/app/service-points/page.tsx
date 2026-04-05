@@ -1,5 +1,5 @@
-import { ServicePointsPageClient } from "./service-points-page-client";
+import { redirect } from "next/navigation";
 
-export default function ServicePointsPage() {
-  return <ServicePointsPageClient />;
+export default function ServicePointsRetired() {
+  redirect("/");
 }

@@ -1,5 +1,5 @@
-import { SubscribersPageClient } from "./subscribers-page-client";
+import { redirect } from "next/navigation";
 
-export default function SubscribersPage() {
-  return <SubscribersPageClient />;
+export default function SubscribersRetired() {
+  redirect("/");
 }

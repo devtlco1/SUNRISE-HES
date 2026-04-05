@@ -1,11 +1,5 @@
-import { AccountDetailsPageClient } from "./account-details-page-client";
+import { redirect } from "next/navigation";
 
-export default async function AccountDetailsPage({
-  params,
-}: {
-  params: Promise<{ accountId: string }>;
-}) {
-  const { accountId } = await params;
-
-  return <AccountDetailsPageClient accountId={accountId} />;
+export default function AccountDetailRetired() {
+  redirect("/");
 }
