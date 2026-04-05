@@ -132,6 +132,23 @@ describe("TransformerSubstationDetailsModule", () => {
       "href",
       "/gis-lite?meterId=meter-1",
     );
+    expect(screen.getByRole("link", { name: "Return to infrastructure list" })).toHaveAttribute(
+      "href",
+      "/transformers-substations",
+    );
+    expect(
+      screen.getByRole("link", { name: "Open primary meter GIS detail" }),
+    ).toHaveAttribute("href", "/meters/meter-1?tab=gis");
+    expect(
+      screen.getByRole("link", { name: "Open primary service point detail" }),
+    ).toHaveAttribute("href", "/service-points/service-point-1");
+    expect(
+      screen.getByRole("heading", { name: "Network asset workspace" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "GIS and location context" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Operational linkage cues" })).toBeInTheDocument();
+    expect(screen.getByText("Transformer coordinates visible")).toBeInTheDocument();
+    expect(screen.getAllByText("Commercial").length).toBeGreaterThan(0);
     const linkedServicePointsPanel = screen.getByRole("heading", {
       name: "Linked service points",
     }).closest("section");
@@ -168,7 +185,7 @@ describe("TransformerSubstationDetailsModule", () => {
     expect(
       await screen.findByText("Loading transformer and substation detail..."),
     ).toBeInTheDocument();
-    expect(await screen.findByText("TX-1001 · Airport Transformer")).toBeInTheDocument();
+    expect((await screen.findAllByText("TX-1001 · Airport Transformer")).length).toBeGreaterThan(0);
   });
 
   it("renders bounded empty linked sections when no service points or meters are linked", async () => {
@@ -211,6 +228,17 @@ describe("TransformerSubstationDetailsModule", () => {
       ).toBeInTheDocument();
     });
     expect(screen.getByText("No linked meters for this transformer.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open GIS Lite context" })).toHaveAttribute(
+      "href",
+      "/gis-lite",
+    );
+    expect(
+      screen.queryByRole("link", { name: "Open primary meter GIS detail" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Open primary service point detail" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("No mapped network coordinates").length).toBeGreaterThan(0);
   });
 
   it("renders a bounded error state when infrastructure detail fails", async () => {
