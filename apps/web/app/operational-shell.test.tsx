@@ -51,7 +51,7 @@ describe("OperationalShell", () => {
     window.localStorage.clear();
   });
 
-  it("shows the bounded session gate when no session is available", async () => {
+  it("shows the session gate when no session is available", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -65,8 +65,10 @@ describe("OperationalShell", () => {
       </OperationalShell>,
     );
 
-    expect(await screen.findByText("Session required")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Session required" })).toBeInTheDocument();
     expect(screen.queryByText("Protected child")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Sunrise HES").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Open login" })).toHaveAttribute("href", "/login");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -130,6 +132,7 @@ describe("OperationalShell", () => {
     );
 
     expect(await screen.findByText("Protected child")).toBeInTheDocument();
+    expect(screen.getByText("Ops User")).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -233,12 +236,12 @@ describe("OperationalShell", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Sign out" }));
 
-    expect(await screen.findByText("Session required")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Session required" })).toBeInTheDocument();
     expect(window.localStorage.getItem("sunrise.web.accessToken")).toBeNull();
     expect(window.localStorage.getItem("sunrise.web.currentUser")).toBeNull();
   });
 
-  it("keeps shell navigation available across the adopted protected surfaces", async () => {
+  it("keeps shell navigation available across protected routes", async () => {
     window.localStorage.setItem("sunrise.web.accessToken", "token-1");
     window.localStorage.setItem(
       "sunrise.web.currentUser",
@@ -277,22 +280,10 @@ describe("OperationalShell", () => {
     );
 
     expect(await screen.findByText("Protected child")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Dashboard home" })).toHaveAttribute(
-      "href",
-      "/",
-    );
-    expect(screen.getByRole("link", { name: "Meters" })).toHaveAttribute(
-      "href",
-      "/meters",
-    );
-    expect(screen.getByRole("link", { name: "Readings" })).toHaveAttribute(
-      "href",
-      "/readings",
-    );
-    expect(screen.getByRole("link", { name: "Commands" })).toHaveAttribute(
-      "href",
-      "/commands",
-    );
+    expect(screen.getByRole("link", { name: "Dashboard home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Meters" })).toHaveAttribute("href", "/meters");
+    expect(screen.getByRole("link", { name: "Readings" })).toHaveAttribute("href", "/readings");
+    expect(screen.getByRole("link", { name: "Commands" })).toHaveAttribute("href", "/commands");
     expect(screen.getByRole("link", { name: "Connectivity" })).toHaveAttribute(
       "href",
       "/connectivity",
@@ -304,10 +295,7 @@ describe("OperationalShell", () => {
       "href",
       "/subscribers",
     );
-    expect(screen.getByRole("link", { name: "Accounts" })).toHaveAttribute(
-      "href",
-      "/accounts",
-    );
+    expect(screen.getByRole("link", { name: "Accounts" })).toHaveAttribute("href", "/accounts");
     expect(screen.getByRole("link", { name: "Service Points" })).toHaveAttribute(
       "href",
       "/service-points",
@@ -325,7 +313,7 @@ describe("OperationalShell", () => {
     );
   });
 
-  it("uses a tighter dashboard-home navigation variant for the rebuilt home experience", async () => {
+  it("renders the dashboard-home shell copy in the new visual system", async () => {
     window.localStorage.setItem("sunrise.web.accessToken", "token-1");
     window.localStorage.setItem(
       "sunrise.web.currentUser",
@@ -364,47 +352,11 @@ describe("OperationalShell", () => {
     );
 
     expect(await screen.findByText("Protected child")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Dashboard home" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("link", { name: "Readings review" })).toHaveAttribute(
-      "href",
-      "/readings",
-    );
-    expect(screen.getByRole("link", { name: "Connectivity watch" })).toHaveAttribute(
-      "href",
-      "/connectivity",
-    );
-    expect(screen.getByRole("link", { name: "Alerts and activity" })).toHaveAttribute(
-      "href",
-      "/jobs-events-alerts",
-    );
-    expect(screen.getByRole("link", { name: "Meter registry" })).toHaveAttribute(
-      "href",
-      "/meters",
-    );
-    expect(screen.getByRole("link", { name: "Command center" })).toHaveAttribute(
-      "href",
-      "/commands",
-    );
-    expect(screen.getByRole("link", { name: "GIS Lite context" })).toHaveAttribute(
-      "href",
-      "/gis-lite",
-    );
-    expect(screen.getByRole("link", { name: "Subscribers" })).toHaveAttribute(
-      "href",
-      "/subscribers",
-    );
-    expect(screen.getByRole("link", { name: "Accounts" })).toHaveAttribute(
-      "href",
-      "/accounts",
-    );
-    expect(screen.getByRole("link", { name: "Service points" })).toHaveAttribute(
-      "href",
-      "/service-points",
-    );
+    expect(screen.getAllByText("Dashboard home").length).toBeGreaterThan(0);
+    expect(screen.getByText("OPERATIONS")).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Transformers / substations" }),
-    ).toHaveAttribute("href", "/transformers-substations");
-    expect(screen.getByText("Legacy workspaces")).toBeInTheDocument();
+      screen.getByText("NextAdmin-derived shell and dashboard composition are active on this route."),
+    ).toBeInTheDocument();
   });
 
   it("hydrates the shell without mismatching stored API base URL text", async () => {

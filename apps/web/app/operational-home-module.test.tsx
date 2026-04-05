@@ -397,28 +397,24 @@ describe("OperationalHomeModule", () => {
     window.localStorage.clear();
   });
 
-  it("renders the operational home dashboard inside the shared shell", async () => {
+  it("renders the rebuilt home dashboard inside the shared shell", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
     renderOperationalHomeInShell();
 
+    expect(await screen.findByRole("link", { name: "Dashboard home" })).toBeInTheDocument();
     expect(
-      await screen.findByRole("link", { name: "Dashboard home" }),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByRole("heading", { name: "Operations control center" }),
+      await screen.findByRole("heading", { name: "Operational overview" }),
     ).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText("One complete dashboard experience before broader page migration.")).toBeInTheDocument();
-      expect(screen.getAllByText("Pending approvals").length).toBeGreaterThan(0);
-      expect(screen.getByText("Open validation issues")).toBeInTheDocument();
-      expect(screen.getByText("Open recovery issues")).toBeInTheDocument();
+      expect(screen.getByText("Operations control center")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Attention queue" })).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Workspace launchpads" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Operator workbench" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Primary operational lanes" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Current scope" })).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Recent command activity" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Operator handoff" })).toBeInTheDocument();
     });
   });
 
@@ -476,53 +472,36 @@ describe("OperationalHomeModule", () => {
     ).toBe(true);
   });
 
-  it("renders KPI cards, operational summary panels, and recent activity snippets when data is available", async () => {
+  it("renders overview cards, launchpads, and recent activity when data is available", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
     renderOperationalHomeInShell();
 
+    expect(await screen.findByText("Meters in current scope")).toBeInTheDocument();
+    expect(screen.getByText("Pending approvals")).toBeInTheDocument();
+    expect(screen.getByText("Connectivity incidents")).toBeInTheDocument();
+    expect(screen.getByText("Validation issues")).toBeInTheDocument();
     expect(await screen.findByText("profile-capture-template")).toBeInTheDocument();
     expect(screen.getByText("relay-disconnect-template")).toBeInTheDocument();
     expect(screen.getByText("on-demand-read-template")).toBeInTheDocument();
-    expect(
-      screen.getByText("3 active inventory items visible in the current bounded meter result set."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Bulk command requests currently waiting in the stable approvals queue.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "First fully rebuilt dashboard home for the new admin-style direction. It keeps the product truthful to current routes while establishing the shell, hierarchy, and launch rhythm later pages will inherit.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText(/validation issues/).length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByRole("link", { name: "Open readings" }).some((link) => link.getAttribute("href") === "/readings"),
-    ).toBe(true);
-    expect(screen.getAllByText("Pending approvals").length).toBeGreaterThan(0);
-    expect(screen.getByText("Validation issues")).toBeInTheDocument();
-    expect(screen.getByText("Recovery issues")).toBeInTheDocument();
     expect(screen.getByText("Problem command activity")).toBeInTheDocument();
-    expect(screen.getByText("1 attention")).toBeInTheDocument();
     expect(screen.getByText("disconnect (pending)")).toBeInTheDocument();
     expect(screen.getByText("read_billing_snapshot billing (pending)")).toBeInTheDocument();
   });
 
-  it("renders bounded loading states while the overview is bootstrapping", async () => {
+  it("renders focused loading states while the overview is bootstrapping", async () => {
     const { fetchMock } = createMockApi({ delayedResponses: true });
     vi.stubGlobal("fetch", fetchMock);
 
     renderOperationalHomeInShell();
 
-    expect(await screen.findByText("Loading operations dashboard...")).toBeInTheDocument();
-    expect(screen.getByText("Loading operator attention handoff...")).toBeInTheDocument();
+    expect(await screen.findByText("Loading operator attention handoff...")).toBeInTheDocument();
+    expect(screen.getAllByText("Loading operations dashboard...").length).toBeGreaterThan(0);
     expect(screen.getByText("Loading recent command activity...")).toBeInTheDocument();
   });
 
-  it("renders bounded empty states when overview sources are empty", async () => {
+  it("renders empty states when overview sources are empty", async () => {
     const { fetchMock } = createMockApi({
       meterItems: [],
       recentCommands: [],
@@ -538,11 +517,9 @@ describe("OperationalHomeModule", () => {
     renderOperationalHomeInShell();
 
     expect(await screen.findByText("No recent command activity.")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "No bounded operator attention items are currently derived from the stable dashboard signals.",
-      ),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Attention queue is clear.")).toBeInTheDocument();
+    });
     expect(
       screen.getByText(
         "No recent command activity is currently visible, but the stable drill-down surfaces remain available from the launch areas above.",
@@ -550,7 +527,7 @@ describe("OperationalHomeModule", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders a bounded error state when overview sources fail", async () => {
+  it("renders an error state when overview sources fail", async () => {
     const { fetchMock } = createMockApi({
       metersStatus: 503,
       metersDetail: "Meter overview unavailable.",
@@ -564,7 +541,8 @@ describe("OperationalHomeModule", () => {
     renderOperationalHomeInShell();
 
     expect(await screen.findByText("Meter overview unavailable.")).toBeInTheDocument();
-    expect((await screen.findAllByText("Recent command activity not available.")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Recent activity is unavailable.")).toBeInTheDocument();
+    expect(screen.getByText("Recent command activity is not available.")).toBeInTheDocument();
     expect(screen.getAllByText("Not available").length).toBeGreaterThan(0);
   });
 });
