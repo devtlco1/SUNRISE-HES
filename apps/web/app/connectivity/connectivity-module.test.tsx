@@ -257,6 +257,158 @@ describe("ConnectivityModule", () => {
     });
   });
 
+  it("renders a connectivity reports workspace with posture and breakdown visibility", async () => {
+    const { fetchMock } = createMockApi({
+      meterItems: [
+        {
+          id: "meter-1",
+          serial_number: "SN-1001",
+          utility_meter_number: "UMN-1001",
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-1",
+          communication_profile_code: "dlms-primary",
+          meter_profile_code: "residential-default",
+          current_status: "commissioned",
+          last_seen_at: "2099-01-01T11:40:00.000Z",
+          is_active: true,
+        },
+        {
+          id: "meter-2",
+          serial_number: "SN-1002",
+          utility_meter_number: null,
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-2",
+          communication_profile_code: null,
+          meter_profile_code: "industrial-default",
+          current_status: "registered",
+          last_seen_at: null,
+          is_active: false,
+        },
+        {
+          id: "meter-3",
+          serial_number: "SN-1003",
+          utility_meter_number: "UMN-1003",
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-3",
+          communication_profile_code: "rf-mesh",
+          meter_profile_code: "commercial-default",
+          current_status: "active",
+          last_seen_at: "2020-01-01T00:00:00.000Z",
+          is_active: true,
+        },
+        {
+          id: "meter-4",
+          serial_number: "SN-1004",
+          utility_meter_number: "UMN-1004",
+          manufacturer_code: "GENERIC",
+          meter_model_code: "GM-4",
+          communication_profile_code: "dlms-primary",
+          meter_profile_code: "commercial-default",
+          current_status: "active",
+          last_seen_at: "2099-01-01T11:45:00.000Z",
+          is_active: true,
+        },
+      ],
+      endpointAssignmentsByMeter: {
+        "meter-1": [
+          {
+            id: "assignment-1",
+            endpoint_code: "tcp-primary",
+            endpoint_display_name: "TCP Primary",
+            assignment_status: "active",
+            is_primary: true,
+          },
+        ],
+        "meter-2": [],
+        "meter-3": [
+          {
+            id: "assignment-3",
+            endpoint_code: "rf-backhaul",
+            endpoint_display_name: "RF Backhaul",
+            assignment_status: "active",
+            is_primary: true,
+          },
+        ],
+        "meter-4": [
+          {
+            id: "assignment-4",
+            endpoint_code: "tcp-secondary",
+            endpoint_display_name: "TCP Secondary",
+            assignment_status: "active",
+            is_primary: true,
+          },
+        ],
+      },
+      sessionsByMeter: {
+        "meter-1": [
+          {
+            id: "session-1",
+            started_at: "2026-03-31T11:40:00.000Z",
+            ended_at: "2026-03-31T11:41:00.000Z",
+            status: "succeeded",
+            session_purpose: "connectivity_test",
+          },
+        ],
+        "meter-2": [],
+        "meter-3": [],
+        "meter-4": [
+          {
+            id: "session-4",
+            started_at: "2026-03-31T11:46:00.000Z",
+            ended_at: "2026-03-31T11:47:00.000Z",
+            status: "failed",
+            session_purpose: "manual_diagnostic",
+          },
+        ],
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderConnectivityModuleInShell();
+
+    const reportsSection = await screen.findByRole("heading", {
+      name: "Connectivity reports workspace",
+    });
+    const reportsPanel = reportsSection.closest("section");
+    expect(reportsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(reportsPanel as HTMLElement).getAllByText("Healthy recent signal").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(reportsPanel as HTMLElement).getAllByText("Offline posture").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(reportsPanel as HTMLElement).getAllByText("Disconnect cues").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(reportsPanel as HTMLElement).getByText("Fleet posture breakdown"),
+      ).toBeInTheDocument();
+      expect(
+        within(reportsPanel as HTMLElement).getByText("Latest session breakdown"),
+      ).toBeInTheDocument();
+      expect(
+        within(reportsPanel as HTMLElement).getByText("Communication context in scope"),
+      ).toBeInTheDocument();
+      expect(
+        within(reportsPanel as HTMLElement).getByText(
+          "Bounded report uses current latest-session and last-seen context; no historical trendline is modeled here.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(reportsPanel as HTMLElement).getByRole("link", { name: "Review live sessions" }),
+      ).toHaveAttribute("href", "#connectivity-live-sessions-workspace");
+      expect(
+        within(reportsPanel as HTMLElement).getByRole("link", { name: "Review incidents" }),
+      ).toHaveAttribute("href", "#connectivity-incidents-workspace");
+      expect(within(reportsPanel as HTMLElement).getAllByText("dlms-primary").length).toBeGreaterThan(0);
+      expect(
+        within(reportsPanel as HTMLElement).getByText("Failed / timed out / cancelled"),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("renders a dedicated live sessions workspace with identity, freshness, and health visibility", async () => {
     const { fetchMock } = createMockApi({
       meterItems: [
@@ -685,6 +837,7 @@ describe("ConnectivityModule", () => {
     expect(
       await screen.findByText("Loading connectivity overview..."),
     ).toBeInTheDocument();
+    expect(await screen.findByText("Loading connectivity reports workspace...")).toBeInTheDocument();
     expect(await screen.findByText("Loading live sessions workspace...")).toBeInTheDocument();
     expect(
       await screen.findByText("Loading offline meters and connectivity incidents..."),
@@ -704,6 +857,9 @@ describe("ConnectivityModule", () => {
     await waitFor(() => {
       expect(
         screen.getByText("No connectivity overview items available."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("No connectivity reports are available in the bounded scope."),
       ).toBeInTheDocument();
       expect(
         screen.getByText("No active connectivity sessions are currently visible in the bounded scope."),

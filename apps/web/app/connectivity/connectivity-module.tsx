@@ -300,6 +300,16 @@ function buildDisconnectCue(session: ConnectivitySession | null): string {
   return "No recent disconnect cue in view";
 }
 
+function buildLatestSessionBucketLabel(session: ConnectivitySession | null): string {
+  if (!session) {
+    return "No recent session";
+  }
+  if (session.status === "failed" || session.status === "timed_out" || session.status === "cancelled") {
+    return "Failed / timed out / cancelled";
+  }
+  return formatStatusLabel(session.status);
+}
+
 export function ConnectivityModule({
   authorizedFetch,
 }: {
@@ -512,6 +522,105 @@ export function ConnectivityModule({
       withEndpoint,
     };
   }, [liveSessionRows]);
+  const reportStats = useMemo(() => {
+    const healthyRecentSignal = rows.filter((row) => {
+      const freshnessContext = getFreshnessContext(row.meter.last_seen_at);
+      return (
+        freshnessContext.tone === "positive" &&
+        buildConnectivityIncident(row, freshnessContext) === null
+      );
+    }).length;
+    const missingEndpoint = rows.filter((row) => row.primaryEndpoint === null).length;
+    const noRecentSession = rows.filter((row) => row.latestSession === null).length;
+    const disconnectCues = rows.filter((row) => {
+      const latestStatus = row.latestSession?.status;
+      return (
+        latestStatus === "failed" ||
+        latestStatus === "timed_out" ||
+        latestStatus === "cancelled"
+      );
+    }).length;
+    return {
+      healthyRecentSignal,
+      offline: incidentRows.filter((item) => item.incident.state === "offline").length,
+      stale: incidentRows.filter((item) => item.incident.state === "stale").length,
+      degraded: incidentRows.filter((item) => item.incident.state === "degraded").length,
+      disconnectCues,
+      missingEndpoint,
+      noRecentSession,
+    };
+  }, [incidentRows, rows]);
+  const postureBreakdown = useMemo(
+    () => [
+      {
+        label: "Healthy recent signal",
+        count: reportStats.healthyRecentSignal,
+        note: "Recent signal with no current incident cue in the bounded view",
+      },
+      {
+        label: "Offline posture",
+        count: reportStats.offline,
+        note: "Meters with no recent signal recorded",
+      },
+      {
+        label: "Stale freshness",
+        count: reportStats.stale,
+        note: "Meters outside the current freshness threshold",
+      },
+      {
+        label: "Degraded latest session",
+        count: reportStats.degraded,
+        note: "Latest session ended failed, timed out, or cancelled",
+      },
+      {
+        label: "Missing endpoint context",
+        count: reportStats.missingEndpoint,
+        note: "Meters without a primary or active endpoint hint",
+      },
+    ],
+    [reportStats],
+  );
+  const latestSessionBreakdown = useMemo(() => {
+    const buckets = new Map<string, number>();
+    for (const row of rows) {
+      const label = buildLatestSessionBucketLabel(row.latestSession);
+      buckets.set(label, (buckets.get(label) ?? 0) + 1);
+    }
+    return [
+      "Started",
+      "Succeeded",
+      "Failed / timed out / cancelled",
+      "No recent session",
+    ].map((label) => ({
+      label,
+      count: buckets.get(label) ?? 0,
+      note:
+        label === "Failed / timed out / cancelled"
+          ? "Current bounded disconnect cues from the latest session only"
+          : label === "No recent session"
+            ? "Meters without a latest-session record in the current overview"
+            : "Latest known session posture in scope",
+    }));
+  }, [rows]);
+  const communicationProfileBreakdown = useMemo(() => {
+    const buckets = new Map<string, number>();
+    for (const row of rows) {
+      const label =
+        row.meter.communication_profile_code ??
+        row.meter.meter_profile_code ??
+        "No communication summary";
+      buckets.set(label, (buckets.get(label) ?? 0) + 1);
+    }
+    return [...buckets.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((left, right) => {
+        if (left.count !== right.count) {
+          return right.count - left.count;
+        }
+        return left.label.localeCompare(right.label);
+      })
+      .slice(0, 4);
+  }, [rows]);
 
   const overviewCards = useMemo(
     () => [
@@ -597,7 +706,150 @@ export function ConnectivityModule({
           ) : null}
         </section>
 
-        <section className="subpanel">
+        <section className="subpanel" id="connectivity-reports-workspace">
+          <div className="section-heading">
+            <div>
+              <h2>Connectivity reports workspace</h2>
+              <p className="muted">
+                Current-state reporting for fleet communication posture using the existing
+                connectivity overview, latest-session, and freshness signals.
+              </p>
+            </div>
+            <span className="artifact-pill">{rows.length} meters summarized</span>
+          </div>
+
+          {isLoadingOverview ? (
+            <p className="muted">Loading connectivity reports workspace...</p>
+          ) : rows.length === 0 ? (
+            <p className="muted">No connectivity reports are available in the bounded scope.</p>
+          ) : (
+            <div className="detail-stack">
+              <div className="connectivity-overview-grid">
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Healthy recent signal</span>
+                  <strong>{String(reportStats.healthyRecentSignal)}</strong>
+                  <p className="muted">Meters with recent signal and no current incident cue</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Offline posture</span>
+                  <strong>{String(reportStats.offline)}</strong>
+                  <p className="muted">Meters currently missing a recent signal</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Stale freshness</span>
+                  <strong>{String(reportStats.stale)}</strong>
+                  <p className="muted">Meters beyond the bounded freshness window</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Disconnect cues</span>
+                  <strong>{String(reportStats.disconnectCues)}</strong>
+                  <p className="muted">Latest failed, timed out, or cancelled sessions</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Live sessions in reporting scope</span>
+                  <strong>{String(liveSessionStats.total)}</strong>
+                  <p className="muted">Latest sessions still started with no recorded end</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">No recent session context</span>
+                  <strong>{String(reportStats.noRecentSession)}</strong>
+                  <p className="muted">Meters without a latest-session record in the current view</p>
+                </div>
+              </div>
+
+              <div className="artifact-row">
+                <span className="artifact-pill">
+                  Bounded report uses current latest-session and last-seen context; no historical
+                  trendline is modeled here.
+                </span>
+                <Link className="nav-link" href="#connectivity-live-sessions-workspace">
+                  Review live sessions
+                </Link>
+                <Link className="nav-link" href="#connectivity-incidents-workspace">
+                  Review incidents
+                </Link>
+              </div>
+
+              <div className="connectivity-module-layout">
+                <section className="subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Fleet posture breakdown</h3>
+                      <p className="muted">
+                        Current posture counts derived directly from the bounded connectivity
+                        result set.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="command-list">
+                    {postureBreakdown.map((item) => (
+                      <article key={item.label} className="command-list-item">
+                        <div className="command-list-item-header">
+                          <strong>{item.label}</strong>
+                          <span className="artifact-pill">{item.count} meters</span>
+                        </div>
+                        <div className="command-list-item-meta">
+                          <span>{item.note}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="subpanel">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Latest session breakdown</h3>
+                      <p className="muted">
+                        Latest known session posture per meter, without historical rollups.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="command-list">
+                    {latestSessionBreakdown.map((item) => (
+                      <article key={item.label} className="command-list-item">
+                        <div className="command-list-item-header">
+                          <strong>{item.label}</strong>
+                          <span className="artifact-pill">{item.count} meters</span>
+                        </div>
+                        <div className="command-list-item-meta">
+                          <span>{item.note}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              <section className="subpanel">
+                <div className="section-heading">
+                  <div>
+                    <h3>Communication context in scope</h3>
+                    <p className="muted">
+                      Top communication profile or meter profile contexts visible in the current
+                      bounded reporting scope.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="command-list">
+                  {communicationProfileBreakdown.map((item) => (
+                    <article key={item.label} className="command-list-item">
+                      <div className="command-list-item-header">
+                        <strong>{item.label}</strong>
+                        <span className="artifact-pill">{item.count} meters</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
+        </section>
+
+        <section className="subpanel" id="connectivity-live-sessions-workspace">
           <div className="section-heading">
             <div>
               <h2>Connectivity live sessions workspace</h2>
@@ -701,7 +953,7 @@ export function ConnectivityModule({
           )}
         </section>
 
-        <section className="subpanel">
+        <section className="subpanel" id="connectivity-incidents-workspace">
           <div className="section-heading">
             <div>
               <h2>Offline meters / connectivity incidents</h2>
