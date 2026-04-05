@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { ReadingsPageClient } from "./readings-page-client";
 
-export default function ReadingsRetired() {
-  redirect("/");
+export default function ReadingsPage() {
+  return <ReadingsPageClient />;
 }
