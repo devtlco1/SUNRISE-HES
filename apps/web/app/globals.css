@@ -13,22 +13,33 @@
   --ws-border: #e2e5eb;
   --ws-text: #1a1d23;
   --ws-muted: #5c6370;
-  --ws-accent: #1d4ed8;
-  --ws-accent-hover: #1e40af;
+  /* Brand (primary UI / tables accent) */
+  --ws-brand-primary: #2e3092;
+  --ws-brand-primary-hover: #252772;
+  --ws-brand-critical: #ed1c24;
+  --ws-brand-critical-hover: #cf1a20;
+  --ws-accent: var(--ws-brand-primary);
+  --ws-accent-hover: var(--ws-brand-primary-hover);
   --ws-sidebar: #ffffff;
-  --ws-danger-bg: #fef2f2;
-  --ws-danger-text: #b91c1c;
+  --ws-danger-bg: rgba(237, 28, 36, 0.07);
+  --ws-danger-text: #b8141b;
   --ws-success-text: #166534;
   /* Dashboard semantic tones (calm, operator-grade) */
   --ws-tone-success: #15803d;
-  --ws-tone-danger: #b91c1c;
+  --ws-tone-danger: var(--ws-brand-critical);
   --ws-tone-warning: #b45309;
-  --ws-tone-info: #1d4ed8;
+  --ws-tone-info: var(--ws-brand-primary);
   --ws-tone-muted: #64748b;
   --ws-tone-success-bg: rgba(22, 163, 74, 0.08);
-  --ws-tone-danger-bg: rgba(185, 28, 28, 0.06);
+  --ws-tone-danger-bg: rgba(237, 28, 36, 0.08);
   --ws-tone-warning-bg: rgba(180, 83, 9, 0.08);
-  --ws-tone-info-bg: rgba(29, 78, 216, 0.06);
+  --ws-tone-info-bg: rgba(46, 48, 146, 0.08);
+  /* Shared card-style data tables */
+  --ws-table-outer-border: color-mix(in srgb, var(--ws-brand-primary) 16%, var(--ws-border));
+  --ws-table-card-shadow: 0 1px 3px rgba(46, 48, 146, 0.07);
+  --ws-table-header-bg: color-mix(in srgb, var(--ws-brand-primary) 5.5%, var(--ws-bg));
+  --ws-table-header-border: color-mix(in srgb, var(--ws-brand-primary) 14%, var(--ws-border));
+  --ws-table-row-hover: rgba(46, 48, 146, 0.045);
 }
 
 * {
@@ -120,8 +131,9 @@ a:hover {
 }
 
 .ws-nav-item.is-active {
-  background: #e8eaf0;
-  color: var(--ws-text);
+  background: color-mix(in srgb, var(--ws-brand-primary) 9%, var(--ws-bg));
+  color: var(--ws-brand-primary);
+  font-weight: 600;
 }
 
 .ws-column {
@@ -457,17 +469,17 @@ a:hover {
 
 .ws-dash-panel {
   background: var(--ws-surface);
-  border: 1px solid var(--ws-border);
-  border-radius: 8px;
+  border: 1px solid var(--ws-table-outer-border);
+  border-radius: 10px;
   padding: 0.85rem 1rem;
   min-height: 6.5rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--ws-table-card-shadow);
 }
 
 .ws-dash-panel-title {
   margin: 0 0 0.65rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--ws-border);
+  border-bottom: 1px solid color-mix(in srgb, var(--ws-brand-primary) 10%, var(--ws-border));
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -780,6 +792,97 @@ a:hover {
   }
 }
 
+/* ——— Shared operational data tables (card shell + grid) ——— */
+
+.ws-conn-table-wrap,
+.ws-meters-table-wrap,
+.ws-cmd-table-wrap,
+.ws-read-table-wrap,
+.ws-meter-detail-table-wrap {
+  border: 1px solid var(--ws-table-outer-border);
+  border-radius: 10px;
+  background: var(--ws-surface);
+  overflow-x: auto;
+  box-shadow: var(--ws-table-card-shadow);
+}
+
+.ws-conn-table,
+.ws-meters-table,
+.ws-cmd-table,
+.ws-read-table,
+.ws-meter-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.ws-conn-table th,
+.ws-conn-table td,
+.ws-meters-table th,
+.ws-meters-table td,
+.ws-cmd-table th,
+.ws-cmd-table td,
+.ws-read-table th,
+.ws-read-table td,
+.ws-meter-detail-table th,
+.ws-meter-detail-table td {
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ws-border);
+  vertical-align: middle;
+}
+
+.ws-meter-detail-table th,
+.ws-meter-detail-table td {
+  vertical-align: top;
+}
+
+.ws-conn-table th,
+.ws-meters-table th,
+.ws-cmd-table th,
+.ws-read-table th,
+.ws-meter-detail-table th {
+  position: sticky;
+  top: 0;
+  background: var(--ws-table-header-bg);
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ws-muted);
+  white-space: nowrap;
+  z-index: 1;
+  box-shadow: inset 0 -1px 0 var(--ws-table-header-border);
+}
+
+.ws-conn-table tbody tr:hover,
+.ws-meters-table tbody tr:hover,
+.ws-cmd-table tbody tr:hover,
+.ws-read-table tbody tr:hover,
+.ws-meter-detail-table tbody tr:hover {
+  background: var(--ws-table-row-hover);
+}
+
+.ws-conn-table-empty,
+.ws-meters-table-empty,
+.ws-cmd-table-empty,
+.ws-read-table-empty {
+  text-align: center;
+  color: var(--ws-muted);
+  padding: 1.35rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.ws-conn-table--compact th,
+.ws-conn-table--compact td,
+.ws-cmd-table--compact th,
+.ws-cmd-table--compact td,
+.ws-read-table--compact th,
+.ws-read-table--compact td {
+  padding: 0.32rem 0.48rem;
+  font-size: 0.74rem;
+}
+
 /* ——— Meters registry ——— */
 
 .ws-meters-page {
@@ -839,9 +942,9 @@ a:hover {
   align-items: flex-end;
   justify-content: space-between;
   gap: 0.65rem 1rem;
-  margin-bottom: 0.75rem;
-  padding: 0.65rem 0.75rem;
-  background: var(--ws-surface);
+  margin-bottom: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--ws-bg);
   border: 1px solid var(--ws-border);
   border-radius: 8px;
 }
@@ -895,49 +998,7 @@ a:hover {
 }
 
 .ws-meters-table-wrap {
-  border: 1px solid var(--ws-border);
-  border-radius: 8px;
-  background: var(--ws-surface);
-  overflow-x: auto;
-  margin-bottom: 0.75rem;
-}
-
-.ws-meters-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.78rem;
-}
-
-.ws-meters-table th,
-.ws-meters-table td {
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-  border-bottom: 1px solid var(--ws-border);
-  vertical-align: middle;
-}
-
-.ws-meters-table th {
-  position: sticky;
-  top: 0;
-  background: var(--ws-bg);
-  font-weight: 700;
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ws-muted);
-  white-space: nowrap;
-  z-index: 1;
-}
-
-.ws-meters-table tbody tr:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.ws-meters-table-empty {
-  text-align: center;
-  color: var(--ws-muted);
-  padding: 1.5rem 1rem;
-  font-size: 0.875rem;
+  margin-bottom: 0.65rem;
 }
 
 .ws-meters-mono {
@@ -979,7 +1040,7 @@ a:hover {
 }
 
 .ws-meters-serial-link--offline:hover {
-  color: #991b1b;
+  color: var(--ws-brand-critical-hover);
   border-bottom-color: currentColor;
 }
 
@@ -1010,6 +1071,11 @@ a:hover {
   gap: 0.75rem 1rem;
   font-size: 0.8125rem;
   color: var(--ws-muted);
+  padding: 0.55rem 0.75rem;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-table-outer-border);
+  border-radius: 10px;
+  box-shadow: var(--ws-table-card-shadow);
 }
 
 .ws-meters-page-size {
@@ -1412,8 +1478,8 @@ a.ws-row-actions-item {
 }
 
 .ws-meter-detail-tab.is-active {
-  color: var(--ws-text);
-  border-bottom-color: var(--ws-text);
+  color: var(--ws-brand-primary);
+  border-bottom-color: var(--ws-brand-primary);
 }
 
 .ws-meter-detail-panel {
@@ -1483,37 +1549,6 @@ a.ws-row-actions-item {
   font-size: 0.68rem;
   overflow: auto;
   max-height: 12rem;
-}
-
-.ws-meter-detail-table-wrap {
-  border: 1px solid var(--ws-border);
-  border-radius: 8px;
-  overflow-x: auto;
-  background: var(--ws-surface);
-}
-
-.ws-meter-detail-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.76rem;
-}
-
-.ws-meter-detail-table th,
-.ws-meter-detail-table td {
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-  border-bottom: 1px solid var(--ws-border);
-  vertical-align: top;
-}
-
-.ws-meter-detail-table th {
-  background: var(--ws-bg);
-  font-weight: 700;
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ws-muted);
-  white-space: nowrap;
 }
 
 .ws-meter-detail-table tbody tr:last-child td {
@@ -1647,12 +1682,6 @@ a.ws-row-actions-item {
   color: var(--ws-muted);
 }
 
-.ws-conn-table--compact th,
-.ws-conn-table--compact td {
-  padding: 0.3rem 0.45rem;
-  font-size: 0.74rem;
-}
-
 .ws-conn-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1715,51 +1744,6 @@ a.ws-row-actions-item {
 
 .ws-conn-attention-body {
   padding-top: 0.15rem;
-}
-
-.ws-conn-table-wrap {
-  border: 1px solid var(--ws-border);
-  border-radius: 8px;
-  background: var(--ws-surface);
-  overflow-x: auto;
-}
-
-.ws-conn-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.78rem;
-}
-
-.ws-conn-table th,
-.ws-conn-table td {
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-  border-bottom: 1px solid var(--ws-border);
-  vertical-align: middle;
-}
-
-.ws-conn-table th {
-  position: sticky;
-  top: 0;
-  background: var(--ws-bg);
-  font-weight: 700;
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ws-muted);
-  white-space: nowrap;
-  z-index: 1;
-}
-
-.ws-conn-table tbody tr:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.ws-conn-table-empty {
-  text-align: center;
-  color: var(--ws-muted);
-  padding: 1.25rem 1rem;
-  font-size: 0.8125rem;
 }
 
 .ws-conn-mono {
@@ -1871,7 +1855,7 @@ a.ws-row-actions-item {
   margin-top: 5vh;
   padding: 1.1rem 1.15rem 1rem;
   background: var(--ws-surface);
-  border: 1px solid var(--ws-border);
+  border: 1px solid var(--ws-table-outer-border);
   border-radius: 10px;
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
 }
@@ -2005,56 +1989,6 @@ a.ws-row-actions-item {
 .ws-cmd-refresh {
   flex-shrink: 0;
   align-self: flex-end;
-}
-
-.ws-cmd-table-wrap {
-  border: 1px solid var(--ws-border);
-  border-radius: 8px;
-  background: var(--ws-surface);
-  overflow-x: auto;
-}
-
-.ws-cmd-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.78rem;
-}
-
-.ws-cmd-table th,
-.ws-cmd-table td {
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-  border-bottom: 1px solid var(--ws-border);
-  vertical-align: middle;
-}
-
-.ws-cmd-table--compact th,
-.ws-cmd-table--compact td {
-  padding: 0.35rem 0.45rem;
-}
-
-.ws-cmd-table th {
-  position: sticky;
-  top: 0;
-  background: var(--ws-bg);
-  font-weight: 700;
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ws-muted);
-  white-space: nowrap;
-  z-index: 1;
-}
-
-.ws-cmd-table tbody tr:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.ws-cmd-table-empty {
-  text-align: center;
-  color: var(--ws-muted);
-  padding: 1.25rem 1rem;
-  font-size: 0.8125rem;
 }
 
 .ws-cmd-mono {
@@ -2245,56 +2179,6 @@ a.ws-row-actions-item {
   font: inherit;
   font-size: 0.8125rem;
   background: var(--ws-surface);
-}
-
-.ws-read-table-wrap {
-  border: 1px solid var(--ws-border);
-  border-radius: 8px;
-  background: var(--ws-surface);
-  overflow-x: auto;
-}
-
-.ws-read-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.78rem;
-}
-
-.ws-read-table th,
-.ws-read-table td {
-  padding: 0.4rem 0.5rem;
-  text-align: left;
-  border-bottom: 1px solid var(--ws-border);
-  vertical-align: middle;
-}
-
-.ws-read-table--compact th,
-.ws-read-table--compact td {
-  padding: 0.35rem 0.45rem;
-}
-
-.ws-read-table th {
-  position: sticky;
-  top: 0;
-  background: var(--ws-bg);
-  font-weight: 700;
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ws-muted);
-  white-space: nowrap;
-  z-index: 1;
-}
-
-.ws-read-table tbody tr:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.ws-read-table-empty {
-  text-align: center;
-  color: var(--ws-muted);
-  padding: 1.25rem 1rem;
-  font-size: 0.8125rem;
 }
 
 .ws-read-mono {
