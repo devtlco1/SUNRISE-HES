@@ -54,6 +54,27 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function formatCountLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function buildServicePosture(account: AccountListItem): string {
+  if (account.service_point_code && account.primary_meter_serial_number) {
+    return "Service and meter cues visible";
+  }
+  if (account.service_point_code) {
+    return "Service point visible";
+  }
+  if (account.primary_meter_serial_number) {
+    return "Meter cue visible";
+  }
+  return "Limited operational cues";
+}
+
+function buildBillingPosture(account: AccountListItem): string {
+  return account.billing_cycle ? `${formatStatusLabel(account.billing_cycle)} billing` : "No billing cycle";
+}
+
 export function AccountsModule({
   authorizedFetch,
 }: {
@@ -152,6 +173,58 @@ export function AccountsModule({
     () => accounts.find((account) => account.id === selectedAccountId) ?? accounts[0] ?? null,
     [accounts, selectedAccountId],
   );
+  const selectedAccountCards = useMemo(() => {
+    if (!selectedAccount) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Account identity",
+        value: selectedAccount.account_number,
+        note: `${formatStatusLabel(selectedAccount.status)} • ${selectedAccount.id}`,
+      },
+      {
+        label: "Subscriber context",
+        value: selectedAccount.subscriber_display_name,
+        note: `Subscriber ${selectedAccount.subscriber_id}`,
+      },
+      {
+        label: "Service context",
+        value: selectedAccount.service_point_code ?? "No linked service point",
+        note: buildServicePosture(selectedAccount),
+      },
+      {
+        label: "Billing posture",
+        value: buildBillingPosture(selectedAccount),
+        note: selectedAccount.billing_cycle
+          ? "Current list-side billing cycle is visible"
+          : "No list-side billing cycle is currently visible",
+      },
+      {
+        label: "Operational linkage",
+        value: `${selectedAccount.linked_meter_count} meter(s)`,
+        note: selectedAccount.primary_meter_serial_number
+          ? `Primary meter ${selectedAccount.primary_meter_serial_number}`
+          : "No primary meter cue visible",
+      },
+    ];
+  }, [selectedAccount]);
+  const selectedAccountNarrative = useMemo(() => {
+    if (!selectedAccount) {
+      return null;
+    }
+
+    return `${formatStatusLabel(selectedAccount.status)} account ${selectedAccount.account_number} is linked to ${selectedAccount.subscriber_display_name} with ${formatCountLabel(
+      selectedAccount.linked_meter_count,
+      "current meter cue",
+      "current meter cues",
+    )} visible before opening the detail route${
+      selectedAccount.service_point_code
+        ? `, and service point ${selectedAccount.service_point_code} remains in scope.`
+        : "."
+    }`;
+  }, [selectedAccount]);
 
   return (
     <section className="panel">
@@ -236,7 +309,10 @@ export function AccountsModule({
                   </div>
                   <div className="command-list-item-badges">
                     <span className="artifact-pill">
-                      {account.billing_cycle ?? "No billing cycle"}
+                      {buildBillingPosture(account)}
+                    </span>
+                    <span className={`status-pill ${buildStatusTone(buildServicePosture(account))}`}>
+                      {buildServicePosture(account)}
                     </span>
                     <span className="artifact-pill">{account.subscriber_display_name}</span>
                     <span className="artifact-pill">
@@ -257,6 +333,12 @@ export function AccountsModule({
                     </span>
                     <span>{account.linked_meter_count} linked meter(s)</span>
                   </div>
+                  <div className="command-list-item-meta">
+                    <span>Subscriber route ready</span>
+                    <span>
+                      {account.service_point_id ? "Service point route ready" : "No service point route"}
+                    </span>
+                  </div>
                   <div className="artifact-row">
                     <button
                       className="secondary-button"
@@ -268,6 +350,20 @@ export function AccountsModule({
                     <Link className="secondary-button" href={`/accounts/${account.id}`}>
                       Open account detail
                     </Link>
+                    <Link
+                      className="secondary-button"
+                      href={`/subscribers/${account.subscriber_id}`}
+                    >
+                      Open subscriber detail
+                    </Link>
+                    {account.service_point_id ? (
+                      <Link
+                        className="secondary-button"
+                        href={`/service-points/${account.service_point_id}`}
+                      >
+                        Open service point detail
+                      </Link>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -283,6 +379,11 @@ export function AccountsModule({
                   before opening the existing account detail route.
                 </p>
               </div>
+              {selectedAccount ? (
+                <span className={`status-pill ${buildStatusTone(selectedAccount.status)}`}>
+                  {formatStatusLabel(selectedAccount.status)}
+                </span>
+              ) : null}
             </div>
 
             {isLoadingAccounts ? (
@@ -318,29 +419,47 @@ export function AccountsModule({
                   </div>
                 </section>
 
+                {selectedAccountNarrative ? <p className="muted">{selectedAccountNarrative}</p> : null}
+
+                <div className="artifact-row">
+                  <span className="artifact-pill">{buildBillingPosture(selectedAccount)}</span>
+                  <span className="artifact-pill">{buildServicePosture(selectedAccount)}</span>
+                  <span className="artifact-pill">{selectedAccount.subscriber_display_name}</span>
+                  <span className="artifact-pill">
+                    {selectedAccount.primary_meter_serial_number
+                      ? `Primary meter ${selectedAccount.primary_meter_serial_number}`
+                      : "No primary meter"}
+                  </span>
+                </div>
+
                 <div className="detail-grid">
-                  <div className="stat-card">
-                    <span className="stat-label">Account ID</span>
-                    <strong>{selectedAccount.id}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Subscriber ID</span>
-                    <strong>{selectedAccount.subscriber_id}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Current primary meter</span>
-                    <strong>{selectedAccount.primary_meter_serial_number ?? "Not available"}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Linked meters</span>
-                    <strong>{selectedAccount.linked_meter_count}</strong>
-                  </div>
+                  {selectedAccountCards.map((card) => (
+                    <div key={card.label} className="stat-card">
+                      <span className="stat-label">{card.label}</span>
+                      <strong>{card.value}</strong>
+                      <p className="muted">{card.note}</p>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="artifact-row">
                   <Link className="secondary-button" href={`/accounts/${selectedAccount.id}`}>
                     Open account detail
                   </Link>
+                  <Link
+                    className="secondary-button"
+                    href={`/subscribers/${selectedAccount.subscriber_id}`}
+                  >
+                    Open subscriber detail
+                  </Link>
+                  {selectedAccount.service_point_id ? (
+                    <Link
+                      className="secondary-button"
+                      href={`/service-points/${selectedAccount.service_point_id}`}
+                    >
+                      Open service point detail
+                    </Link>
+                  ) : null}
                 </div>
               </div>
             ) : (

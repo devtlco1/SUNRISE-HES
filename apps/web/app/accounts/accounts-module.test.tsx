@@ -112,7 +112,9 @@ describe("AccountsModule", () => {
     ).toBeInTheDocument();
     expect(await screen.findAllByText("ACC-1001")).not.toHaveLength(0);
     expect(screen.getAllByText("ACC-1002")).not.toHaveLength(0);
+    expect(screen.getAllByText("Service and meter cues visible").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Open account detail" })).not.toHaveLength(0);
+    expect(screen.getAllByRole("link", { name: "Open subscriber detail" }).length).toBeGreaterThan(0);
   });
 
   it("keeps the bounded navigation path into account detail clear", async () => {
@@ -132,12 +134,25 @@ describe("AccountsModule", () => {
       .closest("section");
     expect(summaryPanel).not.toBeNull();
 
-    expect(within(summaryPanel as HTMLElement).getByText("ACC-1002")).toBeInTheDocument();
+    expect(within(summaryPanel as HTMLElement).getAllByText("ACC-1002").length).toBeGreaterThan(0);
     expect(
       within(summaryPanel as HTMLElement).getByRole("link", {
         name: "Open account detail",
       }),
     ).toHaveAttribute("href", "/accounts/account-2");
+    expect(
+      within(summaryPanel as HTMLElement).getAllByText("Limited operational cues").length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(summaryPanel as HTMLElement).getByRole("link", {
+        name: "Open subscriber detail",
+      }),
+    ).toHaveAttribute("href", "/subscribers/consumer-2");
+    expect(
+      within(summaryPanel as HTMLElement).queryByRole("link", {
+        name: "Open service point detail",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders an empty state when no accounts are available", async () => {
