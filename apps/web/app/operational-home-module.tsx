@@ -732,10 +732,10 @@ export function OperationalHomeModule({
   );
 
   return (
-    <section className="panel">
+    <section className="panel dashboard-home-panel">
       {pageError ? <p className="error-banner">{pageError}</p> : null}
 
-      <div className="detail-stack">
+      <div className="detail-stack dashboard-home-stack">
         <section className="subpanel">
           <div className="section-heading">
             <div>

@@ -96,116 +96,136 @@ function OperationalShellInner({
       ],
     },
   ];
+  const navigationRouteCount = navigationSections.reduce(
+    (total, section) => total + section.items.length,
+    0,
+  );
 
   return (
     <main className="dashboard-shell">
       <aside className="dashboard-sidebar">
-        <div className="dashboard-brand">
-          <Link className="dashboard-brand-link" href="/">
-            Sunrise HES
-          </Link>
-          <p className="muted">
-            NextAdmin-inspired operational shell layered over the existing platform
-            routes.
-          </p>
-        </div>
+        <div className="dashboard-sidebar-scroll">
+          <div className="dashboard-brand">
+            <Link className="dashboard-brand-link" href="/">
+              Sunrise HES
+            </Link>
+            <p className="muted">
+              Safe gradual admin-shell adoption layered over the existing platform
+              routes.
+            </p>
+            <div className="dashboard-brand-badges">
+              <span className="artifact-pill">Stable routes</span>
+              <span className="artifact-pill">
+                {navigationRouteCount} shared surfaces
+              </span>
+            </div>
+          </div>
 
-        <div className="dashboard-nav-groups">
-          {navigationSections.map((section) => (
-            <section key={section.label} className="dashboard-nav-group">
-              <p className="dashboard-nav-label">{section.label}</p>
-              <div className="dashboard-nav-links">
-                {section.items.map((item) => (
-                  <Link key={item.href} className="nav-link" href={item.href}>
-                    {item.label}
+          <div className="dashboard-nav-groups">
+            {navigationSections.map((section) => (
+              <section key={section.label} className="dashboard-nav-group">
+                <p className="dashboard-nav-label">{section.label}</p>
+                <div className="dashboard-nav-links">
+                  {section.items.map((item) => (
+                    <Link key={item.href} className="nav-link" href={item.href}>
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            ))}
+
+            {currentMeterId ? (
+              <section className="dashboard-nav-group">
+                <p className="dashboard-nav-label">Context</p>
+                <div className="dashboard-nav-links">
+                  <Link className="nav-link" href={`/meters/${currentMeterId}`}>
+                    Current meter
                   </Link>
-                ))}
-              </div>
-            </section>
-          ))}
-
-          {currentMeterId ? (
-            <section className="dashboard-nav-group">
-              <p className="dashboard-nav-label">Context</p>
-              <div className="dashboard-nav-links">
-                <Link className="nav-link" href={`/meters/${currentMeterId}`}>
-                  Current meter
-                </Link>
-              </div>
-            </section>
-          ) : null}
+                </div>
+              </section>
+            ) : null}
+          </div>
         </div>
       </aside>
 
       <div className="dashboard-main">
-        <header className="dashboard-topbar">
-          <div>
-            <p className="eyebrow">{eyebrow}</p>
-            <h1>{title}</h1>
-            <p className="lead">{description}</p>
-          </div>
-
-          <div className="dashboard-topbar-actions">
-            <div className="dashboard-search">
-              <span className="muted">Platform routes remain unchanged</span>
+        <div className="dashboard-main-frame">
+          <header className="dashboard-topbar">
+            <div className="dashboard-topbar-copy">
+              <div>
+                <p className="eyebrow">{eyebrow}</p>
+                <h1>{title}</h1>
+                <p className="lead">{description}</p>
+              </div>
+              <div className="dashboard-topbar-meta">
+                <span className="artifact-pill">Safe shell adoption</span>
+                <span className="artifact-pill">{eyebrow}</span>
+              </div>
             </div>
-            <div className="dashboard-user-card">
-              <strong>{currentUser?.full_name || currentUser?.username || "Guest"}</strong>
-              <span className="muted">
-                {currentUser
-                  ? currentUser.email
-                  : isCheckingSession
-                    ? "Session bootstrap in progress"
-                    : `API ${apiBaseUrl}`}
-              </span>
-              {currentUser ? (
-                <button className="secondary-button" onClick={logout} type="button">
-                  Sign out
-                </button>
-              ) : null}
+
+            <div className="dashboard-topbar-actions">
+              <div className="dashboard-search">
+                <span className="muted">Platform routes remain unchanged</span>
+              </div>
+              <div className="dashboard-user-card">
+                <strong>{currentUser?.full_name || currentUser?.username || "Guest"}</strong>
+                <span className="muted">
+                  {currentUser
+                    ? currentUser.email
+                    : isCheckingSession
+                      ? "Session bootstrap in progress"
+                      : `API ${apiBaseUrl}`}
+                </span>
+                {currentUser ? (
+                  <button className="secondary-button" onClick={logout} type="button">
+                    Sign out
+                  </button>
+                ) : null}
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
 
-        <section className="dashboard-content">
-          {isCheckingSession ? (
-            <section className="panel">
-              <h2>Checking session</h2>
-              <p className="muted">
-                Verifying the current operational session before loading the page.
-              </p>
-            </section>
-          ) : null}
+          <section className="dashboard-content">
+            {isCheckingSession ? (
+              <section className="panel">
+                <h2>Checking session</h2>
+                <p className="muted">
+                  Verifying the current operational session before loading the page.
+                </p>
+              </section>
+            ) : null}
 
-          {!isCheckingSession && !currentUser ? (
-            <section className="panel auth-block-panel">
-              <div className="section-heading">
-                <div>
-                  <h2>Session required</h2>
-                  <p className="muted">
-                    Sign in through the bounded auth entry flow before opening the
-                    operational pages.
-                  </p>
+            {!isCheckingSession && !currentUser ? (
+              <section className="panel auth-block-panel">
+                <div className="section-heading">
+                  <div>
+                    <h2>Session required</h2>
+                    <p className="muted">
+                      Sign in through the bounded auth entry flow before opening the
+                      operational pages.
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="artifact-row">
-                <Link className="primary-button" href="/login">
-                  Open login
-                </Link>
-                <Link className="secondary-button" href="/forgot-password">
-                  Forgot password
-                </Link>
-              </div>
+                <div className="artifact-row">
+                  <Link className="primary-button" href="/login">
+                    Open login
+                  </Link>
+                  <Link className="secondary-button" href="/forgot-password">
+                    Forgot password
+                  </Link>
+                </div>
 
-              {sessionError ? <p className="error-banner">{sessionError}</p> : null}
-            </section>
-          ) : null}
+                {sessionError ? <p className="error-banner">{sessionError}</p> : null}
+              </section>
+            ) : null}
 
-          {!isCheckingSession && currentUser ? (
-            <>{children({ authorizedFetch, apiBaseUrl, currentUser })}</>
-          ) : null}
-        </section>
+            {!isCheckingSession && currentUser ? (
+              <>{children({ authorizedFetch, apiBaseUrl, currentUser })}</>
+            ) : null}
+          </section>
+        </div>
       </div>
     </main>
   );
