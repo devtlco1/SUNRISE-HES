@@ -115,9 +115,6 @@ describe("TransformersSubstationsModule", () => {
     renderTransformersSubstationsModuleInShell();
 
     expect(
-      await screen.findByRole("link", { name: "Transformers / Substations" }),
-    ).toBeInTheDocument();
-    expect(
       await screen.findByRole("heading", { name: "Infrastructure operations center" }),
     ).toBeInTheDocument();
     expect(await screen.findAllByText(/TX-1001/i)).not.toHaveLength(0);

@@ -24,11 +24,6 @@ export function AuthEntryShell({
             <p className="eyebrow">{eyebrow}</p>
             <h1>{title}</h1>
             <p className="lead">{description}</p>
-            <div className="auth-page-badges">
-              <span className="artifact-pill">Operationally focused</span>
-              <span className="artifact-pill">Template-derived shell only</span>
-              <span className="artifact-pill">Existing routes preserved</span>
-            </div>
           </div>
 
           <div className="auth-page-card">
@@ -36,10 +31,7 @@ export function AuthEntryShell({
               <Link className="dashboard-brand-link" href="/">
                 Sunrise HES
               </Link>
-              <p className="muted">
-                Product entry experience built over the current bounded operational
-                platform.
-              </p>
+              <p className="muted">Sign in to access the operational workspace.</p>
             </div>
             {children}
           </div>

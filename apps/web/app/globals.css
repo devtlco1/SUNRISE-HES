@@ -2060,66 +2060,43 @@ a {
   font-size: 0.95rem;
 }
 
-.hes-op-dash-root {
+.hes-blank-desk-wrap {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  align-items: flex-start;
 }
 
-.hes-op-dash-shortcuts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.5rem;
-  padding: 0.65rem 0.85rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+.hes-blank-desk {
+  width: min(42rem, 100%);
+  border-radius: 16px;
+  padding: 1.35rem 1.5rem;
+  border: 1px solid #e5e7eb;
   background: #ffffff;
-  font-size: 0.84rem;
-  font-weight: 600;
-  color: #475569;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
 
-.hes-op-dash-shortcuts a {
-  color: #1d4ed8;
-  text-decoration: none;
+.hes-blank-desk h2 {
+  margin: 0 0 0.75rem;
+  color: #0f172a;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.hes-op-dash-shortcuts a:hover {
-  text-decoration: underline;
+.hes-blank-desk p {
+  margin: 0 0 0.85rem;
+  color: #334155;
+  font-size: 0.92rem;
+  line-height: 1.55;
 }
 
-.hes-op-dash-kpis {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+.hes-blank-desk p.muted {
+  color: #64748b;
+  font-size: 0.88rem;
 }
 
-.hes-op-dash-triple {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.hes-op-dash-main-split {
-  display: grid;
-  gap: 1.25rem;
-  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.85fr);
-}
-
-.hes-op-dash-primary,
-.hes-op-dash-secondary {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.hes-op-dash-tight-list.hes-queue-list {
-  padding-top: 0.5rem;
-}
-
-.hes-data-table.hes-op-dash-cmd-table {
-  min-width: 720px;
+.hes-blank-desk-actions {
+  margin-top: 0.25rem;
 }
 
 .hes-queue-list {
@@ -2339,16 +2316,6 @@ a {
   font-family: "SFMono-Regular", ui-monospace, monospace;
   color: #1d4ed8;
   font-size: 0.82rem;
-}
-
-@media (max-width: 1280px) {
-  .hes-op-dash-triple {
-    grid-template-columns: 1fr;
-  }
-
-  .hes-op-dash-main-split {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 900px) {

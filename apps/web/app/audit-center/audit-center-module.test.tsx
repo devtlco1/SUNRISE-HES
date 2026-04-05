@@ -160,7 +160,6 @@ describe("AuditCenterModule", () => {
 
     renderAuditCenterModuleInShell();
 
-    expect(await screen.findByRole("link", { name: "Audit Center" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Audit Center MVP" })).toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "Audit traceability center" }),

@@ -578,12 +578,17 @@ describe("CommandsModule", () => {
 
     renderCommandsModuleInShell();
 
-    expect(await screen.findByRole("link", { name: "Commands" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Commands command center" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Commands command center" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Bulk command wizard")).toBeInTheDocument();
-    expect(screen.getByText("Command templates")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Approvals queue" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Recent approval decisions" })).toBeInTheDocument();
+    expect(await screen.findByText("Command templates")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Approvals queue" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Recent approval decisions" }),
+    ).toBeInTheDocument();
     expect(await screen.findByText("Approved by the duty operator.")).toBeInTheDocument();
     expect(
       screen.getByText("Rejected while awaiting meter-side confirmation."),

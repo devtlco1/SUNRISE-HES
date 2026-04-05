@@ -164,7 +164,6 @@ describe("ConnectivityModule", () => {
 
     renderConnectivityModuleInShell();
 
-    expect(await screen.findByRole("link", { name: "Connectivity" })).toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "Connectivity operations center" }),
     ).toBeInTheDocument();

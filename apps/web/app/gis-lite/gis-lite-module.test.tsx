@@ -130,7 +130,6 @@ describe("GisLiteModule", () => {
 
     renderGisLiteModuleInShell();
 
-    expect(await screen.findByRole("link", { name: "GIS Lite" })).toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "GIS operations center" }),
     ).toBeInTheDocument();

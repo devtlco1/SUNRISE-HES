@@ -109,9 +109,6 @@ describe("SubscribersModule", () => {
     renderSubscribersModuleInShell();
 
     expect(
-      await screen.findByRole("link", { name: "Subscribers" }),
-    ).toBeInTheDocument();
-    expect(
       await screen.findByRole("heading", { name: "Subscriber operations center" }),
     ).toBeInTheDocument();
     expect(await screen.findByText("2 subscribers in scope")).toBeInTheDocument();

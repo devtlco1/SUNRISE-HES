@@ -6,11 +6,11 @@ import { OperationalShell } from "./operational-shell";
 export function DashboardPageClient() {
   return (
     <OperationalShell
-      eyebrow="Operations control"
-      title="AMI command desk"
-      description="Fleet posture, remote actions, and live exceptions from the current meter sample."
+      eyebrow="Sunrise HES"
+      title="Dashboard"
+      description="Blank operator canvas during frontend rebuild."
     >
-      {({ authorizedFetch }) => <DashboardModule authorizedFetch={authorizedFetch} />}
+      {() => <DashboardModule />}
     </OperationalShell>
   );
 }

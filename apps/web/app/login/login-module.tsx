@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 
 import { useSession } from "../session-provider";
@@ -46,10 +45,8 @@ export function LoginModule({
     >
       <div className="section-heading">
         <div>
-          <h2>Login</h2>
-          <p className="muted">
-            Use the existing backend auth flow to enter the operational platform.
-          </p>
+          <h2>Credentials</h2>
+          <p className="muted">Backend token session via existing auth API.</p>
         </div>
       </div>
 
@@ -103,11 +100,6 @@ export function LoginModule({
       <button className="primary-button" disabled={isSubmitting} type="submit">
         {isSubmitting ? "Signing in..." : "Sign in"}
       </button>
-
-      <div className="auth-form-footer">
-        <span className="muted">Need password help?</span>
-        <Link href="/forgot-password">Forgot password</Link>
-      </div>
 
       {formSuccess ? <p className="success-banner">{formSuccess}</p> : null}
       {formError ? <p className="error-banner">{formError}</p> : null}

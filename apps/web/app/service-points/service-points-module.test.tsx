@@ -113,9 +113,6 @@ describe("ServicePointsModule", () => {
     renderServicePointsModuleInShell();
 
     expect(
-      await screen.findByRole("link", { name: "Service Points" }),
-    ).toBeInTheDocument();
-    expect(
       await screen.findByRole("heading", { name: "Service point operations center" }),
     ).toBeInTheDocument();
     expect(await screen.findByText("2 service points in scope")).toBeInTheDocument();

@@ -106,7 +106,6 @@ describe("AccountsModule", () => {
 
     renderAccountsModuleInShell();
 
-    expect(await screen.findByRole("link", { name: "Accounts" })).toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "Account operations center" }),
     ).toBeInTheDocument();

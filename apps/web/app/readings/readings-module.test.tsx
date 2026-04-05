@@ -290,7 +290,6 @@ describe("ReadingsModule", () => {
 
     renderReadingsModuleInShell();
 
-    expect(await screen.findByRole("link", { name: "Readings" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Reports Workspace" })).toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "Reports workspace" }),

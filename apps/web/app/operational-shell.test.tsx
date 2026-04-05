@@ -34,7 +34,7 @@ describe("OperationalShell", () => {
     expect(await screen.findByRole("heading", { name: "Session required" })).toBeInTheDocument();
     expect(screen.queryByText("Protected child")).not.toBeInTheDocument();
     expect(screen.getAllByText("Sunrise HES").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "Open login" })).toHaveAttribute("href", "/login");
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -104,16 +104,11 @@ describe("OperationalShell", () => {
     expect(await screen.findByText("Protected child")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Meters" })).toHaveAttribute("href", "/meters");
-    expect(screen.getByRole("link", { name: "Connectivity" })).toHaveAttribute(
-      "href",
-      "/connectivity",
-    );
-    expect(screen.getByRole("link", { name: "Commands" })).toHaveAttribute("href", "/commands");
     expect(screen.getByRole("link", { name: "Current meter" })).toHaveAttribute(
       "href",
       "/meters/meter-1",
     );
-    expect(screen.getByText("English workspace")).toBeInTheDocument();
+    expect(screen.getByText("Signed in")).toBeInTheDocument();
   });
 
   it("clears the stored session snapshot on logout", async () => {

@@ -287,9 +287,6 @@ describe("JobsEventsAlertsModule", () => {
     renderJobsEventsAlertsModuleInShell();
 
     expect(
-      await screen.findByRole("link", { name: "Jobs / Events / Alerts" }),
-    ).toBeInTheDocument();
-    expect(
       await screen.findByRole("heading", { name: "Operations monitoring center" }),
     ).toBeInTheDocument();
 

@@ -11,15 +11,7 @@ import {
   useSession,
 } from "./session-provider";
 export type { AuthorizedFetch } from "./session-provider";
-import {
-  FourCircleIcon,
-  HomeIcon,
-  MenuIcon,
-  PieChartIcon,
-  SearchIcon,
-  TableIcon,
-  UserIcon,
-} from "./nextadmin-icons";
+import { HomeIcon, MenuIcon, TableIcon } from "./nextadmin-icons";
 
 type OperationalShellRenderProps = {
   authorizedFetch: AuthorizedFetch;
@@ -128,35 +120,10 @@ function OperationalShellInner({
 
   const navigationSections: NavigationSection[] = [
     {
-      label: "PRIMARY",
+      label: "NAVIGATION",
       items: [
-        { href: "/", label: "Dashboard", icon: HomeIcon, badge: "Live" },
+        { href: "/", label: "Dashboard", icon: HomeIcon },
         { href: "/meters", label: "Meters", icon: TableIcon },
-      ],
-    },
-    {
-      label: "OPERATIONS",
-      items: [
-        { href: "/connectivity", label: "Connectivity", icon: PieChartIcon },
-        { href: "/commands", label: "Commands", icon: FourCircleIcon },
-        { href: "/readings", label: "Readings", icon: PieChartIcon },
-      ],
-    },
-    {
-      label: "ADDITIONAL MODULES",
-      muted: true,
-      items: [
-        { href: "/jobs-events-alerts", label: "Jobs / Events / Alerts", icon: FourCircleIcon },
-        { href: "/subscribers", label: "Subscribers", icon: UserIcon },
-        { href: "/accounts", label: "Accounts", icon: TableIcon },
-        { href: "/service-points", label: "Service Points", icon: FourCircleIcon },
-        { href: "/gis-lite", label: "GIS Lite", icon: PieChartIcon },
-        {
-          href: "/transformers-substations",
-          label: "Transformers / Substations",
-          icon: FourCircleIcon,
-        },
-        { href: "/audit-center", label: "Audit Center", icon: TableIcon },
       ],
     },
   ];
@@ -168,11 +135,7 @@ function OperationalShellInner({
       ? "Session bootstrap in progress"
       : `API ${apiBaseUrl}`;
   const shellPills = useMemo(
-    () => [
-      currentUser ? "Authenticated" : "Session required",
-      "English workspace",
-      "LTR",
-    ],
+    () => [currentUser ? "Signed in" : "Sign in required"],
     [currentUser],
   );
 
@@ -216,7 +179,7 @@ function OperationalShellInner({
               <div className="na-sidebar-brand-mark">SH</div>
               <div>
                 <strong>Sunrise HES</strong>
-                <span>AMI operations platform</span>
+                <span>Operational workspace</span>
               </div>
             </Link>
           </div>
@@ -314,11 +277,6 @@ function OperationalShellInner({
           </div>
 
           <div className="na-topbar-right">
-            <label className="na-search" aria-label="Search">
-              <SearchIcon aria-hidden="true" />
-              <input placeholder="Search meter, account, command, or event" readOnly type="search" />
-            </label>
-
             <div className="na-topbar-pills">
               {shellPills.map((pill) => (
                 <span key={pill} className="na-status-pill">
@@ -366,10 +324,7 @@ function OperationalShellInner({
 
               <div className="artifact-row">
                 <Link className="primary-button" href="/login">
-                  Open login
-                </Link>
-                <Link className="secondary-button" href="/forgot-password">
-                  Forgot password
+                  Sign in
                 </Link>
               </div>
 

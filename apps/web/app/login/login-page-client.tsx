@@ -10,9 +10,9 @@ export function LoginPageClient() {
 
   return (
     <AuthEntryShell
-      eyebrow="Auth Entry MVP"
-      title="Welcome back"
-      description="Sign in to access the existing operational routes through the adopted product shell."
+      eyebrow="Access"
+      title="Sign in"
+      description="Use your API base URL and account credentials."
     >
       <LoginModule onLoginSuccess={() => router.push("/")} />
     </AuthEntryShell>
