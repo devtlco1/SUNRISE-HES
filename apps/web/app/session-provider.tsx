@@ -11,6 +11,12 @@ import {
   type PropsWithChildren,
 } from "react";
 
+import {
+  getInitialApiBaseUrlForRender,
+  normalizeApiBaseUrl,
+  resolveApiBaseUrl,
+} from "./api-base-url";
+
 export type AuthorizedFetch = <T>(
   path: string,
   init?: RequestInit,
@@ -69,8 +75,6 @@ type SessionContextValue = {
 const ACCESS_TOKEN_STORAGE_KEY = "sunrise.web.accessToken";
 const API_BASE_URL_STORAGE_KEY = "sunrise.web.apiBaseUrl";
 const CURRENT_USER_STORAGE_KEY = "sunrise.web.currentUser";
-const DEFAULT_API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const INITIAL_API_CONNECTIVITY: ApiConnectivity = {
   status: "unknown",
   message: null,
@@ -78,12 +82,6 @@ const INITIAL_API_CONNECTIVITY: ApiConnectivity = {
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
-
-function normalizeApiBaseUrl(value: string): string {
-  const trimmed = value.trim();
-  const fallback = trimmed || DEFAULT_API_BASE_URL;
-  return fallback.replace(/\/+$/, "");
-}
 
 function buildApiUrl(apiBaseUrl: string, path: string): string {
   return `${normalizeApiBaseUrl(apiBaseUrl)}${path}`;
@@ -126,9 +124,7 @@ function readStoredCurrentUser(): CurrentUser | null {
 }
 
 export function SessionProvider({ children }: PropsWithChildren) {
-  const [apiBaseUrlState, setApiBaseUrlState] = useState(
-    normalizeApiBaseUrl(DEFAULT_API_BASE_URL),
-  );
+  const [apiBaseUrlState, setApiBaseUrlState] = useState(getInitialApiBaseUrlForRender());
   const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
@@ -268,8 +264,9 @@ export function SessionProvider({ children }: PropsWithChildren) {
     }
     bootstrapStartedRef.current = true;
 
-    const resolvedApiBaseUrl = normalizeApiBaseUrl(
-      window.localStorage.getItem(API_BASE_URL_STORAGE_KEY) ?? DEFAULT_API_BASE_URL,
+    const resolvedApiBaseUrl = resolveApiBaseUrl(
+      window.localStorage.getItem(API_BASE_URL_STORAGE_KEY),
+      window.location,
     );
     const storedAccessToken =
       window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "";

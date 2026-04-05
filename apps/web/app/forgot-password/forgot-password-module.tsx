@@ -50,7 +50,7 @@ export function ForgotPasswordModule() {
         <input
           value={apiBaseUrl}
           onChange={(event) => setApiBaseUrl(event.target.value)}
-          placeholder="http://localhost:8000"
+          placeholder="http://api.example.com"
         />
       </label>
 

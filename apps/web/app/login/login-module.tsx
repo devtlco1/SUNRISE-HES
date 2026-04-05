@@ -58,12 +58,12 @@ export function LoginModule({
         <input
           value={apiBaseUrl}
           onChange={(event) => setApiBaseUrl(event.target.value)}
-          placeholder="http://localhost:8000"
+          placeholder="http://api.example.com"
         />
       </label>
 
       <div className="auth-connectivity-hint">
-        <span className="stat-label">Current local-dev API target</span>
+        <span className="stat-label">Current API target</span>
         <strong>{apiBaseUrl}</strong>
         {apiConnectivity.status === "unknown" ? (
           <p className="muted">
@@ -77,7 +77,7 @@ export function LoginModule({
           <p className="error-banner">{apiConnectivity.message}</p>
         ) : null}
         {apiConnectivity.status === "reachable" ? (
-          <p className="muted">API connectivity confirmed for local development.</p>
+          <p className="muted">API connectivity confirmed for the current target.</p>
         ) : null}
       </div>
 

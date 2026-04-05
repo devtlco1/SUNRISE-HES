@@ -60,6 +60,7 @@ describe("LoginModule", () => {
   });
 
   afterEach(() => {
+    delete process.env.NEXT_PUBLIC_API_BASE_URL;
     vi.unstubAllGlobals();
     window.localStorage.clear();
   });
@@ -137,6 +138,50 @@ describe("LoginModule", () => {
     expect(
       await screen.findByText("Invalid username/email or password."),
     ).toBeInTheDocument();
+  });
+
+  it("submits login against the configured production API base instead of stale localhost storage", async () => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = "http://187.124.187.156:8000";
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === "http://187.124.187.156:8000/api/v1/auth/login") {
+        return jsonResponse({
+          access_token: "token-1",
+          token_type: "bearer",
+          expires_in: 1800,
+          user: {
+            id: "user-1",
+            username: "ops.user",
+            email: "ops@example.com",
+            full_name: "Ops User",
+            status: "active",
+            is_superuser: true,
+          },
+        });
+      }
+      throw new Error(`Unhandled request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderLoginModule();
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Username or email"), "ops.user");
+    await user.type(screen.getByLabelText("Password"), "ChangeThisPassword123!");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText("Signed in as ops.user.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://187.124.187.156:8000/api/v1/auth/login",
+      expect.objectContaining({
+        body: JSON.stringify({
+          username_or_email: "ops.user",
+          password: "ChangeThisPassword123!",
+        }),
+        method: "POST",
+      }),
+    );
   });
 
   it("shows a clear bounded error when the backend API is unreachable", async () => {
