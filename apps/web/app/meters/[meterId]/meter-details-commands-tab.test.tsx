@@ -1509,14 +1509,44 @@ describe("MeterDetailsCommandsTab", () => {
       await screen.findByRole("heading", { name: "Readings context" })
     ).closest("section");
     expect(readingsPanel).not.toBeNull();
-    expect(within(readingsPanel as HTMLElement).getByText("1552.41 kWh")).toBeInTheDocument();
     expect(
-      within(readingsPanel as HTMLElement).getByText(/Fresh within|Recent within|Stale for/i),
+      within(readingsPanel as HTMLElement).getByText("Latest raw reading freshness"),
     ).toBeInTheDocument();
     expect(
-      within(readingsPanel as HTMLElement).getByText(/Total Import Kwh: 1552.41/i),
+      within(readingsPanel as HTMLElement).getAllByText(/Captured /i).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(readingsPanel as HTMLElement).getByText("Interval horizon freshness"),
     ).toBeInTheDocument();
-    expect(within(readingsPanel as HTMLElement).getByText("11.50 kWh")).toBeInTheDocument();
+    expect(
+      within(readingsPanel as HTMLElement).getByText("Interval lag posture"),
+    ).toBeInTheDocument();
+    expect(
+      within(readingsPanel as HTMLElement).getByText("Billing snapshot context"),
+    ).toBeInTheDocument();
+    expect(
+      within(readingsPanel as HTMLElement).getByText("Bounded anomaly cues"),
+    ).toBeInTheDocument();
+    expect(
+      within(readingsPanel as HTMLElement).getByText("Stale Interval Horizon"),
+    ).toBeInTheDocument();
+    expect(
+      within(readingsPanel as HTMLElement).getByRole("link", {
+        name: "Review interval follow-through",
+      }),
+    ).toHaveAttribute("href", "#meter-billing-interval-follow-through-section");
+    expect(
+      within(readingsPanel as HTMLElement).getAllByRole("link", {
+        name: "Open readings workspace",
+      })[0],
+    ).toHaveAttribute("href", "/readings?meterId=meter-1");
+    expect(within(readingsPanel as HTMLElement).getByText(/1552\.41 kWh/i)).toBeInTheDocument();
+    expect(
+      within(readingsPanel as HTMLElement).getAllByText(/Total Import Kwh: 1552.41/i).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(readingsPanel as HTMLElement).getByText(/import-wh .*11\.50 kWh/i),
+    ).toBeInTheDocument();
     expect(
       within(readingsPanel as HTMLElement).getByText("Raw readings / billing snapshots / interval rows"),
     ).toBeInTheDocument();
@@ -1526,18 +1556,22 @@ describe("MeterDetailsCommandsTab", () => {
       .closest("section");
     expect(rawReadingsPanel).not.toBeNull();
     expect(within(rawReadingsPanel as HTMLElement).getByText("1.0.1.8.0.255")).toBeInTheDocument();
-    expect(within(rawReadingsPanel as HTMLElement).getByText(/Quality Validated/i)).toBeInTheDocument();
+    expect(
+      within(rawReadingsPanel as HTMLElement).getAllByText(/Quality Validated/i).length,
+    ).toBeGreaterThan(0);
 
     const followThroughPanel = screen
       .getByRole("heading", { name: "Billing and interval follow-through" })
       .closest("section");
     expect(followThroughPanel).not.toBeNull();
     expect(
-      within(followThroughPanel as HTMLElement).getByText(/Total Import Kwh: 1552.41/i),
-    ).toBeInTheDocument();
-    expect(within(followThroughPanel as HTMLElement).getByText(/import-wh/i)).toBeInTheDocument();
+      within(followThroughPanel as HTMLElement).getAllByText(/Total Import Kwh: 1552.41/i).length,
+    ).toBeGreaterThan(0);
     expect(
-      screen.getByRole("link", { name: "Open readings workspace" }),
+      within(followThroughPanel as HTMLElement).getByText(/import-wh .*1\.0\.1\.8\.0\.255/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("link", { name: "Open readings workspace" })[0],
     ).toHaveAttribute("href", "/readings?meterId=meter-1");
   });
 
@@ -1556,6 +1590,58 @@ describe("MeterDetailsCommandsTab", () => {
     expect(
       screen.getByRole("heading", { name: "Billing and interval follow-through" }),
     ).toBeInTheDocument();
+  });
+
+  it("derives warning and critical visibility cues inside the meter-scoped readings tab", async () => {
+    const { fetchMock } = createMockApi({
+      registerSnapshots: [],
+      loadProfileIntervals: [
+        {
+          id: "interval-visibility-1",
+          meter_id: "meter-1",
+          channel_id: "channel-1",
+          interval_start: "2026-03-30T10:00:00.000Z",
+          interval_end: "2026-03-30T10:15:00.000Z",
+          value_numeric: null,
+          quality: "estimated",
+          source_batch_id: "batch-3",
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderMeterTabInShell();
+    await openMeterWorkspaceTab(user, "Readings");
+
+    const readingsPanel = (
+      await screen.findByRole("heading", { name: "Readings context" })
+    ).closest("section");
+    expect(readingsPanel).not.toBeNull();
+
+    await waitFor(() => {
+      expect(
+        within(readingsPanel as HTMLElement).getByText("Critical validation cues"),
+      ).toBeInTheDocument();
+      expect(
+        within(readingsPanel as HTMLElement).getByText("Warning validation cues"),
+      ).toBeInTheDocument();
+      expect(
+        within(readingsPanel as HTMLElement).getByText("Billing Context Missing"),
+      ).toBeInTheDocument();
+      expect(
+        within(readingsPanel as HTMLElement).getByText("Interval Value Missing"),
+      ).toBeInTheDocument();
+      expect(
+        within(readingsPanel as HTMLElement).getByText("Interval Quality Flagged"),
+      ).toBeInTheDocument();
+      expect(
+        within(readingsPanel as HTMLElement).getAllByText("Warning").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(readingsPanel as HTMLElement).getAllByText("Critical").length,
+      ).toBeGreaterThan(0);
+    });
   });
 
   it("renders the GIS tab with meter-scoped mapping and network context", async () => {
