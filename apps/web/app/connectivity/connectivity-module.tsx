@@ -262,6 +262,44 @@ function buildConnectivityIncident(
   return null;
 }
 
+function buildIncidentPostureLabel(
+  row: ConnectivityOverviewRow,
+  freshnessContext: FreshnessContext,
+  incident: ConnectivityIncident,
+): string {
+  if (incident.state === "offline") {
+    return row.primaryEndpoint
+      ? "Meter is offline even though an endpoint assignment is present."
+      : "Meter is offline and has no active endpoint assignment in view.";
+  }
+  if (incident.state === "stale") {
+    return row.primaryEndpoint
+      ? "Signal freshness drift is visible on the currently assigned endpoint."
+      : "Signal freshness drift is visible without endpoint context.";
+  }
+  if (row.latestSession) {
+    return `Latest ${formatStatusLabel(row.latestSession.session_purpose).toLowerCase()} session ${formatStatusLabel(row.latestSession.status).toLowerCase()} and needs review.`;
+  }
+  return `${freshnessContext.label} and no recent session detail is available in the bounded view.`;
+}
+
+function buildDisconnectCue(session: ConnectivitySession | null): string {
+  if (!session) {
+    return "No recent disconnect cue in view";
+  }
+  if (
+    session.status === "failed" ||
+    session.status === "timed_out" ||
+    session.status === "cancelled"
+  ) {
+    return `Latest disconnect cue ${formatStatusLabel(session.status)}`;
+  }
+  if (session.status === "started") {
+    return "Session remains active";
+  }
+  return "No recent disconnect cue in view";
+}
+
 export function ConnectivityModule({
   authorizedFetch,
 }: {
@@ -409,6 +447,31 @@ export function ConnectivityModule({
         incidentFilter === "all" ? true : item.incident.state === incidentFilter,
       ),
     [incidentFilter, incidentRows],
+  );
+  const incidentStats = useMemo(() => {
+    const rowsInScope = filteredIncidentRows;
+    return {
+      visible: rowsInScope.length,
+      offline: rowsInScope.filter((item) => item.incident.state === "offline").length,
+      stale: rowsInScope.filter((item) => item.incident.state === "stale").length,
+      degraded: rowsInScope.filter((item) => item.incident.state === "degraded").length,
+      withoutEndpoint: rowsInScope.filter((item) => item.row.primaryEndpoint === null).length,
+      disconnectCues: rowsInScope.filter((item) => {
+        const latestStatus = item.row.latestSession?.status;
+        return (
+          latestStatus === "failed" ||
+          latestStatus === "timed_out" ||
+          latestStatus === "cancelled"
+        );
+      }).length,
+    };
+  }, [filteredIncidentRows]);
+  const selectedIncidentRow = useMemo(
+    () =>
+      filteredIncidentRows.find((item) => item.row.meter.id === selectedMeterId) ??
+      filteredIncidentRows[0] ??
+      null,
+    [filteredIncidentRows, selectedMeterId],
   );
 
   const selectedRow = useMemo(
@@ -691,6 +754,136 @@ export function ConnectivityModule({
           </div>
 
           <p className="muted">{incidentFilterSummary}</p>
+
+          {!isLoadingOverview ? (
+            <div className="detail-stack">
+              <div className="connectivity-overview-grid">
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Visible incidents</span>
+                  <strong>{String(incidentStats.visible)}</strong>
+                  <p className="muted">Current offline or degraded contexts in the selected filter</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Offline posture</span>
+                  <strong>{String(incidentStats.offline)}</strong>
+                  <p className="muted">Meters with no recent signal recorded</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Stale freshness</span>
+                  <strong>{String(incidentStats.stale)}</strong>
+                  <p className="muted">Meters outside the bounded freshness window</p>
+                </div>
+                <div className="stat-card connectivity-overview-card">
+                  <span className="stat-label">Disconnect cues</span>
+                  <strong>{String(incidentStats.disconnectCues)}</strong>
+                  <p className="muted">Latest failed, timed out, or cancelled sessions in view</p>
+                </div>
+              </div>
+
+              <div className="artifact-row">
+                <span className="artifact-pill">
+                  No repeated disconnect history is modeled here; the latest failed session is the
+                  current bounded disconnect cue.
+                </span>
+                <span className="artifact-pill">
+                  {incidentStats.withoutEndpoint} incident contexts currently have no active
+                  endpoint assignment.
+                </span>
+              </div>
+
+              {selectedIncidentRow ? (
+                <section className="connectivity-detail-hero">
+                  <div className="connectivity-detail-title-row">
+                    <div>
+                      <p className="eyebrow">Incident Troubleshooting Workspace</p>
+                      <h3>{selectedIncidentRow.row.meter.serial_number}</h3>
+                      <p className="muted">
+                        {buildIncidentPostureLabel(
+                          selectedIncidentRow.row,
+                          selectedIncidentRow.freshnessContext,
+                          selectedIncidentRow.incident,
+                        )}
+                      </p>
+                    </div>
+                    <span
+                      className={`status-pill ${buildStatusTone(selectedIncidentRow.incident.state)}`}
+                    >
+                      {formatStatusLabel(selectedIncidentRow.incident.state)}
+                    </span>
+                  </div>
+
+                  <div className="connectivity-row-badges">
+                    <span
+                      className={`status-pill ${buildSeverityTone(
+                        selectedIncidentRow.incident.severity,
+                      )}`}
+                    >
+                      Severity {formatStatusLabel(selectedIncidentRow.incident.severity)}
+                    </span>
+                    <span className={`status-pill ${selectedIncidentRow.freshnessContext.tone}`}>
+                      {selectedIncidentRow.freshnessContext.label}
+                    </span>
+                    <span className="artifact-pill">
+                      {buildDisconnectCue(selectedIncidentRow.row.latestSession)}
+                    </span>
+                    <span className="artifact-pill">
+                      {selectedIncidentRow.row.primaryEndpoint?.endpoint_display_name ??
+                        selectedIncidentRow.row.primaryEndpoint?.endpoint_code ??
+                        "No active endpoint"}
+                    </span>
+                  </div>
+
+                  <div className="detail-grid">
+                    <div className="stat-card">
+                      <span className="stat-label">Incident summary</span>
+                      <strong>{selectedIncidentRow.incident.summary}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Last seen</span>
+                      <strong>{formatDateTime(selectedIncidentRow.row.meter.last_seen_at)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Latest session</span>
+                      <strong>{formatLatestSessionSummary(selectedIncidentRow.row.latestSession)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Session started</span>
+                      <strong>
+                        {formatDateTime(selectedIncidentRow.row.latestSession?.started_at ?? null)}
+                      </strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Protocol summary</span>
+                      <strong>
+                        {selectedIncidentRow.row.meter.communication_profile_code ??
+                          selectedIncidentRow.row.meter.meter_profile_code ??
+                          "No communication summary"}
+                      </strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="stat-label">Utility meter number</span>
+                      <strong>
+                        {selectedIncidentRow.row.meter.utility_meter_number ?? "Not available"}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="artifact-row">
+                    <button
+                      className="secondary-button"
+                      onClick={() => setSelectedMeterId(selectedIncidentRow.row.meter.id)}
+                      type="button"
+                    >
+                      Inspect incident detail
+                    </button>
+                    <Link className="nav-link" href={`/meters/${selectedIncidentRow.row.meter.id}`}>
+                      Open meter detail
+                    </Link>
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          ) : null}
 
           {isLoadingOverview ? (
             <p className="muted">Loading offline meters and connectivity incidents...</p>

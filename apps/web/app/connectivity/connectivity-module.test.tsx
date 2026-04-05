@@ -217,9 +217,25 @@ describe("ConnectivityModule", () => {
       expect(
         within(incidentsPanel as HTMLElement).getAllByText(includesText("1 incident contexts")).length,
       ).toBeGreaterThan(0);
+      expect(within(incidentsPanel as HTMLElement).getByText("Visible incidents")).toBeInTheDocument();
       expect(within(incidentsPanel as HTMLElement).getAllByText("Offline").length).toBeGreaterThan(0);
-      expect(within(incidentsPanel as HTMLElement).getByText("Severity Critical")).toBeInTheDocument();
-      expect(within(incidentsPanel as HTMLElement).getByText("No recent signal")).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getAllByText("Severity Critical").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(incidentsPanel as HTMLElement).getAllByText("No recent signal").length,
+      ).toBeGreaterThan(0);
+      expect(
+        within(incidentsPanel as HTMLElement).getByText("Incident Troubleshooting Workspace"),
+      ).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getByText(
+          "Meter is offline and has no active endpoint assignment in view.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getByText("No recent disconnect cue in view"),
+      ).toBeInTheDocument();
     });
 
     await user.click(
@@ -475,6 +491,9 @@ describe("ConnectivityModule", () => {
       expect(
         within(incidentsPanel as HTMLElement).getAllByText(includesText("2 incident contexts")).length,
       ).toBeGreaterThan(0);
+      expect(
+        within(incidentsPanel as HTMLElement).getByText("Disconnect cues"),
+      ).toBeInTheDocument();
       expect(within(incidentsPanel as HTMLElement).getAllByText("Stale").length).toBeGreaterThan(0);
       expect(within(incidentsPanel as HTMLElement).getAllByText("Degraded").length).toBeGreaterThan(0);
       expect(
@@ -485,6 +504,12 @@ describe("ConnectivityModule", () => {
       ).toBeInTheDocument();
       expect(
         within(incidentsPanel as HTMLElement).getByText("Latest session Failed"),
+      ).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getByText("Incident Troubleshooting Workspace"),
+      ).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getByText("Latest disconnect cue Failed"),
       ).toBeInTheDocument();
     });
   });
@@ -583,7 +608,9 @@ describe("ConnectivityModule", () => {
         within(incidentsPanel as HTMLElement).getAllByText(includesText("1 incident contexts")).length,
       ).toBeGreaterThan(0);
       expect(within(incidentsPanel as HTMLElement).getByText("Showing offline incidents only in the current bounded connectivity scope.")).toBeInTheDocument();
-      expect(within(incidentsPanel as HTMLElement).getByText("SN-1001")).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getAllByText("SN-1001").length,
+      ).toBeGreaterThan(0);
       expect(within(incidentsPanel as HTMLElement).queryByText("SN-1002")).not.toBeInTheDocument();
       expect(within(incidentsPanel as HTMLElement).queryByText("SN-1003")).not.toBeInTheDocument();
     });
@@ -591,7 +618,9 @@ describe("ConnectivityModule", () => {
     await user.click(within(incidentsPanel as HTMLElement).getByRole("button", { name: "Stale" }));
 
     await waitFor(() => {
-      expect(within(incidentsPanel as HTMLElement).getByText("SN-1002")).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getAllByText("SN-1002").length,
+      ).toBeGreaterThan(0);
       expect(within(incidentsPanel as HTMLElement).queryByText("SN-1001")).not.toBeInTheDocument();
       expect(within(incidentsPanel as HTMLElement).queryByText("SN-1003")).not.toBeInTheDocument();
     });
@@ -599,7 +628,9 @@ describe("ConnectivityModule", () => {
     await user.click(within(incidentsPanel as HTMLElement).getByRole("button", { name: "Degraded" }));
 
     await waitFor(() => {
-      expect(within(incidentsPanel as HTMLElement).getByText("SN-1003")).toBeInTheDocument();
+      expect(
+        within(incidentsPanel as HTMLElement).getAllByText("SN-1003").length,
+      ).toBeGreaterThan(0);
       expect(within(incidentsPanel as HTMLElement).queryByText("SN-1001")).not.toBeInTheDocument();
       expect(within(incidentsPanel as HTMLElement).queryByText("SN-1002")).not.toBeInTheDocument();
     });
@@ -655,6 +686,9 @@ describe("ConnectivityModule", () => {
       await screen.findByText("Loading connectivity overview..."),
     ).toBeInTheDocument();
     expect(await screen.findByText("Loading live sessions workspace...")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Loading offline meters and connectivity incidents..."),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Connectivity-focused meters")).toBeInTheDocument();
