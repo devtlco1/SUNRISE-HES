@@ -14,9 +14,8 @@
     "jsx": "preserve",
     "incremental": true,
     "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
     "paths": {
-      "@sunrise/shared-types": ["packages/shared-types/src/index.ts"]
+      "@sunrise/shared-types": ["./packages/shared-types/src/index.ts"]
     }
   }
 }

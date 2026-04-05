@@ -52,6 +52,16 @@ type GisListResponse = { total: number; items: GisEntity[] };
 
 type ReachBucket = ReturnType<typeof classifyReachabilityFromLastSeen>;
 
+function serialLinkClassForReach(bucket: ReachBucket): string {
+  if (bucket === "online") {
+    return "ws-meters-serial-link ws-meters-serial-link--online";
+  }
+  if (bucket === "offline") {
+    return "ws-meters-serial-link ws-meters-serial-link--offline";
+  }
+  return "ws-meters-serial-link ws-meters-serial-link--unknown";
+}
+
 function tonePositiveGreen(n: number) {
   return n > 0 ? "success" : "muted";
 }
@@ -585,7 +595,7 @@ function MetersRegistryBody() {
                       <tr key={m.id}>
                         <td className="ws-meters-mono">
                           <Link
-                            className="ws-meters-drilldown"
+                            className={serialLinkClassForReach(bucket)}
                             href={`/meters/${m.id}`}
                             title={`Open meter ${m.serial_number}`}
                           >

@@ -71,10 +71,10 @@ a:hover {
   flex-shrink: 0;
   background: var(--ws-sidebar);
   border-right: 1px solid var(--ws-border);
-  padding: 1.25rem 1rem;
+  padding: 1.15rem 1rem 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.35rem;
 }
 
 .ws-sidebar-brand {
@@ -92,9 +92,9 @@ a:hover {
 .ws-sidebar-logo {
   display: block;
   width: 100%;
-  max-width: 11.25rem;
   height: auto;
-  max-height: 2.75rem;
+  max-height: 4.25rem;
+  min-height: 2.5rem;
   object-fit: contain;
   object-position: left center;
 }
@@ -955,6 +955,40 @@ a:hover {
 
 .ws-meters-drilldown:hover {
   color: var(--ws-accent, #2563eb);
+  border-bottom-color: currentColor;
+}
+
+/* Primary serial drilldown: semantic reachability (overrides global link hover) */
+.ws-meters-serial-link {
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid transparent;
+}
+
+.ws-meters-serial-link--online {
+  color: var(--ws-tone-success);
+}
+
+.ws-meters-serial-link--online:hover {
+  color: #126b32;
+  border-bottom-color: currentColor;
+}
+
+.ws-meters-serial-link--offline {
+  color: var(--ws-tone-danger);
+}
+
+.ws-meters-serial-link--offline:hover {
+  color: #991b1b;
+  border-bottom-color: currentColor;
+}
+
+.ws-meters-serial-link--unknown {
+  color: var(--ws-tone-muted);
+}
+
+.ws-meters-serial-link--unknown:hover {
+  color: #475569;
   border-bottom-color: currentColor;
 }
 

@@ -45,8 +45,6 @@ function WorkspaceChrome({ children }: { children: ReactNode }) {
             src="/brand/sunhope-tlco-logo.svg"
             alt=""
             className="ws-sidebar-logo"
-            width={180}
-            height={48}
             decoding="async"
           />
         </Link>
