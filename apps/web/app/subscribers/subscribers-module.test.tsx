@@ -117,6 +117,9 @@ describe("SubscribersModule", () => {
     expect(await screen.findAllByText("Amina Al Balushi")).not.toHaveLength(0);
     expect(screen.getAllByText("Beacon Bakery LLC")).not.toHaveLength(0);
     expect(
+      screen.getAllByText("Account and service cues visible").length,
+    ).toBeGreaterThan(0);
+    expect(
       screen.getAllByRole("link", { name: "Open subscriber detail" }),
     ).not.toHaveLength(0);
   });
@@ -139,13 +142,19 @@ describe("SubscribersModule", () => {
     expect(summaryPanel).not.toBeNull();
 
     expect(
-      within(summaryPanel as HTMLElement).getByText("Beacon Bakery LLC"),
-    ).toBeInTheDocument();
+      within(summaryPanel as HTMLElement).getAllByText("Beacon Bakery LLC").length,
+    ).toBeGreaterThan(0);
     expect(
       within(summaryPanel as HTMLElement).getByRole("link", {
         name: "Open subscriber detail",
       }),
     ).toHaveAttribute("href", "/subscribers/consumer-2");
+    expect(
+      within(summaryPanel as HTMLElement).getAllByText("Limited commercial cues").length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(summaryPanel as HTMLElement).getAllByText("No linked account").length,
+    ).toBeGreaterThan(0);
   });
 
   it("renders an empty state when no subscribers are available", async () => {

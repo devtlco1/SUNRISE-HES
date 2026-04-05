@@ -54,6 +54,31 @@ function buildStatusTone(value: string | null): "positive" | "warning" | "danger
   return "neutral";
 }
 
+function formatCountLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function buildCommercialPosture(subscriber: SubscriberListItem): string {
+  if (subscriber.primary_account_number && subscriber.primary_service_point_code) {
+    return "Account and service cues visible";
+  }
+  if (subscriber.primary_account_number) {
+    return "Account cue visible";
+  }
+  if (subscriber.primary_service_point_code) {
+    return "Service cue visible";
+  }
+  return "Limited commercial cues";
+}
+
+function buildIdentifierSummary(subscriber: SubscriberListItem): string {
+  return (
+    subscriber.external_ref ??
+    subscriber.national_id ??
+    "No key external identifier"
+  );
+}
+
 export function SubscribersModule({
   authorizedFetch,
 }: {
@@ -159,6 +184,75 @@ export function SubscribersModule({
       null,
     [selectedSubscriberId, subscribers],
   );
+  const selectedSubscriberCards = useMemo(() => {
+    if (!selectedSubscriber) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Subscriber identity",
+        value: selectedSubscriber.full_name,
+        note: `${formatStatusLabel(selectedSubscriber.consumer_type)} • ${selectedSubscriber.id}`,
+      },
+      {
+        label: "Commercial posture",
+        value: buildCommercialPosture(selectedSubscriber),
+        note:
+          selectedSubscriber.primary_account_number ??
+          selectedSubscriber.primary_service_point_code ??
+          "No primary account or service cue visible",
+      },
+      {
+        label: "Primary account cue",
+        value: selectedSubscriber.primary_account_number ?? "No linked account",
+        note:
+          selectedSubscriber.account_status_summary !== null
+            ? formatStatusLabel(selectedSubscriber.account_status_summary)
+            : "No active account summary recorded",
+      },
+      {
+        label: "Service context",
+        value: selectedSubscriber.primary_service_point_code ?? "No linked service point",
+        note:
+          selectedSubscriber.primary_service_point_code
+            ? "Primary install/premise cue is visible in the list result"
+            : "No primary service-point cue is visible in the list result",
+      },
+      {
+        label: "Operational linkage",
+        value: `${selectedSubscriber.linked_meter_count} meter(s)`,
+        note: `${selectedSubscriber.active_account_count} active account(s)`,
+      },
+      {
+        label: "Identifiers",
+        value: buildIdentifierSummary(selectedSubscriber),
+        note:
+          selectedSubscriber.external_ref && selectedSubscriber.national_id
+            ? "External reference and national ID are both available"
+            : "Bounded subscriber identifier visibility",
+      },
+    ];
+  }, [selectedSubscriber]);
+  const selectedSubscriberNarrative = useMemo(() => {
+    if (!selectedSubscriber) {
+      return null;
+    }
+
+    return `${formatStatusLabel(selectedSubscriber.consumer_type)} subscriber ${selectedSubscriber.full_name} has ${formatCountLabel(
+      selectedSubscriber.active_account_count,
+      "active account",
+      "active accounts",
+    )} and ${formatCountLabel(
+      selectedSubscriber.linked_meter_count,
+      "linked meter",
+      "linked meters",
+    )} visible before opening the detail route${
+      selectedSubscriber.primary_account_number
+        ? `, with account ${selectedSubscriber.primary_account_number} in immediate scope.`
+        : "."
+    }`;
+  }, [selectedSubscriber]);
 
   return (
     <section className="panel">
@@ -253,6 +347,13 @@ export function SubscribersModule({
                     <span className="artifact-pill">
                       {formatStatusLabel(subscriber.consumer_type)}
                     </span>
+                    <span
+                      className={`status-pill ${buildStatusTone(
+                        buildCommercialPosture(subscriber),
+                      )}`}
+                    >
+                      {buildCommercialPosture(subscriber)}
+                    </span>
                     <span className="artifact-pill">
                       {subscriber.primary_account_number
                         ? `Account ${subscriber.primary_account_number}`
@@ -275,6 +376,14 @@ export function SubscribersModule({
                   <div className="command-list-item-meta">
                     <span>{subscriber.linked_meter_count} linked meter(s)</span>
                     <span>{subscriber.active_account_count} active account(s)</span>
+                  </div>
+                  <div className="command-list-item-meta">
+                    <span>{buildIdentifierSummary(subscriber)}</span>
+                    <span>
+                      {subscriber.primary_account_number
+                        ? "Account context ready"
+                        : "No account context"}
+                    </span>
                   </div>
                   <div className="artifact-row">
                     <button
@@ -305,6 +414,17 @@ export function SubscribersModule({
                   before opening the existing subscriber detail route.
                 </p>
               </div>
+              {selectedSubscriber ? (
+                <span
+                  className={`status-pill ${buildStatusTone(
+                    selectedSubscriber.account_status_summary,
+                  )}`}
+                >
+                  {formatStatusLabel(
+                    selectedSubscriber.account_status_summary ?? "unassigned",
+                  )}
+                </span>
+              ) : null}
             </div>
 
             {isLoadingSubscribers ? (
@@ -352,23 +472,37 @@ export function SubscribersModule({
                   </div>
                 </section>
 
+                {selectedSubscriberNarrative ? (
+                  <p className="muted">{selectedSubscriberNarrative}</p>
+                ) : null}
+
+                <div className="artifact-row">
+                  <span className="artifact-pill">
+                    {buildCommercialPosture(selectedSubscriber)}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedSubscriber.primary_account_number
+                      ? `Account ${selectedSubscriber.primary_account_number}`
+                      : "No linked account"}
+                  </span>
+                  <span className="artifact-pill">
+                    {selectedSubscriber.primary_service_point_code
+                      ? `Service point ${selectedSubscriber.primary_service_point_code}`
+                      : "No linked service point"}
+                  </span>
+                  <span className="artifact-pill">
+                    {buildIdentifierSummary(selectedSubscriber)}
+                  </span>
+                </div>
+
                 <div className="detail-grid">
-                  <div className="stat-card">
-                    <span className="stat-label">Subscriber ID</span>
-                    <strong>{selectedSubscriber.id}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Consumer type</span>
-                    <strong>{formatStatusLabel(selectedSubscriber.consumer_type)}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Active accounts</span>
-                    <strong>{selectedSubscriber.active_account_count}</strong>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Linked meters</span>
-                    <strong>{selectedSubscriber.linked_meter_count}</strong>
-                  </div>
+                  {selectedSubscriberCards.map((card) => (
+                    <div key={card.label} className="stat-card">
+                      <span className="stat-label">{card.label}</span>
+                      <strong>{card.value}</strong>
+                      <p className="muted">{card.note}</p>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="artifact-row">
