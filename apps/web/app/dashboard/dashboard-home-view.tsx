@@ -39,17 +39,33 @@ function KpiCard({ label, value, accent = "neutral" }: KpiProps) {
   );
 }
 
-function metricTone(
-  value: number | null,
-  goodWhen: "zero" | "nonzero",
-): "success" | "danger" | "warning" | "muted" | "neutral" {
-  if (value === null) {
+/** Gray when null or zero; semantic color only when value is strictly positive. */
+function tonePositiveRed(n: number | null): KpiProps["accent"] {
+  if (n === null || n <= 0) {
     return "muted";
   }
-  if (goodWhen === "zero") {
-    return value === 0 ? "success" : "danger";
+  return "danger";
+}
+
+function tonePositiveAmber(n: number | null): KpiProps["accent"] {
+  if (n === null || n <= 0) {
+    return "muted";
   }
-  return value > 0 ? "success" : "muted";
+  return "warning";
+}
+
+function tonePositiveBlue(n: number | null): KpiProps["accent"] {
+  if (n === null || n <= 0) {
+    return "muted";
+  }
+  return "info";
+}
+
+function tonePositiveGreen(n: number | null): KpiProps["accent"] {
+  if (n === null || n <= 0) {
+    return "muted";
+  }
+  return "success";
 }
 
 function Metric({ children, tone }: { children: ReactNode; tone: KpiProps["accent"] }) {
@@ -124,43 +140,37 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
               <KpiCard
                 label="Online"
                 value={fmt(snapshot.reachability?.online ?? null)}
-                accent={
-                  snapshot.reachability == null
-                    ? "muted"
-                    : snapshot.reachability.online > 0
-                      ? "success"
-                      : "warning"
-                }
+                accent={tonePositiveGreen(snapshot.reachability?.online ?? null)}
               />
               <KpiCard
                 label="Offline"
                 value={fmt(snapshot.reachability?.offline ?? null)}
-                accent={
-                  offline === null ? "muted" : offline > 0 ? "danger" : "success"
-                }
+                accent={tonePositiveRed(offline)}
               />
               <KpiCard
                 label="Intermittent / unknown"
                 value={fmt(snapshot.reachability?.unknown ?? null)}
-                accent={
-                  unknown === null ? "muted" : unknown > 0 ? "warning" : "success"
-                }
+                accent={tonePositiveAmber(unknown)}
               />
               <KpiCard
                 label="Commands (24h)"
                 value={fmt(snapshot.commands24h)}
-                accent={snapshot.commands24h == null ? "muted" : "info"}
+                accent={tonePositiveBlue(snapshot.commands24h)}
               />
               <KpiCard
                 label="Pending / failed cmds"
                 value={
                   snapshot.commandsPendingLike != null && snapshot.commandsFailedLike != null ? (
                     <>
-                      <span className="ws-metric ws-metric--warning">
+                      <span
+                        className={`ws-metric ws-metric--${tonePositiveAmber(snapshot.commandsPendingLike)}`}
+                      >
                         {fmt(snapshot.commandsPendingLike)}
                       </span>
                       <span className="ws-kpi-value-sep"> / </span>
-                      <span className="ws-metric ws-metric--danger">
+                      <span
+                        className={`ws-metric ws-metric--${tonePositiveRed(snapshot.commandsFailedLike)}`}
+                      >
                         {fmt(snapshot.commandsFailedLike)}
                       </span>
                     </>
@@ -173,18 +183,12 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
               <KpiCard
                 label="Critical alarms"
                 value={fmt(snapshot.criticalOpenInWindow)}
-                accent={metricTone(crit, "zero")}
+                accent={tonePositiveRed(crit)}
               />
               <KpiCard
                 label="Active jobs"
                 value={fmt(snapshot.activeJobRunsInWindow)}
-                accent={
-                  snapshot.activeJobRunsInWindow == null
-                    ? "muted"
-                    : snapshot.activeJobRunsInWindow > 0
-                      ? "info"
-                      : "muted"
-                }
+                accent={tonePositiveBlue(snapshot.activeJobRunsInWindow)}
               />
             </div>
           </section>
@@ -215,35 +219,19 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
                 <dl className="ws-dash-dl">
                   <dt>Commands (24h)</dt>
                   <dd>
-                    <Metric tone={snapshot.commands24h == null ? "muted" : "info"}>
+                    <Metric tone={tonePositiveBlue(snapshot.commands24h)}>
                       {fmt(snapshot.commands24h)}
                     </Metric>
                   </dd>
                   <dt>Pending</dt>
                   <dd>
-                    <Metric
-                      tone={
-                        snapshot.commandsPendingLike == null
-                          ? "muted"
-                          : snapshot.commandsPendingLike > 0
-                            ? "warning"
-                            : "muted"
-                      }
-                    >
+                    <Metric tone={tonePositiveAmber(snapshot.commandsPendingLike)}>
                       {fmt(snapshot.commandsPendingLike)}
                     </Metric>
                   </dd>
                   <dt>Failed / timed out</dt>
                   <dd>
-                    <Metric
-                      tone={
-                        failedCmds == null
-                          ? "muted"
-                          : failedCmds > 0
-                            ? "danger"
-                            : "success"
-                      }
-                    >
+                    <Metric tone={tonePositiveRed(failedCmds)}>
                       {fmt(snapshot.commandsFailedLike)}
                     </Metric>
                   </dd>
@@ -267,21 +255,19 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
                 <dl className="ws-dash-dl">
                   <dt>Critical · open</dt>
                   <dd>
-                    <Metric tone={metricTone(crit, "zero")}>{fmt(snapshot.criticalOpenInWindow)}</Metric>
+                    <Metric tone={tonePositiveRed(crit)}>{fmt(snapshot.criticalOpenInWindow)}</Metric>
                   </dd>
                   <dt>Warning · open</dt>
                   <dd>
-                    <Metric
-                      tone={
-                        warnOpen === null ? "muted" : warnOpen > 0 ? "warning" : "success"
-                      }
-                    >
+                    <Metric tone={tonePositiveAmber(warnOpen)}>
                       {fmt(snapshot.warningOpenInWindow)}
                     </Metric>
                   </dd>
                   <dt>Events recorded</dt>
                   <dd>
-                    <Metric tone={snapshot.eventsIngestedTotal == null ? "muted" : "info"}>
+                    <Metric
+                      tone={snapshot.eventsIngestedTotal == null ? "muted" : "neutral"}
+                    >
                       {fmt(snapshot.eventsIngestedTotal)}
                     </Metric>
                   </dd>
@@ -301,7 +287,7 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
                 <dl className="ws-dash-dl">
                   <dt>Mapped</dt>
                   <dd>
-                    <Metric tone={snapshot.gisMappedInSample == null ? "muted" : "success"}>
+                    <Metric tone={snapshot.gisMappedInSample == null ? "muted" : "neutral"}>
                       {fmt(snapshot.gisMappedInSample)}
                     </Metric>
                   </dd>
@@ -311,15 +297,7 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
                   </dd>
                   <dt>Service points · stale</dt>
                   <dd>
-                    <Metric
-                      tone={
-                        staleSp == null
-                          ? "muted"
-                          : staleSp > 0
-                            ? "warning"
-                            : "success"
-                      }
-                    >
+                    <Metric tone={tonePositiveAmber(staleSp)}>
                       {fmt(snapshot.servicePointsWithOfflineInSample)}
                     </Metric>
                   </dd>
