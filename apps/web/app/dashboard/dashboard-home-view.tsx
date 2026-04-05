@@ -22,22 +22,38 @@ function fmtTime(iso: string): string {
 
 type KpiProps = {
   label: string;
-  value: string;
-  hint?: string;
+  value: ReactNode;
+  accent?: "neutral" | "success" | "danger" | "warning" | "info" | "muted";
 };
 
-function KpiCard({ label, value, hint }: KpiProps) {
+function KpiCard({ label, value, accent = "neutral" }: KpiProps) {
   return (
     <div
-      className="ws-kpi"
+      className={`ws-kpi ws-kpi--accent-${accent}`}
       tabIndex={0}
-      title="Detailed views will open from rebuilt modules."
+      aria-label={label}
     >
       <div className="ws-kpi-label">{label}</div>
       <div className="ws-kpi-value">{value}</div>
-      {hint ? <div className="ws-kpi-hint">{hint}</div> : null}
     </div>
   );
+}
+
+function metricTone(
+  value: number | null,
+  goodWhen: "zero" | "nonzero",
+): "success" | "danger" | "warning" | "muted" | "neutral" {
+  if (value === null) {
+    return "muted";
+  }
+  if (goodWhen === "zero") {
+    return value === 0 ? "success" : "danger";
+  }
+  return value > 0 ? "success" : "muted";
+}
+
+function Metric({ children, tone }: { children: ReactNode; tone: KpiProps["accent"] }) {
+  return <span className={`ws-metric ws-metric--${tone}`}>{children}</span>;
 }
 
 type PanelProps = {
@@ -67,20 +83,21 @@ export type DashboardHomeViewProps = {
 };
 
 export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHomeViewProps) {
+  const crit = snapshot?.criticalOpenInWindow ?? null;
+  const warnOpen = snapshot?.warningOpenInWindow ?? null;
+  const offline = snapshot?.reachability?.offline ?? null;
+  const unknown = snapshot?.reachability?.unknown ?? null;
+  const failedCmds = snapshot?.commandsFailedLike ?? null;
+  const staleSp = snapshot?.servicePointsWithOfflineInSample ?? null;
+
   return (
     <div className="ws-dash-page">
       <header className="ws-dash-header">
         <div>
           <h1 className="ws-page-title">Dashboard</h1>
-          <p className="ws-page-subtitle">
-            Situation overview and attention routing — lighter than module workspaces.
-          </p>
+          <p className="ws-page-subtitle">Fleet status, commands, alarms, and priority items.</p>
         </div>
-        {snapshot ? (
-          <p className="ws-dash-asof" title="Snapshot time (browser-local display)">
-            As of {fmtTime(snapshot.asOf)}
-          </p>
-        ) : null}
+        {snapshot ? <p className="ws-dash-asof">As of {fmtTime(snapshot.asOf)}</p> : null}
       </header>
 
       {loadError ? (
@@ -90,73 +107,83 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
       ) : null}
 
       {snapshot && snapshot.errors.length > 0 ? (
-        <ul className="ws-dash-banner ws-dash-banner--list" aria-label="Partial data errors">
+        <ul className="ws-dash-banner ws-dash-banner--list" aria-label="Refresh notes">
           {snapshot.errors.map((e) => (
             <li key={e}>{e}</li>
           ))}
         </ul>
       ) : null}
 
-      {loading ? <p className="ws-muted">Loading dashboard snapshot…</p> : null}
+      {loading ? <p className="ws-dash-loading">Loading…</p> : null}
 
       {!loading && snapshot ? (
         <>
           <section className="ws-dash-section" aria-label="Key indicators">
             <div className="ws-kpi-grid">
-              <KpiCard label="Total meters" value={fmt(snapshot.metersTotal)} />
+              <KpiCard label="Total meters" value={fmt(snapshot.metersTotal)} accent="neutral" />
               <KpiCard
                 label="Online"
                 value={fmt(snapshot.reachability?.online ?? null)}
-                hint={
-                  snapshot.reachability
-                    ? `GIS sample ${snapshot.reachability.sampleSize} / ${fmt(snapshot.reachability.populationTotal)} · 24h last-seen`
-                    : "GIS-linked sample unavailable"
+                accent={
+                  snapshot.reachability == null
+                    ? "muted"
+                    : snapshot.reachability.online > 0
+                      ? "success"
+                      : "warning"
                 }
               />
               <KpiCard
                 label="Offline"
                 value={fmt(snapshot.reachability?.offline ?? null)}
-                hint={
-                  snapshot.reachability ? "Stale last-seen (>24h) within sample" : undefined
+                accent={
+                  offline === null ? "muted" : offline > 0 ? "danger" : "success"
                 }
               />
               <KpiCard
                 label="Intermittent / unknown"
                 value={fmt(snapshot.reachability?.unknown ?? null)}
-                hint={
-                  snapshot.reachability ? "No last-seen timestamp in sample" : undefined
+                accent={
+                  unknown === null ? "muted" : unknown > 0 ? "warning" : "success"
                 }
               />
               <KpiCard
                 label="Commands (24h)"
                 value={fmt(snapshot.commands24h)}
-                hint={
-                  snapshot.commandsRecentLimit != null
-                    ? `From recent window (max ${snapshot.commandsRecentLimit})`
-                    : undefined
-                }
+                accent={snapshot.commands24h == null ? "muted" : "info"}
               />
               <KpiCard
                 label="Pending / failed cmds"
-                value={`${fmt(snapshot.commandsPendingLike)} / ${fmt(snapshot.commandsFailedLike)}`}
-                hint="Recent command list only"
+                value={
+                  snapshot.commandsPendingLike != null && snapshot.commandsFailedLike != null ? (
+                    <>
+                      <span className="ws-metric ws-metric--warning">
+                        {fmt(snapshot.commandsPendingLike)}
+                      </span>
+                      <span className="ws-kpi-value-sep"> / </span>
+                      <span className="ws-metric ws-metric--danger">
+                        {fmt(snapshot.commandsFailedLike)}
+                      </span>
+                    </>
+                  ) : (
+                    "—"
+                  )
+                }
+                accent="neutral"
               />
               <KpiCard
                 label="Critical alarms"
                 value={fmt(snapshot.criticalOpenInWindow)}
-                hint={
-                  snapshot.eventsWindowLimit != null
-                    ? `Open + critical in last ${snapshot.eventsWindowLimit} ingestions`
-                    : undefined
-                }
+                accent={metricTone(crit, "zero")}
               />
               <KpiCard
                 label="Active jobs"
                 value={fmt(snapshot.activeJobRunsInWindow)}
-                hint={
-                  snapshot.jobRunsWindowLimit != null
-                    ? `Pending / claimed / running in last ${snapshot.jobRunsWindowLimit} runs`
-                    : undefined
+                accent={
+                  snapshot.activeJobRunsInWindow == null
+                    ? "muted"
+                    : snapshot.activeJobRunsInWindow > 0
+                      ? "info"
+                      : "muted"
                 }
               />
             </div>
@@ -167,37 +194,97 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
               <SummaryPanel title="Connectivity summary">
                 <dl className="ws-dash-dl">
                   <dt>Communication endpoints</dt>
-                  <dd>{fmt(snapshot.communicationEndpoints)}</dd>
-                  <dt>GIS-linked meters (total)</dt>
-                  <dd>{fmt(snapshot.reachability?.populationTotal ?? null)}</dd>
-                  <dt>Reachability sample</dt>
                   <dd>
-                    {snapshot.reachability
-                      ? `${snapshot.reachability.sampleSize} meters in current slice`
-                      : "—"}
+                    <Metric tone="neutral">{fmt(snapshot.communicationEndpoints)}</Metric>
+                  </dd>
+                  <dt>GIS-linked meters</dt>
+                  <dd>
+                    <Metric tone="neutral">{fmt(snapshot.reachability?.populationTotal ?? null)}</Metric>
+                  </dd>
+                  <dt>Coverage sample</dt>
+                  <dd>
+                    <Metric tone="muted">
+                      {snapshot.reachability
+                        ? `${snapshot.reachability.sampleSize} / ${fmt(snapshot.reachability.populationTotal)}`
+                        : "—"}
+                    </Metric>
                   </dd>
                 </dl>
               </SummaryPanel>
               <SummaryPanel title="Command center summary">
                 <dl className="ws-dash-dl">
-                  <dt>Commands in last 24h</dt>
-                  <dd>{fmt(snapshot.commands24h)}</dd>
-                  <dt>Pending pipeline</dt>
-                  <dd>{fmt(snapshot.commandsPendingLike)}</dd>
+                  <dt>Commands (24h)</dt>
+                  <dd>
+                    <Metric tone={snapshot.commands24h == null ? "muted" : "info"}>
+                      {fmt(snapshot.commands24h)}
+                    </Metric>
+                  </dd>
+                  <dt>Pending</dt>
+                  <dd>
+                    <Metric
+                      tone={
+                        snapshot.commandsPendingLike == null
+                          ? "muted"
+                          : snapshot.commandsPendingLike > 0
+                            ? "warning"
+                            : "muted"
+                      }
+                    >
+                      {fmt(snapshot.commandsPendingLike)}
+                    </Metric>
+                  </dd>
                   <dt>Failed / timed out</dt>
-                  <dd>{fmt(snapshot.commandsFailedLike)}</dd>
+                  <dd>
+                    <Metric
+                      tone={
+                        failedCmds == null
+                          ? "muted"
+                          : failedCmds > 0
+                            ? "danger"
+                            : "success"
+                      }
+                    >
+                      {fmt(snapshot.commandsFailedLike)}
+                    </Metric>
+                  </dd>
                   <dt>Awaiting approval</dt>
-                  <dd>{fmt(snapshot.approvalsPendingTotal)}</dd>
+                  <dd>
+                    <Metric
+                      tone={
+                        snapshot.approvalsPendingTotal == null
+                          ? "muted"
+                          : snapshot.approvalsPendingTotal > 0
+                            ? "warning"
+                            : "muted"
+                      }
+                    >
+                      {fmt(snapshot.approvalsPendingTotal)}
+                    </Metric>
+                  </dd>
                 </dl>
               </SummaryPanel>
               <SummaryPanel title="Alarm overview">
                 <dl className="ws-dash-dl">
-                  <dt>Critical · open (window)</dt>
-                  <dd>{fmt(snapshot.criticalOpenInWindow)}</dd>
-                  <dt>Warning · open (window)</dt>
-                  <dd>{fmt(snapshot.warningOpenInWindow)}</dd>
-                  <dt>Ingested events (total)</dt>
-                  <dd>{fmt(snapshot.eventsIngestedTotal)}</dd>
+                  <dt>Critical · open</dt>
+                  <dd>
+                    <Metric tone={metricTone(crit, "zero")}>{fmt(snapshot.criticalOpenInWindow)}</Metric>
+                  </dd>
+                  <dt>Warning · open</dt>
+                  <dd>
+                    <Metric
+                      tone={
+                        warnOpen === null ? "muted" : warnOpen > 0 ? "warning" : "success"
+                      }
+                    >
+                      {fmt(snapshot.warningOpenInWindow)}
+                    </Metric>
+                  </dd>
+                  <dt>Events recorded</dt>
+                  <dd>
+                    <Metric tone={snapshot.eventsIngestedTotal == null ? "muted" : "info"}>
+                      {fmt(snapshot.eventsIngestedTotal)}
+                    </Metric>
+                  </dd>
                 </dl>
               </SummaryPanel>
             </div>
@@ -207,41 +294,57 @@ export function DashboardHomeView({ snapshot, loading, loadError }: DashboardHom
             <div className="ws-dash-row ws-dash-row--2">
               <SummaryPanel title="Reading activity">
                 {snapshot.readingActivityAvailable ? null : (
-                  <p className="ws-dash-empty">
-                    Fleet reading rollups are not exposed on a single endpoint yet. Billing,
-                    interval, missing, and estimate breakdowns will appear here when the API
-                    supports them.
-                  </p>
+                  <p className="ws-dash-empty">Data not available yet.</p>
                 )}
               </SummaryPanel>
               <SummaryPanel title="GIS snapshot">
                 <dl className="ws-dash-dl">
-                  <dt>Mapped in sample</dt>
-                  <dd>{fmt(snapshot.gisMappedInSample)}</dd>
-                  <dt>Unlocated in sample</dt>
-                  <dd>{fmt(snapshot.gisUnmappedInSample)}</dd>
-                  <dt>Service points w/ stale meters</dt>
-                  <dd>{fmt(snapshot.servicePointsWithOfflineInSample)}</dd>
+                  <dt>Mapped</dt>
+                  <dd>
+                    <Metric tone={snapshot.gisMappedInSample == null ? "muted" : "success"}>
+                      {fmt(snapshot.gisMappedInSample)}
+                    </Metric>
+                  </dd>
+                  <dt>Unlocated</dt>
+                  <dd>
+                    <Metric tone="muted">{fmt(snapshot.gisUnmappedInSample)}</Metric>
+                  </dd>
+                  <dt>Service points · stale</dt>
+                  <dd>
+                    <Metric
+                      tone={
+                        staleSp == null
+                          ? "muted"
+                          : staleSp > 0
+                            ? "warning"
+                            : "success"
+                      }
+                    >
+                      {fmt(snapshot.servicePointsWithOfflineInSample)}
+                    </Metric>
+                  </dd>
                 </dl>
-                <p className="ws-kpi-hint ws-dash-gis-note">
-                  Not a map workspace — counts are from the GIS-lite entity slice only.
-                </p>
               </SummaryPanel>
             </div>
           </section>
 
-          <section className="ws-dash-section" aria-labelledby="dash-attention">
-            <h2 className="ws-dash-section-title" id="dash-attention">
+          <section
+            className="ws-dash-section ws-dash-section--attention"
+            aria-labelledby="dash-attention"
+          >
+            <h2 className="ws-dash-section-title ws-dash-section-title--attention" id="dash-attention">
               Priority / attention
             </h2>
             {snapshot.attention.length === 0 ? (
-              <p className="ws-dash-empty">
-                No priority items matched current indicators in the API windows above.
-              </p>
+              <p className="ws-dash-empty ws-dash-empty--ok">No active issues.</p>
             ) : (
               <ul className="ws-attention-list">
                 {snapshot.attention.map((row) => (
-                  <li key={row.id} className="ws-attention-item">
+                  <li
+                    key={row.id}
+                    className={`ws-attention-item ws-attention-item--${row.kind}`}
+                  >
+                    <span className="ws-attention-dot" aria-hidden />
                     <div className="ws-attention-main">
                       <span className="ws-attention-label">{row.label}</span>
                       <span className="ws-attention-detail">{row.detail}</span>

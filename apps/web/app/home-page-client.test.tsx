@@ -140,8 +140,6 @@ describe("HomePageClient", () => {
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
     expect(await screen.findByText("42")).toBeInTheDocument();
     expect(screen.getByText("Total meters")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Situation overview and attention routing/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Fleet status, commands, alarms/)).toBeInTheDocument();
   });
 });
