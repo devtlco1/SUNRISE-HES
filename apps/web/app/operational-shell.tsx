@@ -46,6 +46,7 @@ type NavigationItem = {
 type NavigationSection = {
   label: string;
   items: NavigationItem[];
+  muted?: boolean;
 };
 
 function getInitials(name: string | null | undefined): string {
@@ -93,7 +94,6 @@ function OperationalShellInner({
   title,
   description,
   currentMeterId,
-  navigationVariant = "default",
   children,
 }: OperationalShellProps) {
   const pathname = usePathname() ?? "/";
@@ -129,68 +129,54 @@ function OperationalShellInner({
     return () => mediaQuery.removeEventListener("change", listener);
   }, []);
 
-  const dashboardSection: NavigationSection = {
-    label: "MAIN MENU",
-    items: [{ href: "/", label: "Dashboard home", icon: HomeIcon, badge: "Home" }],
-  };
-  const operationsSections: NavigationSection[] = [
+  const navigationSections: NavigationSection[] = [
+    {
+      label: "PRIMARY",
+      items: [
+        { href: "/", label: "Dashboard", icon: HomeIcon, badge: "Live" },
+        { href: "/meters", label: "Meters", icon: TableIcon },
+      ],
+    },
     {
       label: "OPERATIONS",
       items: [
-        { href: "/meters", label: "Meters", icon: TableIcon },
-        { href: "/readings", label: "Readings", icon: PieChartIcon },
-        { href: "/commands", label: "Commands", icon: FourCircleIcon },
         { href: "/connectivity", label: "Connectivity", icon: PieChartIcon },
-        { href: "/jobs-events-alerts", label: "Jobs / Events / Alerts", icon: FourCircleIcon },
-        { href: "/audit-center", label: "Audit Center", icon: TableIcon },
+        { href: "/commands", label: "Commands", icon: FourCircleIcon },
+        { href: "/readings", label: "Readings", icon: PieChartIcon },
       ],
     },
     {
-      label: "CUSTOMER DATA",
+      label: "ADDITIONAL MODULES",
+      muted: true,
       items: [
+        { href: "/jobs-events-alerts", label: "Jobs / Events / Alerts", icon: FourCircleIcon },
         { href: "/subscribers", label: "Subscribers", icon: UserIcon },
         { href: "/accounts", label: "Accounts", icon: TableIcon },
         { href: "/service-points", label: "Service Points", icon: FourCircleIcon },
-      ],
-    },
-    {
-      label: "NETWORK",
-      items: [
         { href: "/gis-lite", label: "GIS Lite", icon: PieChartIcon },
         {
           href: "/transformers-substations",
           label: "Transformers / Substations",
           icon: FourCircleIcon,
         },
+        { href: "/audit-center", label: "Audit Center", icon: TableIcon },
       ],
     },
   ];
-  const navigationSections =
-    navigationVariant === "dashboard-home"
-      ? [dashboardSection, ...operationsSections]
-      : [dashboardSection, ...operationsSections];
-  const navigationRouteCount = operationsSections.reduce(
-    (total, section) => total + section.items.length,
-    0,
-  );
-  const isDashboardHome = navigationVariant === "dashboard-home";
+
   const currentUserName = currentUser?.full_name || currentUser?.username || "Guest user";
   const currentUserMeta = currentUser
     ? currentUser.email
     : isCheckingSession
       ? "Session bootstrap in progress"
       : `API ${apiBaseUrl}`;
-  const pageStateLabel = isDashboardHome ? "Dashboard" : "Workspace";
-  const pageStateNote = isDashboardHome
-    ? "NextAdmin-derived shell and dashboard composition are active on this route."
-    : "Shared NextAdmin-derived shell is active while page-specific migration continues.";
-  const topbarPills = useMemo(
+  const shellPills = useMemo(
     () => [
-      pageStateLabel,
-      `${navigationRouteCount + 1} routes`,
       currentUser ? "Authenticated" : "Session required",
+      "English workspace",
+      "LTR",
     ],
-    [currentUser, navigationRouteCount, pageStateLabel],
+    [currentUser],
   );
 
   function closeMobileSidebar() {
@@ -233,26 +219,29 @@ function OperationalShellInner({
               <div className="na-sidebar-brand-mark">SH</div>
               <div>
                 <strong>Sunrise HES</strong>
-                <span>Operations platform</span>
+                <span>AMI operations platform</span>
               </div>
             </Link>
           </div>
 
-          <section className="na-sidebar-callout">
-            <span className="na-sidebar-callout-eyebrow">
-              {isDashboardHome ? "Dashboard home" : "Operational workspace"}
-            </span>
+          <section className="na-sidebar-callout hes-sidebar-callout">
+            <span className="na-sidebar-callout-eyebrow">Operator workspace</span>
             <strong>{title}</strong>
-            <p>{pageStateNote}</p>
+            <p>{description}</p>
             <div className="na-sidebar-callout-pills">
-              <span className="na-status-pill na-status-pill-positive">{pageStateLabel}</span>
-              <span className="na-status-pill">{navigationRouteCount + 1} routes</span>
+              <span className="na-status-pill na-status-pill-positive">
+                {currentUser ? "Authenticated" : "Session required"}
+              </span>
+              <span className="na-status-pill">Dashboard + meters reset</span>
             </div>
           </section>
 
           <div className="na-sidebar-nav">
             {navigationSections.map((section) => (
-              <section key={section.label} className="na-sidebar-section">
+              <section
+                key={section.label}
+                className={`na-sidebar-section${section.muted ? " hes-sidebar-section-muted" : ""}`}
+              >
                 <h2>{section.label}</h2>
                 <ul>
                   {section.items.map((item) => {
@@ -283,7 +272,7 @@ function OperationalShellInner({
             ))}
 
             {currentMeterId ? (
-              <section className="na-sidebar-section">
+              <section className="na-sidebar-section hes-sidebar-section-muted">
                 <h2>CONTEXT</h2>
                 <ul>
                   <li>
@@ -295,7 +284,7 @@ function OperationalShellInner({
                       <TableIcon aria-hidden="true" className="na-menu-link-icon" />
                       <span>Current meter</span>
                       <span aria-hidden="true" className="na-menu-link-badge">
-                        Context
+                        Detail
                       </span>
                     </Link>
                   </li>
@@ -307,7 +296,7 @@ function OperationalShellInner({
       </aside>
 
       <div className="na-page">
-        <header className="na-topbar">
+        <header className="na-topbar hes-topbar">
           <div className="na-topbar-left">
             <div className="na-topbar-mobile-row">
               <button className="na-menu-toggle" onClick={toggleSidebar} type="button">
@@ -331,11 +320,11 @@ function OperationalShellInner({
           <div className="na-topbar-right">
             <label className="na-search" aria-label="Search">
               <SearchIcon aria-hidden="true" />
-              <input placeholder="Search workspaces" readOnly type="search" />
+              <input placeholder="Search meter, account, command, or event" readOnly type="search" />
             </label>
 
             <div className="na-topbar-pills">
-              {topbarPills.map((pill) => (
+              {shellPills.map((pill) => (
                 <span key={pill} className="na-status-pill">
                   {pill}
                 </span>
@@ -374,7 +363,7 @@ function OperationalShellInner({
                   <h2>Session required</h2>
                   <p className="muted">
                     Sign in through the existing auth flow before opening the operational
-                    workspaces.
+                    workspace.
                   </p>
                 </div>
               </div>
