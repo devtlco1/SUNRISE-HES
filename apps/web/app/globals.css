@@ -844,12 +844,28 @@ a:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
+  justify-content: space-between;
   gap: 0.65rem 1rem;
   margin-bottom: 0.75rem;
   padding: 0.65rem 0.75rem;
   background: var(--ws-surface);
   border: 1px solid var(--ws-border);
   border-radius: 8px;
+}
+
+.ws-meters-toolbar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem 1rem;
+  flex: 1;
+  min-width: min(100%, 12rem);
+}
+
+.ws-meters-toolbar-registry {
+  display: flex;
+  align-items: flex-end;
+  flex-shrink: 0;
 }
 
 .ws-meters-toolbar-label {
@@ -935,6 +951,30 @@ a:hover {
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, monospace;
   font-size: 0.74rem;
+}
+
+.ws-meters-drilldown {
+  color: var(--ws-text);
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid transparent;
+}
+
+.ws-meters-drilldown:hover {
+  color: var(--ws-accent, #2563eb);
+  border-bottom-color: currentColor;
+}
+
+.ws-meters-ident-static {
+  font-weight: 600;
+  color: var(--ws-text);
+}
+
+@media (max-width: 1240px) {
+  .ws-meters-table th.ws-meters-col-narrow,
+  .ws-meters-table td.ws-meters-col-narrow {
+    display: none;
+  }
 }
 
 .ws-meters-nowrap {
@@ -1056,6 +1096,15 @@ a:hover {
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1);
   z-index: 25;
+}
+
+/* Portaled row menu: escape table overflow and sit above the grid */
+.ws-row-actions-menu.ws-row-actions-popover {
+  position: fixed;
+  right: auto;
+  margin: 0;
+  z-index: 200;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
 }
 
 .ws-row-actions-menu li {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { classifyReachabilityFromLastSeen } from "../dashboard/dashboard-utils";
 import {
@@ -13,6 +14,12 @@ import { useSession } from "../session-provider";
 import { WorkspaceShell } from "../workspace-shell";
 
 const PAGE_LIMITS = [10, 25, 50, 100] as const;
+
+/** `/meters/[meterId]` currently redirects home; keep false until detail is rebuilt. */
+const METER_DETAIL_NAV_ENABLED = false;
+
+const ROW_MENU_MIN_WIDTH_PX = 176;
+const ROW_MENU_VIEWPORT_PAD = 8;
 
 type MeterRow = {
   id: string;
@@ -198,7 +205,16 @@ function MetersRegistryBody() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<RegistryDrawerMode>("create");
   const [drawerMeter, setDrawerMeter] = useState<MeterRegistryRow | null>(null);
-  const [menuRowId, setMenuRowId] = useState<string | null>(null);
+  const [rowMenu, setRowMenu] = useState<{
+    top: number;
+    left: number;
+    meter: MeterRow;
+  } | null>(null);
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -237,23 +253,59 @@ function MetersRegistryBody() {
     setDrawerMode(mode);
     setDrawerMeter(meter);
     setDrawerOpen(true);
-    setMenuRowId(null);
+    setRowMenu(null);
+  };
+
+  const toggleRowMenu = (meter: MeterRow, triggerEl: HTMLElement) => {
+    if (rowMenu?.meter.id === meter.id) {
+      setRowMenu(null);
+      return;
+    }
+    const rect = triggerEl.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const left = Math.min(
+      Math.max(ROW_MENU_VIEWPORT_PAD, rect.right - ROW_MENU_MIN_WIDTH_PX),
+      vw - ROW_MENU_MIN_WIDTH_PX - ROW_MENU_VIEWPORT_PAD,
+    );
+    const top = Math.min(rect.bottom + 4, vh - ROW_MENU_VIEWPORT_PAD);
+    setRowMenu({ top, left, meter });
   };
 
   useEffect(() => {
-    if (!menuRowId) {
+    if (!rowMenu) {
       return;
     }
-    const close = (ev: MouseEvent) => {
+    const onDocMouseDown = (ev: MouseEvent) => {
       const t = ev.target as HTMLElement | null;
-      if (t?.closest?.(".ws-row-actions")) {
+      if (!t) {
         return;
       }
-      setMenuRowId(null);
+      if (t.closest(".ws-row-actions-popover")) {
+        return;
+      }
+      if (t.closest(".ws-row-actions-trigger")) {
+        return;
+      }
+      setRowMenu(null);
     };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [menuRowId]);
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") {
+        setRowMenu(null);
+      }
+    };
+    const onViewportChange = () => setRowMenu(null);
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onViewportChange, true);
+    window.addEventListener("resize", onViewportChange);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onViewportChange, true);
+      window.removeEventListener("resize", onViewportChange);
+    };
+  }, [rowMenu]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -359,13 +411,6 @@ function MetersRegistryBody() {
           <p className="ws-page-subtitle">Inventory and operational registry.</p>
         </div>
         <div className="ws-meters-header-right">
-          <button
-            type="button"
-            className="ws-btn ws-btn-ghost ws-meters-add"
-            onClick={() => openDrawer("create", null)}
-          >
-            Add meter
-          </button>
           {asOf ? (
             <p className="ws-dash-asof ws-meters-asof">
               Updated {formatShortDate(asOf)}
@@ -415,72 +460,83 @@ function MetersRegistryBody() {
           </section>
 
           <div className="ws-meters-toolbar" role="search">
-            <label className="ws-meters-search">
-              <span className="ws-meters-toolbar-label">Search</span>
-              <input
-                type="search"
-                value={searchDraft}
-                onChange={(ev) => {
-                  setSearchDraft(ev.target.value);
-                  setOffset(0);
-                }}
-                placeholder="Serial, utility #, badge…"
-                autoComplete="off"
-              />
-            </label>
-            <label className="ws-meters-filter">
-              <span className="ws-meters-toolbar-label">Lifecycle</span>
-              <select
-                value={statusFilter}
-                onChange={(ev) => {
-                  setStatusFilter(ev.target.value);
-                  setOffset(0);
-                }}
+            <div className="ws-meters-toolbar-filters">
+              <label className="ws-meters-search">
+                <span className="ws-meters-toolbar-label">Search</span>
+                <input
+                  type="search"
+                  value={searchDraft}
+                  onChange={(ev) => {
+                    setSearchDraft(ev.target.value);
+                    setOffset(0);
+                  }}
+                  placeholder="Serial, utility #, badge…"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="ws-meters-filter">
+                <span className="ws-meters-toolbar-label">Lifecycle</span>
+                <select
+                  value={statusFilter}
+                  onChange={(ev) => {
+                    setStatusFilter(ev.target.value);
+                    setOffset(0);
+                  }}
+                >
+                  {LIFECYCLE_OPTIONS.map((o) => (
+                    <option key={o.value || "all"} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="ws-meters-filter">
+                <span className="ws-meters-toolbar-label">Reachability</span>
+                <select
+                  value={reachFilter}
+                  onChange={(ev) => {
+                    setReachFilter(ev.target.value);
+                    setOffset(0);
+                  }}
+                >
+                  {REACH_OPTIONS.map((o) => (
+                    <option key={o.value || "all-r"} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="ws-meters-filter">
+                <span className="ws-meters-toolbar-label">GIS</span>
+                <select
+                  value={gisFilter}
+                  onChange={(ev) => {
+                    setGisFilter(ev.target.value);
+                    setOffset(0);
+                  }}
+                >
+                  {GIS_OPTIONS.map((o) => (
+                    <option key={o.value || "all-g"} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {(searchDraft || statusFilter || reachFilter || gisFilter) ? (
+                <button type="button" className="ws-btn ws-btn-ghost ws-meters-clear" onClick={clearFilters}>
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            <div className="ws-meters-toolbar-registry">
+              <button
+                type="button"
+                className="ws-btn ws-btn-secondary ws-meters-add"
+                onClick={() => openDrawer("create", null)}
               >
-                {LIFECYCLE_OPTIONS.map((o) => (
-                  <option key={o.value || "all"} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="ws-meters-filter">
-              <span className="ws-meters-toolbar-label">Reachability</span>
-              <select
-                value={reachFilter}
-                onChange={(ev) => {
-                  setReachFilter(ev.target.value);
-                  setOffset(0);
-                }}
-              >
-                {REACH_OPTIONS.map((o) => (
-                  <option key={o.value || "all-r"} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="ws-meters-filter">
-              <span className="ws-meters-toolbar-label">GIS</span>
-              <select
-                value={gisFilter}
-                onChange={(ev) => {
-                  setGisFilter(ev.target.value);
-                  setOffset(0);
-                }}
-              >
-                {GIS_OPTIONS.map((o) => (
-                  <option key={o.value || "all-g"} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {(searchDraft || statusFilter || reachFilter || gisFilter) ? (
-              <button type="button" className="ws-btn ws-btn-ghost ws-meters-clear" onClick={clearFilters}>
-                Clear
+                Add meter
               </button>
-            ) : null}
+            </div>
           </div>
 
           <div className="ws-meters-table-wrap">
@@ -498,8 +554,12 @@ function MetersRegistryBody() {
                   <th scope="col">Lifecycle</th>
                   <th scope="col">Last seen</th>
                   <th scope="col">Reachability</th>
-                  <th scope="col">Service point</th>
-                  <th scope="col">Transformer</th>
+                  <th scope="col" className="ws-meters-col-narrow">
+                    Svc pt
+                  </th>
+                  <th scope="col" className="ws-meters-col-narrow">
+                    Xfmr
+                  </th>
                   <th scope="col">GIS</th>
                   <th scope="col" className="ws-meters-th-actions">
                     Actions
@@ -526,10 +586,34 @@ function MetersRegistryBody() {
                       : "—";
                     return (
                       <tr key={m.id}>
-                        <td className="ws-meters-mono">{m.serial_number}</td>
+                        <td className="ws-meters-mono">
+                          {METER_DETAIL_NAV_ENABLED ? (
+                            <Link className="ws-meters-drilldown" href={`/meters/${m.id}`}>
+                              {m.serial_number}
+                            </Link>
+                          ) : (
+                            <span
+                              className="ws-meters-ident-static"
+                              title="Meter detail is not available in this build. Use Edit registry in the row menu."
+                            >
+                              {m.serial_number}
+                            </span>
+                          )}
+                        </td>
                         <td className="ws-meters-mono">{m.utility_meter_number ?? "—"}</td>
-                        <td className="ws-meters-mono" title={m.id}>
-                          {shortId(m.id)}
+                        <td className="ws-meters-mono">
+                          {METER_DETAIL_NAV_ENABLED ? (
+                            <Link className="ws-meters-drilldown" href={`/meters/${m.id}`} title={m.id}>
+                              {shortId(m.id)}
+                            </Link>
+                          ) : (
+                            <span
+                              className="ws-meters-ident-static"
+                              title={`${m.id} — detail view not available yet`}
+                            >
+                              {shortId(m.id)}
+                            </span>
+                          )}
                         </td>
                         <td>{m.manufacturer_code}</td>
                         <td>{m.meter_model_code}</td>
@@ -547,10 +631,10 @@ function MetersRegistryBody() {
                             {humanizeReach(bucket)}
                           </span>
                         </td>
-                        <td className="ws-meters-mono">
+                        <td className="ws-meters-mono ws-meters-col-narrow">
                           {m.service_point_id ? shortId(m.service_point_id) : "—"}
                         </td>
-                        <td className="ws-meters-mono">
+                        <td className="ws-meters-mono ws-meters-col-narrow">
                           {m.transformer_id ? shortId(m.transformer_id) : "—"}
                         </td>
                         <td>
@@ -571,62 +655,13 @@ function MetersRegistryBody() {
                             <button
                               type="button"
                               className="ws-row-actions-trigger"
-                              aria-expanded={menuRowId === m.id}
+                              aria-expanded={rowMenu?.meter.id === m.id}
                               aria-haspopup="menu"
-                              onClick={() =>
-                                setMenuRowId((id) => (id === m.id ? null : m.id))
-                              }
+                              aria-label="Registry actions"
+                              onClick={(ev) => toggleRowMenu(m, ev.currentTarget)}
                             >
                               ⋯
                             </button>
-                            {menuRowId === m.id ? (
-                              <ul className="ws-row-actions-menu" role="menu">
-                                <li role="none">
-                                  <Link
-                                    role="menuitem"
-                                    href={`/meters/${m.id}`}
-                                    className="ws-row-actions-item"
-                                    onClick={() => setMenuRowId(null)}
-                                  >
-                                    View details
-                                  </Link>
-                                </li>
-                                <li role="none">
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    className="ws-row-actions-item"
-                                    onClick={() => openDrawer("edit", toRegistryRow(m))}
-                                  >
-                                    Edit registry
-                                  </button>
-                                </li>
-                                <li role="none">
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    className="ws-row-actions-item"
-                                    onClick={() =>
-                                      openDrawer("lifecycle", toRegistryRow(m))
-                                    }
-                                  >
-                                    Change lifecycle
-                                  </button>
-                                </li>
-                                <li role="none">
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    className="ws-row-actions-item ws-row-actions-item--secondary"
-                                    onClick={() =>
-                                      openDrawer("toggle-active", toRegistryRow(m))
-                                    }
-                                  >
-                                    {m.is_active ? "Set inactive" : "Set active"}
-                                  </button>
-                                </li>
-                              </ul>
-                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -680,6 +715,48 @@ function MetersRegistryBody() {
           </div>
         </>
       ) : null}
+
+      {portalReady && rowMenu
+        ? createPortal(
+            <ul
+              className="ws-row-actions-menu ws-row-actions-popover"
+              role="menu"
+              style={{ top: rowMenu.top, left: rowMenu.left }}
+            >
+              <li role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="ws-row-actions-item"
+                  onClick={() => openDrawer("edit", toRegistryRow(rowMenu.meter))}
+                >
+                  Edit registry
+                </button>
+              </li>
+              <li role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="ws-row-actions-item"
+                  onClick={() => openDrawer("lifecycle", toRegistryRow(rowMenu.meter))}
+                >
+                  Change lifecycle
+                </button>
+              </li>
+              <li role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="ws-row-actions-item ws-row-actions-item--secondary"
+                  onClick={() => openDrawer("toggle-active", toRegistryRow(rowMenu.meter))}
+                >
+                  {rowMenu.meter.is_active ? "Set inactive" : "Set active"}
+                </button>
+              </li>
+            </ul>,
+            document.body,
+          )
+        : null}
 
       <MeterRegistryDrawer
         open={drawerOpen}
