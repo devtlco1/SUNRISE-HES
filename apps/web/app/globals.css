@@ -1785,3 +1785,244 @@ a.ws-row-actions-item {
   font-family: ui-monospace, monospace;
   font-size: 0.74rem;
 }
+
+/* ——— Commands (operational control) ——— */
+
+.ws-cmd-page {
+  max-width: 90rem;
+}
+
+.ws-cmd-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--ws-border);
+}
+
+.ws-cmd-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ws-text);
+}
+
+.ws-cmd-subtitle {
+  margin: 0.25rem 0 0;
+  max-width: 42rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+}
+
+.ws-cmd-asof {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.ws-cmd-errors {
+  margin-bottom: 0.75rem;
+}
+
+.ws-cmd-summary {
+  margin-bottom: 1rem;
+}
+
+.ws-cmd-kpi-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+@media (max-width: 1200px) {
+  .ws-cmd-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .ws-cmd-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.ws-cmd-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ws-cmd-panel {
+  min-height: 0;
+}
+
+.ws-cmd-overview-body {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.ws-cmd-overview-lead {
+  margin: 0 0 0.75rem;
+  color: var(--ws-text);
+}
+
+.ws-cmd-dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem 1rem;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .ws-cmd-dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.ws-cmd-dl > div {
+  margin: 0;
+}
+
+.ws-cmd-dl dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ws-muted);
+}
+
+.ws-cmd-dl dd {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.ws-cmd-registry-body {
+  padding-top: 0.1rem;
+}
+
+.ws-cmd-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  margin-bottom: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--ws-bg);
+  border: 1px solid var(--ws-border);
+  border-radius: 8px;
+}
+
+.ws-cmd-toolbar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem 1rem;
+  flex: 1;
+  min-width: min(100%, 10rem);
+}
+
+.ws-cmd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ws-cmd-field-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ws-muted);
+}
+
+.ws-cmd-field input {
+  min-width: min(14rem, 100%);
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--ws-border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.ws-cmd-field select {
+  min-width: 10rem;
+  padding: 0.4rem 0.45rem;
+  border: 1px solid var(--ws-border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8125rem;
+  background: var(--ws-surface);
+}
+
+.ws-cmd-refresh {
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+.ws-cmd-table-wrap {
+  border: 1px solid var(--ws-border);
+  border-radius: 8px;
+  background: var(--ws-surface);
+  overflow-x: auto;
+}
+
+.ws-cmd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.ws-cmd-table th,
+.ws-cmd-table td {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ws-border);
+  vertical-align: middle;
+}
+
+.ws-cmd-table--compact th,
+.ws-cmd-table--compact td {
+  padding: 0.35rem 0.45rem;
+}
+
+.ws-cmd-table th {
+  position: sticky;
+  top: 0;
+  background: var(--ws-bg);
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ws-muted);
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.ws-cmd-table tbody tr:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.ws-cmd-table-empty {
+  text-align: center;
+  color: var(--ws-muted);
+  padding: 1.25rem 1rem;
+  font-size: 0.8125rem;
+}
+
+.ws-cmd-mono {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  font-size: 0.74rem;
+}
+
+.ws-cmd-outcome {
+  max-width: 14rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  word-break: break-word;
+  color: var(--ws-muted);
+}

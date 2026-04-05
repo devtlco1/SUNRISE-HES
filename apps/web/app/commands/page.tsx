@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { CommandsPageClient } from "./commands-page-client";
 
-export default function CommandsRetired() {
-  redirect("/");
+export default function CommandsPage() {
+  return <CommandsPageClient />;
 }
