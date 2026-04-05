@@ -1,5 +1,5 @@
-import { OperationalHomePageClient } from "./operational-home-page-client";
+import { DashboardPageClient } from "./dashboard-page-client";
 
 export default function HomePage() {
-  return <OperationalHomePageClient />;
+  return <DashboardPageClient />;
 }

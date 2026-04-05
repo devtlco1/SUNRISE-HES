@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode, SVGProps } from "react";
 
 export type StatusTone = "positive" | "warning" | "danger" | "info" | "neutral";
@@ -249,24 +248,3 @@ export function SummaryList({
   );
 }
 
-export function ActionTile({
-  href,
-  title,
-  description,
-  meta,
-}: {
-  href: string;
-  title: string;
-  description: string;
-  meta?: string;
-}) {
-  return (
-    <Link className="hes-action-tile" href={href}>
-      <div>
-        <strong>{title}</strong>
-        <p>{description}</p>
-      </div>
-      {meta ? <span>{meta}</span> : null}
-    </Link>
-  );
-}

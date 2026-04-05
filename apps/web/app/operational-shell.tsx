@@ -32,7 +32,6 @@ type OperationalShellProps = {
   title: string;
   description: string;
   currentMeterId?: string;
-  navigationVariant?: "default" | "dashboard-home";
   children: (props: OperationalShellRenderProps) => ReactNode;
 };
 
@@ -72,7 +71,6 @@ export function OperationalShell({
   title,
   description,
   currentMeterId,
-  navigationVariant = "default",
   children,
 }: OperationalShellProps) {
   return (
@@ -82,7 +80,6 @@ export function OperationalShell({
         title={title}
         description={description}
         currentMeterId={currentMeterId}
-        navigationVariant={navigationVariant}
         children={children}
       />
     </SessionProvider>
@@ -225,14 +222,13 @@ function OperationalShellInner({
           </div>
 
           <section className="na-sidebar-callout hes-sidebar-callout">
-            <span className="na-sidebar-callout-eyebrow">Operator workspace</span>
+            <span className="na-sidebar-callout-eyebrow">Active context</span>
             <strong>{title}</strong>
             <p>{description}</p>
             <div className="na-sidebar-callout-pills">
               <span className="na-status-pill na-status-pill-positive">
                 {currentUser ? "Authenticated" : "Session required"}
               </span>
-              <span className="na-status-pill">Dashboard + meters reset</span>
             </div>
           </section>
 

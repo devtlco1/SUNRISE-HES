@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { OperationalHomeModule } from "./operational-home-module";
+import { DashboardModule } from "./dashboard-module";
 import { OperationalShell } from "./operational-shell";
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -196,15 +196,19 @@ function createMockApi({
   return { fetchMock };
 }
 
-function renderOperationalHomeInShell() {
+function renderDashboardInShell() {
   render(
-    <OperationalShell eyebrow="Operations" title="Dashboard" description="Bounded dashboard">
-      {({ authorizedFetch }) => <OperationalHomeModule authorizedFetch={authorizedFetch} />}
+    <OperationalShell
+      eyebrow="Operations control"
+      title="AMI command desk"
+      description="Fleet posture for tests."
+    >
+      {({ authorizedFetch }) => <DashboardModule authorizedFetch={authorizedFetch} />}
     </OperationalShell>,
   );
 }
 
-describe("OperationalHomeModule", () => {
+describe("DashboardModule", () => {
   beforeEach(() => {
     window.localStorage.setItem("sunrise.web.apiBaseUrl", "http://localhost:8000");
     window.localStorage.setItem("sunrise.web.accessToken", "token-1");
@@ -215,58 +219,51 @@ describe("OperationalHomeModule", () => {
     window.localStorage.clear();
   });
 
-  it("renders the rebuilt dashboard surfaces inside the shared shell", async () => {
+  it("renders operator desk surfaces with live API-backed rows", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
-    renderOperationalHomeInShell();
+    renderDashboardInShell();
 
     expect(await screen.findByText("profile-capture-template")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("Connectivity summary")).toBeInTheDocument();
+      expect(screen.getByText("Network posture")).toBeInTheDocument();
     });
-    expect(screen.getByText("Recent commands")).toBeInTheDocument();
-    expect(screen.getByText("Priority queue")).toBeInTheDocument();
-    expect(screen.getByText("Alarm overview")).toBeInTheDocument();
-    expect(screen.getByText("Quick access")).toBeInTheDocument();
-    expect(screen.getByText("Fleet meters")).toBeInTheDocument();
-    expect(screen.getByText("Meter registry")).toBeInTheDocument();
-    expect(screen.getByText("Command queue")).toBeInTheDocument();
+    expect(screen.getByText("Remote action log")).toBeInTheDocument();
+    expect(screen.getByText("Triage queue")).toBeInTheDocument();
+    expect(screen.getByText("Event roll-up")).toBeInTheDocument();
+    expect(screen.getByText("Registered endpoints")).toBeInTheDocument();
     expect(screen.getByText("Tamper detected")).toBeInTheDocument();
+    expect(screen.getByLabelText("Operational shortcuts")).toBeInTheDocument();
   });
 
-  it("keeps concise drill-down links into the operational routes", async () => {
+  it("exposes drill-down links into operational routes", async () => {
     const { fetchMock } = createMockApi();
     vi.stubGlobal("fetch", fetchMock);
 
-    renderOperationalHomeInShell();
+    renderDashboardInShell();
 
-    expect(await screen.findByRole("link", { name: "Open connectivity" })).toHaveAttribute(
+    const shortcuts = await screen.findByLabelText("Operational shortcuts");
+    expect(within(shortcuts).getByRole("link", { name: "Connectivity" })).toHaveAttribute(
       "href",
       "/connectivity",
     );
-    expect(screen.getByRole("link", { name: "Commands" })).toHaveAttribute(
-      "href",
-      "/commands",
-    );
+    expect(screen.getByRole("link", { name: "Commands" })).toHaveAttribute("href", "/commands");
     expect(screen.getByRole("link", { name: "Jobs / Events / Alerts" })).toHaveAttribute(
       "href",
       "/jobs-events-alerts",
     );
-    expect(screen.getByRole("link", { name: "Readings" })).toHaveAttribute(
-      "href",
-      "/readings",
-    );
+    expect(screen.getByRole("link", { name: "Readings" })).toHaveAttribute("href", "/readings");
   });
 
-  it("renders an error state when the dashboard meter scope fails", async () => {
+  it("surfaces meter scope errors from the API", async () => {
     const { fetchMock } = createMockApi({
       metersStatus: 503,
       metersDetail: "Meter overview unavailable.",
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    renderOperationalHomeInShell();
+    renderDashboardInShell();
 
     expect(await screen.findByText("Meter overview unavailable.")).toBeInTheDocument();
   });
