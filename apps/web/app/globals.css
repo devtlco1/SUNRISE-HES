@@ -1064,6 +1064,7 @@ a:hover {
   white-space: nowrap;
 }
 
+.ws-registry-pager,
 .ws-meters-pager {
   display: flex;
   flex-wrap: wrap;
@@ -1078,27 +1079,46 @@ a:hover {
   box-shadow: var(--ws-table-card-shadow);
 }
 
-.ws-meters-page-size {
+.ws-registry-pager-size {
   display: flex;
   align-items: center;
   gap: 0.35rem;
 }
 
-.ws-meters-page-size select {
+.ws-registry-pager-size-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ws-muted);
+}
+
+.ws-registry-pager-size select {
   padding: 0.35rem 0.45rem;
   border-radius: 6px;
   border: 1px solid var(--ws-border);
   font: inherit;
 }
 
+.ws-registry-pager-meta,
 .ws-meters-pager-meta {
   font-variant-numeric: tabular-nums;
 }
 
+.ws-registry-pager-actions,
 .ws-meters-pager-actions {
   display: flex;
   gap: 0.35rem;
   margin-left: auto;
+}
+
+.ws-cmd-table-wrap + .ws-registry-pager,
+.ws-read-table-wrap + .ws-registry-pager {
+  margin-top: 0.65rem;
+}
+
+.ws-read-registry-body > .ws-registry-pager {
+  margin-bottom: 0.65rem;
 }
 
 .ws-chip {
@@ -1785,21 +1805,6 @@ a.ws-row-actions-item {
   color: var(--ws-muted);
 }
 
-.ws-cmd-header-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem 1rem;
-}
-
-.ws-cmd-header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-}
-
 .ws-cmd-asof {
   margin: 0;
   font-size: 0.75rem;
@@ -1991,6 +1996,22 @@ a.ws-row-actions-item {
   align-self: flex-end;
 }
 
+.ws-cmd-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.ws-cmd-pending-panel {
+  border-left: 3px solid var(--ws-brand-primary);
+}
+
+.ws-cmd-pending-panel .ws-dash-panel-title {
+  color: var(--ws-brand-primary);
+}
+
 .ws-cmd-mono {
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, monospace;
@@ -2140,12 +2161,6 @@ a.ws-row-actions-item {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.5rem;
-}
-
-.ws-read-pager {
-  display: inline-flex;
-  gap: 0.35rem;
-  align-items: center;
 }
 
 .ws-read-field {

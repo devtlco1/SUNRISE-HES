@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { RegistryPager } from "../registry-pagination";
 import { useSession } from "../session-provider";
 import { WorkspaceShell } from "../workspace-shell";
 
@@ -248,6 +249,8 @@ function CommandsBody() {
   const [execClient, setExecClient] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
   const [searchApplied, setSearchApplied] = useState("");
+  const [registryPageSize, setRegistryPageSize] = useState<number>(25);
+  const [registryPageIdx, setRegistryPageIdx] = useState(0);
 
   const [bulkOpen, setBulkOpen] = useState(false);
   const [templates, setTemplates] = useState<CommandTemplate[]>([]);
@@ -340,6 +343,10 @@ function CommandsBody() {
   }, [searchDraft]);
 
   useEffect(() => {
+    setRegistryPageIdx(0);
+  }, [familyApi, approvalApi, execClient, searchApplied]);
+
+  useEffect(() => {
     if (!bulkOpen || !currentUser) {
       return;
     }
@@ -383,24 +390,18 @@ function CommandsBody() {
 
   const recentItems = recent?.items ?? [];
 
-  const kpi = useMemo(() => {
-    const queuedInProgress = recentItems.filter((r) => r.command_status === "queued" || r.command_status === "in_progress")
-      .length;
-    const awaiting = recentItems.filter((r) =>
-      ["pending", "scheduled", "retry_wait"].includes(r.command_status),
-    ).length;
-    const succeeded = recentItems.filter((r) => r.command_status === "succeeded").length;
-    const failed = recentItems.filter((r) => r.command_status === "failed" || r.command_status === "timed_out").length;
-    const pendingApprovalCount = pending?.items.length ?? 0;
-    return {
-      inWindow: recentItems.length,
-      pendingApprovalCount,
-      queuedInProgress,
-      awaiting,
-      succeeded,
-      failed,
-    };
-  }, [pending?.items.length, recentItems]);
+  const pendingApprovalRows = useMemo(() => {
+    const rows = pending?.items ?? [];
+    const seen = new Set<string>();
+    const out: CommandOperationalRecentListItem[] = [];
+    for (const row of rows) {
+      if (row.approval_status === "submitted_for_approval" && !seen.has(row.command_id)) {
+        seen.add(row.command_id);
+        out.push(row);
+      }
+    }
+    return out;
+  }, [pending?.items]);
 
   const filteredTable = useMemo(() => {
     const q = searchApplied.trim().toLowerCase();
@@ -421,25 +422,55 @@ function CommandsBody() {
     });
   }, [execClient, recentItems, searchApplied, serialByMeterId]);
 
-  const attentionRows = useMemo(() => {
-    const rows: CommandOperationalRecentListItem[] = [];
+  const kpi = useMemo(() => {
+    const queuedInProgress = recentItems.filter((r) => r.command_status === "queued" || r.command_status === "in_progress")
+      .length;
+    const awaiting = recentItems.filter((r) =>
+      ["pending", "scheduled", "retry_wait"].includes(r.command_status),
+    ).length;
+    const succeeded = recentItems.filter((r) => r.command_status === "succeeded").length;
+    const failed = recentItems.filter((r) => r.command_status === "failed" || r.command_status === "timed_out").length;
+    return {
+      inWindow: recentItems.length,
+      pendingApprovalCount: pendingApprovalRows.length,
+      queuedInProgress,
+      awaiting,
+      succeeded,
+      failed,
+    };
+  }, [pendingApprovalRows.length, recentItems]);
+
+  const executionIssueRows = useMemo(() => {
     const seen = new Set<string>();
-    for (const row of pending?.items ?? []) {
-      if (!seen.has(row.command_id)) {
-        seen.add(row.command_id);
-        rows.push(row);
-      }
-    }
+    const out: CommandOperationalRecentListItem[] = [];
     for (const row of recentItems) {
-      if (row.command_status === "failed" || row.command_status === "timed_out") {
-        if (!seen.has(row.command_id)) {
-          seen.add(row.command_id);
-          rows.push(row);
-        }
+      if (row.command_status !== "failed" && row.command_status !== "timed_out") {
+        continue;
       }
+      if (seen.has(row.command_id)) {
+        continue;
+      }
+      seen.add(row.command_id);
+      out.push(row);
     }
-    return rows.slice(0, 18);
-  }, [pending?.items, recentItems]);
+    return out.slice(0, 24);
+  }, [recentItems]);
+
+  const registryTotal = filteredTable.length;
+  const registryTotalPages = registryTotal === 0 ? 0 : Math.ceil(registryTotal / registryPageSize);
+  const registryMaxPageIdx = Math.max(0, registryTotalPages - 1);
+
+  useEffect(() => {
+    if (registryPageIdx > registryMaxPageIdx) {
+      setRegistryPageIdx(registryMaxPageIdx);
+    }
+  }, [registryMaxPageIdx, registryPageIdx]);
+
+  const effectiveRegistryIdx = Math.min(registryPageIdx, registryMaxPageIdx);
+  const pagedRegistryRows = useMemo(() => {
+    const start = effectiveRegistryIdx * registryPageSize;
+    return filteredTable.slice(start, start + registryPageSize);
+  }, [filteredTable, effectiveRegistryIdx, registryPageSize]);
 
   const closeBulk = () => {
     setBulkOpen(false);
@@ -531,16 +562,9 @@ function CommandsBody() {
   return (
     <div className="ws-canvas ws-cmd-page">
       <header className="ws-cmd-header">
-        <div className="ws-cmd-header-main">
-          <div>
-            <h1 className="ws-cmd-title">Commands</h1>
-            <p className="ws-cmd-subtitle">Review activity, pending approvals, and submit bounded relay or read requests.</p>
-          </div>
-          <div className="ws-cmd-header-actions">
-            <button type="button" className="ws-btn ws-btn-primary" onClick={() => setBulkOpen(true)}>
-              Request commands
-            </button>
-          </div>
+        <div>
+          <h1 className="ws-cmd-title">Commands</h1>
+          <p className="ws-cmd-subtitle">Review activity, pending approvals, and submit bounded relay or read requests.</p>
         </div>
         {asOf ? <p className="ws-muted ws-cmd-asof">As of {fmtAsOf(asOf)}</p> : null}
       </header>
@@ -587,6 +611,70 @@ function CommandsBody() {
       </section>
 
       <div className="ws-cmd-stack">
+        <section
+          className="ws-dash-panel ws-cmd-panel ws-cmd-pending-panel"
+          aria-labelledby="cmd-pending-h"
+        >
+          <h2 className="ws-dash-panel-title" id="cmd-pending-h">
+            Pending approvals
+          </h2>
+          <div className="ws-dash-panel-body">
+            {pendingApprovalRows.length === 0 ? (
+              <p className="ws-muted">None awaiting approval.</p>
+            ) : (
+              <div className="ws-cmd-table-wrap">
+                <table className="ws-cmd-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Command</th>
+                      <th scope="col">Type</th>
+                      <th scope="col">Meter</th>
+                      <th scope="col">Updated</th>
+                      <th scope="col">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingApprovalRows.map((row) => {
+                      const serial = serialByMeterId.get(row.meter_id);
+                      const meterLabel = serial ?? shortId(row.meter_id);
+                      return (
+                        <tr key={`pend-${row.command_id}`}>
+                          <td className="ws-cmd-mono">{shortId(row.command_id)}</td>
+                          <td>{row.command_template_code}</td>
+                          <td>
+                            <Link className="ws-meters-drilldown" href={`/meters/${row.meter_id}`} title={row.meter_id}>
+                              {meterLabel}
+                            </Link>
+                          </td>
+                          <td className="ws-cmd-mono">{fmtWhen(row.latest_updated_at)}</td>
+                          <td className="ws-cmd-actions-cell">
+                            <div className="ws-cmd-inline-actions">
+                              <button
+                                type="button"
+                                className="ws-btn ws-btn-primary ws-cmd-action-btn"
+                                onClick={() => openApproval(row.command_id, "approve")}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                className="ws-btn ws-btn-ghost ws-cmd-action-btn"
+                                onClick={() => openApproval(row.command_id, "reject")}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+
         <section className="ws-dash-panel ws-cmd-panel" aria-labelledby="cmd-registry-h">
           <h2 className="ws-dash-panel-title" id="cmd-registry-h">
             Command registry
@@ -647,93 +735,142 @@ function CommandsBody() {
                   />
                 </label>
               </div>
-              <button type="button" className="ws-btn ws-btn-ghost ws-cmd-refresh" onClick={() => void load()} disabled={loading}>
-                Refresh
-              </button>
+              <div className="ws-cmd-toolbar-actions">
+                <button type="button" className="ws-btn ws-btn-primary" onClick={() => setBulkOpen(true)}>
+                  Request commands
+                </button>
+                <button type="button" className="ws-btn ws-btn-ghost ws-cmd-refresh" onClick={() => void load()} disabled={loading}>
+                  Refresh
+                </button>
+              </div>
             </div>
 
             {loading && recentItems.length === 0 ? (
               <p className="ws-muted">Loading…</p>
             ) : (
-              <div className="ws-cmd-table-wrap">
-                <table className="ws-cmd-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Command</th>
-                      <th scope="col">Type</th>
-                      <th scope="col">Meter</th>
-                      <th scope="col">Submitted</th>
-                      <th scope="col">Approval</th>
-                      <th scope="col">Execution</th>
-                      <th scope="col">Attempt</th>
-                      <th scope="col">Updated</th>
-                      <th scope="col">Outcome</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTable.length === 0 ? (
+              <>
+                <div className="ws-cmd-table-wrap">
+                  <table className="ws-cmd-table">
+                    <thead>
                       <tr>
-                        <td colSpan={9} className="ws-cmd-table-empty">
-                          No commands found.
-                        </td>
+                        <th scope="col">Command</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Meter</th>
+                        <th scope="col">Submitted</th>
+                        <th scope="col">Approval</th>
+                        <th scope="col">Execution</th>
+                        <th scope="col">Attempt</th>
+                        <th scope="col">Updated</th>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">Actions</th>
                       </tr>
-                    ) : (
-                      filteredTable.map((row) => {
-                        const serial = serialByMeterId.get(row.meter_id);
-                        const meterLabel = serial ?? shortId(row.meter_id);
-                        return (
-                          <tr key={row.command_id}>
-                            <td className="ws-cmd-mono">{shortId(row.command_id)}</td>
-                            <td>{row.command_template_code}</td>
-                            <td>
-                              <Link className="ws-meters-drilldown" href={`/meters/${row.meter_id}`} title={row.meter_id}>
-                                {meterLabel}
-                              </Link>
-                            </td>
-                            <td className="ws-cmd-mono">{fmtWhen(row.created_at)}</td>
-                            <td>
-                              <span className={`ws-metric ws-metric--${approvalAccent(row.approval_status)}`}>
-                                {humanize(row.approval_status)}
-                              </span>
-                            </td>
-                            <td>
-                              <span className={`ws-metric ws-metric--${executionStatusAccent(row.command_status)}`}>
-                                {humanize(row.command_status)}
-                              </span>
-                            </td>
-                            <td>
-                              {row.latest_command_execution_attempt_status ? (
-                                <span
-                                  className={`ws-metric ws-metric--${executionStatusAccent(
-                                    row.latest_command_execution_attempt_status,
-                                  )}`}
-                                >
-                                  {humanize(row.latest_command_execution_attempt_status)}
+                    </thead>
+                    <tbody>
+                      {filteredTable.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="ws-cmd-table-empty">
+                            No commands found.
+                          </td>
+                        </tr>
+                      ) : (
+                        pagedRegistryRows.map((row) => {
+                          const serial = serialByMeterId.get(row.meter_id);
+                          const meterLabel = serial ?? shortId(row.meter_id);
+                          const needsApproval = row.approval_status === "submitted_for_approval";
+                          return (
+                            <tr key={row.command_id}>
+                              <td className="ws-cmd-mono">{shortId(row.command_id)}</td>
+                              <td>{row.command_template_code}</td>
+                              <td>
+                                <Link className="ws-meters-drilldown" href={`/meters/${row.meter_id}`} title={row.meter_id}>
+                                  {meterLabel}
+                                </Link>
+                              </td>
+                              <td className="ws-cmd-mono">{fmtWhen(row.created_at)}</td>
+                              <td>
+                                <span className={`ws-metric ws-metric--${approvalAccent(row.approval_status)}`}>
+                                  {humanize(row.approval_status)}
                                 </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td className="ws-cmd-mono">{fmtWhen(row.latest_updated_at)}</td>
-                            <td className="ws-cmd-outcome">{outcomePreview(row.family_specific_outcome_summary)}</td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                              </td>
+                              <td>
+                                <span className={`ws-metric ws-metric--${executionStatusAccent(row.command_status)}`}>
+                                  {humanize(row.command_status)}
+                                </span>
+                              </td>
+                              <td>
+                                {row.latest_command_execution_attempt_status ? (
+                                  <span
+                                    className={`ws-metric ws-metric--${executionStatusAccent(
+                                      row.latest_command_execution_attempt_status,
+                                    )}`}
+                                  >
+                                    {humanize(row.latest_command_execution_attempt_status)}
+                                  </span>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td className="ws-cmd-mono">{fmtWhen(row.latest_updated_at)}</td>
+                              <td className="ws-cmd-outcome">{outcomePreview(row.family_specific_outcome_summary)}</td>
+                              <td className="ws-cmd-actions-cell">
+                                {needsApproval ? (
+                                  <div className="ws-cmd-inline-actions">
+                                    <button
+                                      type="button"
+                                      className="ws-btn ws-btn-primary ws-cmd-action-btn"
+                                      onClick={() => openApproval(row.command_id, "approve")}
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="ws-btn ws-btn-ghost ws-cmd-action-btn"
+                                      onClick={() => openApproval(row.command_id, "reject")}
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <RegistryPager
+                  disabled={loading}
+                  pageSize={registryPageSize}
+                  onPageSizeChange={(n) => {
+                    setRegistryPageSize(n);
+                    setRegistryPageIdx(0);
+                  }}
+                  rangeStart={registryTotal === 0 ? 0 : effectiveRegistryIdx * registryPageSize + 1}
+                  rangeEnd={
+                    registryTotal === 0 ? 0 : Math.min((effectiveRegistryIdx + 1) * registryPageSize, registryTotal)
+                  }
+                  total={registryTotal}
+                  entityLabel="commands"
+                  canPrev={registryTotal > 0 && effectiveRegistryIdx > 0}
+                  canNext={registryTotal > 0 && effectiveRegistryIdx < registryMaxPageIdx}
+                  onPrev={() => setRegistryPageIdx((i) => Math.max(0, i - 1))}
+                  onNext={() => setRegistryPageIdx((i) => Math.min(registryMaxPageIdx, i + 1))}
+                />
+              </>
             )}
           </div>
         </section>
 
-        <section className="ws-dash-panel ws-cmd-panel" aria-labelledby="cmd-attention-h">
-          <h2 className="ws-dash-panel-title" id="cmd-attention-h">
-            Attention
+        <section className="ws-dash-panel ws-cmd-panel" aria-labelledby="cmd-issues-h">
+          <h2 className="ws-dash-panel-title" id="cmd-issues-h">
+            Execution issues
           </h2>
           <div className="ws-dash-panel-body">
-            {attentionRows.length === 0 ? (
-              <p className="ws-muted">No commands need attention.</p>
+            {executionIssueRows.length === 0 ? (
+              <p className="ws-muted">No failed or timed-out commands in the current list.</p>
             ) : (
               <div className="ws-cmd-table-wrap">
                 <table className="ws-cmd-table ws-cmd-table--compact">
@@ -743,24 +880,15 @@ function CommandsBody() {
                       <th scope="col">Meter</th>
                       <th scope="col">Issue</th>
                       <th scope="col">Updated</th>
-                      <th scope="col">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {attentionRows.map((row) => {
+                    {executionIssueRows.map((row) => {
                       const serial = serialByMeterId.get(row.meter_id);
                       const meterLabel = serial ?? shortId(row.meter_id);
-                      const issue =
-                        row.approval_status === "submitted_for_approval"
-                          ? "Pending approval"
-                          : row.command_status === "failed"
-                            ? "Execution failed"
-                            : row.command_status === "timed_out"
-                              ? "Timed out"
-                              : "Needs review";
-                      const canApprove = row.approval_status === "submitted_for_approval";
+                      const issue = row.command_status === "failed" ? "Execution failed" : "Timed out";
                       return (
-                        <tr key={`att-${row.command_id}`}>
+                        <tr key={`iss-${row.command_id}`}>
                           <td className="ws-cmd-mono">{shortId(row.command_id)}</td>
                           <td>
                             <Link className="ws-meters-drilldown" href={`/meters/${row.meter_id}`} title={row.meter_id}>
@@ -768,37 +896,9 @@ function CommandsBody() {
                             </Link>
                           </td>
                           <td>
-                            <span
-                              className={`ws-metric ws-metric--${
-                                row.approval_status === "submitted_for_approval" ? "warning" : "danger"
-                              }`}
-                            >
-                              {issue}
-                            </span>
+                            <span className="ws-metric ws-metric--danger">{issue}</span>
                           </td>
                           <td className="ws-cmd-mono">{fmtWhen(row.latest_updated_at)}</td>
-                          <td className="ws-cmd-actions-cell">
-                            {canApprove ? (
-                              <div className="ws-cmd-inline-actions">
-                                <button
-                                  type="button"
-                                  className="ws-btn ws-btn-ghost ws-cmd-action-btn"
-                                  onClick={() => openApproval(row.command_id, "approve")}
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  className="ws-btn ws-btn-ghost ws-cmd-action-btn"
-                                  onClick={() => openApproval(row.command_id, "reject")}
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
                         </tr>
                       );
                     })}

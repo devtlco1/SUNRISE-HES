@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { REGISTRY_PAGE_LIMITS, RegistryPager } from "../registry-pagination";
 import { useSession } from "../session-provider";
 import { WorkspaceShell } from "../workspace-shell";
 
-const METER_PAGE_SIZE = 20;
 const READINGS_PER_METER = 50;
 
 type MeterRow = {
@@ -150,8 +150,11 @@ function ReadingsBody() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [metersTotal, setMetersTotal] = useState(0);
+  const [meterLimit, setMeterLimit] = useState<(typeof REGISTRY_PAGE_LIMITS)[number]>(25);
   const [meterOffset, setMeterOffset] = useState(0);
   const [meterPage, setMeterPage] = useState<MeterRow[]>([]);
+  const [readPageIdx, setReadPageIdx] = useState(0);
+  const [readPageSize, setReadPageSize] = useState<(typeof REGISTRY_PAGE_LIMITS)[number]>(25);
   const [readingRows, setReadingRows] = useState<ReadingRow[]>([]);
   const [metersNoReads, setMetersNoReads] = useState<MeterRow[]>([]);
 
@@ -169,7 +172,7 @@ function ReadingsBody() {
     setAsOf(new Date().toISOString());
     try {
       const metersRes = await authorizedFetch<MeterListResponse>(
-        `/api/v1/meters?limit=${METER_PAGE_SIZE}&offset=${meterOffset}`,
+        `/api/v1/meters?limit=${meterLimit}&offset=${meterOffset}`,
       );
       setMetersTotal(metersRes.total);
       setMeterPage(metersRes.items);
@@ -213,7 +216,7 @@ function ReadingsBody() {
     } finally {
       setLoading(false);
     }
-  }, [authorizedFetch, currentUser, meterOffset]);
+  }, [authorizedFetch, currentUser, meterLimit, meterOffset]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -226,6 +229,10 @@ function ReadingsBody() {
     const t = window.setTimeout(() => setSearchApplied(searchDraft), 350);
     return () => window.clearTimeout(t);
   }, [searchDraft]);
+
+  useEffect(() => {
+    setReadPageIdx(0);
+  }, [meterOffset, meterLimit, typeFilter, qualityFilter, searchApplied]);
 
   const kpi = useMemo(() => {
     const metersWithReads = new Set(readingRows.map((r) => r.meter_id)).size;
@@ -271,8 +278,24 @@ function ReadingsBody() {
     [readingRows],
   );
 
-  const canPrev = meterOffset > 0;
-  const canNext = meterOffset + METER_PAGE_SIZE < metersTotal;
+  const readTotal = filteredReadings.length;
+  const readTotalPages = readTotal === 0 ? 0 : Math.ceil(readTotal / readPageSize);
+  const readMaxPageIdx = Math.max(0, readTotalPages - 1);
+
+  useEffect(() => {
+    if (readPageIdx > readMaxPageIdx) {
+      setReadPageIdx(readMaxPageIdx);
+    }
+  }, [readMaxPageIdx, readPageIdx]);
+
+  const effectiveReadIdx = Math.min(readPageIdx, readMaxPageIdx);
+  const pagedReadings = useMemo(() => {
+    const start = effectiveReadIdx * readPageSize;
+    return filteredReadings.slice(start, start + readPageSize);
+  }, [effectiveReadIdx, filteredReadings, readPageSize]);
+
+  const canMeterPrev = meterOffset > 0;
+  const canMeterNext = meterOffset + meterPage.length < metersTotal;
 
   if (isCheckingSession) {
     return <p className="ws-muted">Checking session…</p>;
@@ -418,64 +441,91 @@ function ReadingsBody() {
                 <button type="button" className="ws-btn ws-btn-ghost" onClick={() => void load()} disabled={loading}>
                   Refresh
                 </button>
-                <span className="ws-read-pager">
-                  <button type="button" className="ws-btn ws-btn-ghost" disabled={!canPrev || loading} onClick={() => setMeterOffset((o) => Math.max(0, o - METER_PAGE_SIZE))}>
-                    Previous meters
-                  </button>
-                  <button type="button" className="ws-btn ws-btn-ghost" disabled={!canNext || loading} onClick={() => setMeterOffset((o) => o + METER_PAGE_SIZE)}>
-                    Next meters
-                  </button>
-                </span>
               </div>
             </div>
+
+            <RegistryPager
+              disabled={loading}
+              pageSize={meterLimit}
+              onPageSizeChange={(n) => {
+                setMeterLimit(n as (typeof REGISTRY_PAGE_LIMITS)[number]);
+                setMeterOffset(0);
+              }}
+              rangeStart={metersTotal === 0 ? 0 : meterOffset + 1}
+              rangeEnd={metersTotal === 0 ? 0 : meterOffset + meterPage.length}
+              total={metersTotal}
+              entityLabel="meters in scope"
+              canPrev={canMeterPrev && !loading}
+              canNext={canMeterNext && !loading}
+              onPrev={() => setMeterOffset((o) => Math.max(0, o - meterLimit))}
+              onNext={() => setMeterOffset((o) => o + meterLimit)}
+            />
 
             {loading && readingRows.length === 0 ? (
               <p className="ws-muted">Loading…</p>
             ) : (
-              <div className="ws-read-table-wrap">
-                <table className="ws-read-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Meter</th>
-                      <th scope="col">OBIS</th>
-                      <th scope="col">Type</th>
-                      <th scope="col">Value</th>
-                      <th scope="col">Quality</th>
-                      <th scope="col">Captured</th>
-                      <th scope="col">Reading time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredReadings.length === 0 ? (
+              <>
+                <div className="ws-read-table-wrap">
+                  <table className="ws-read-table">
+                    <thead>
                       <tr>
-                        <td colSpan={7} className="ws-read-table-empty">
-                          No readings found.
-                        </td>
+                        <th scope="col">Meter</th>
+                        <th scope="col">OBIS</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Value</th>
+                        <th scope="col">Quality</th>
+                        <th scope="col">Captured</th>
+                        <th scope="col">Reading time</th>
                       </tr>
-                    ) : (
-                      filteredReadings.map((r) => (
-                        <tr key={r.id}>
-                          <td>
-                            <Link className="ws-meters-drilldown" href={`/meters/${r.meter_id}`} title={r.meter_id}>
-                              {r.meter_serial}
-                            </Link>
+                    </thead>
+                    <tbody>
+                      {filteredReadings.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="ws-read-table-empty">
+                            No readings found.
                           </td>
-                          <td className="ws-read-mono">{r.obis_code}</td>
-                          <td>{humanize(r.reading_type)}</td>
-                          <td className="ws-read-mono">{formatValue(r)}</td>
-                          <td>
-                            <span className={`ws-metric ws-metric--${qualityAccent(r.quality)}`}>
-                              {r.quality ? humanize(r.quality) : "—"}
-                            </span>
-                          </td>
-                          <td className="ws-read-mono">{fmtWhen(r.captured_at)}</td>
-                          <td className="ws-read-mono">{fmtWhen(r.value_timestamp)}</td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      ) : (
+                        pagedReadings.map((r) => (
+                          <tr key={r.id}>
+                            <td>
+                              <Link className="ws-meters-drilldown" href={`/meters/${r.meter_id}`} title={r.meter_id}>
+                                {r.meter_serial}
+                              </Link>
+                            </td>
+                            <td className="ws-read-mono">{r.obis_code}</td>
+                            <td>{humanize(r.reading_type)}</td>
+                            <td className="ws-read-mono">{formatValue(r)}</td>
+                            <td>
+                              <span className={`ws-metric ws-metric--${qualityAccent(r.quality)}`}>
+                                {r.quality ? humanize(r.quality) : "—"}
+                              </span>
+                            </td>
+                            <td className="ws-read-mono">{fmtWhen(r.captured_at)}</td>
+                            <td className="ws-read-mono">{fmtWhen(r.value_timestamp)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <RegistryPager
+                  disabled={loading}
+                  pageSize={readPageSize}
+                  onPageSizeChange={(n) => {
+                    setReadPageSize(n as (typeof REGISTRY_PAGE_LIMITS)[number]);
+                    setReadPageIdx(0);
+                  }}
+                  rangeStart={readTotal === 0 ? 0 : effectiveReadIdx * readPageSize + 1}
+                  rangeEnd={readTotal === 0 ? 0 : Math.min((effectiveReadIdx + 1) * readPageSize, readTotal)}
+                  total={readTotal}
+                  entityLabel="readings"
+                  canPrev={readTotal > 0 && effectiveReadIdx > 0}
+                  canNext={readTotal > 0 && effectiveReadIdx < readMaxPageIdx}
+                  onPrev={() => setReadPageIdx((i) => Math.max(0, i - 1))}
+                  onNext={() => setReadPageIdx((i) => Math.min(readMaxPageIdx, i + 1))}
+                />
+              </>
             )}
           </div>
         </section>

@@ -102,16 +102,17 @@ describe("CommandsPageClient", () => {
     expect(await screen.findByRole("heading", { name: "Commands" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Request commands" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Command registry" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Attention" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pending approvals" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Execution issues" })).toBeInTheDocument();
 
     expect(await screen.findByRole("link", { name: "SN-CMD-1" })).toHaveAttribute(
       "href",
       "/meters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     );
 
-    const attentionPanel = screen.getByRole("heading", { name: "Attention" }).closest("section");
-    expect(attentionPanel).toBeTruthy();
-    expect(within(attentionPanel!).getByText("No commands need attention.")).toBeInTheDocument();
+    const pendingPanel = screen.getByRole("heading", { name: "Pending approvals" }).closest("section");
+    expect(pendingPanel).toBeTruthy();
+    expect(within(pendingPanel!).getByText("None awaiting approval.")).toBeInTheDocument();
   });
 
   it("surfaces approve and reject for commands awaiting approval", async () => {

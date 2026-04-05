@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { classifyReachabilityFromLastSeen } from "../dashboard/dashboard-utils";
+import { REGISTRY_PAGE_LIMITS, RegistryPager } from "../registry-pagination";
 import {
   MeterRegistryDrawer,
   type MeterRegistryRow,
@@ -12,8 +13,6 @@ import {
 } from "./meter-registry-drawer";
 import { useSession } from "../session-provider";
 import { WorkspaceShell } from "../workspace-shell";
-
-const PAGE_LIMITS = [10, 25, 50, 100] as const;
 
 const ROW_MENU_MIN_WIDTH_PX = 176;
 const ROW_MENU_VIEWPORT_PAD = 8;
@@ -202,7 +201,7 @@ function MetersRegistryBody() {
   const [statusFilter, setStatusFilter] = useState("");
   const [reachFilter, setReachFilter] = useState("");
   const [gisFilter, setGisFilter] = useState("");
-  const [limit, setLimit] = useState<(typeof PAGE_LIMITS)[number]>(25);
+  const [limit, setLimit] = useState<(typeof REGISTRY_PAGE_LIMITS)[number]>(25);
   const [offset, setOffset] = useState(0);
   const [list, setList] = useState<MeterListResponse | null>(null);
   const [gisByMeterId, setGisByMeterId] = useState<Map<string, boolean>>(new Map());
@@ -659,47 +658,22 @@ function MetersRegistryBody() {
             </table>
           </div>
 
-          <div className="ws-meters-pager">
-            <label className="ws-meters-page-size">
-              Rows
-              <select
-                value={limit}
-                onChange={(ev) => {
-                  setLimit(Number(ev.target.value) as (typeof PAGE_LIMITS)[number]);
-                  setOffset(0);
-                }}
-              >
-                {PAGE_LIMITS.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <span className="ws-meters-pager-meta">
-              {list.total === 0
-                ? "0 meters"
-                : `${offset + 1}–${offset + list.items.length} of ${list.total}`}
-            </span>
-            <div className="ws-meters-pager-actions">
-              <button
-                type="button"
-                className="ws-btn ws-btn-ghost"
-                disabled={!canPrev}
-                onClick={() => setOffset((o) => Math.max(0, o - limit))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="ws-btn ws-btn-ghost"
-                disabled={!canNext}
-                onClick={() => setOffset((o) => o + limit)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <RegistryPager
+            disabled={loading}
+            pageSize={limit}
+            onPageSizeChange={(n) => {
+              setLimit(n as (typeof REGISTRY_PAGE_LIMITS)[number]);
+              setOffset(0);
+            }}
+            rangeStart={list.total === 0 ? 0 : offset + 1}
+            rangeEnd={list.total === 0 ? 0 : offset + list.items.length}
+            total={list.total}
+            entityLabel="meters"
+            canPrev={canPrev}
+            canNext={canNext}
+            onPrev={() => setOffset((o) => Math.max(0, o - limit))}
+            onNext={() => setOffset((o) => o + limit)}
+          />
         </>
       ) : null}
 
