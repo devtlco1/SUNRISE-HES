@@ -1,5 +1,10 @@
-import { redirect } from "next/navigation";
+import { MeterDetailClient } from "./meter-detail-client";
 
-export default function MeterDetailRetired() {
-  redirect("/");
+export default async function MeterDetailPage({
+  params,
+}: {
+  params: Promise<{ meterId: string }>;
+}) {
+  const { meterId } = await params;
+  return <MeterDetailClient meterId={meterId} />;
 }

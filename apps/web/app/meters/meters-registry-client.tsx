@@ -15,9 +15,6 @@ import { WorkspaceShell } from "../workspace-shell";
 
 const PAGE_LIMITS = [10, 25, 50, 100] as const;
 
-/** `/meters/[meterId]` currently redirects home; keep false until detail is rebuilt. */
-const METER_DETAIL_NAV_ENABLED = false;
-
 const ROW_MENU_MIN_WIDTH_PX = 176;
 const ROW_MENU_VIEWPORT_PAD = 8;
 
@@ -587,33 +584,19 @@ function MetersRegistryBody() {
                     return (
                       <tr key={m.id}>
                         <td className="ws-meters-mono">
-                          {METER_DETAIL_NAV_ENABLED ? (
-                            <Link className="ws-meters-drilldown" href={`/meters/${m.id}`}>
-                              {m.serial_number}
-                            </Link>
-                          ) : (
-                            <span
-                              className="ws-meters-ident-static"
-                              title="Meter detail is not available in this build. Use Edit registry in the row menu."
-                            >
-                              {m.serial_number}
-                            </span>
-                          )}
+                          <Link
+                            className="ws-meters-drilldown"
+                            href={`/meters/${m.id}`}
+                            title={`Open meter ${m.serial_number}`}
+                          >
+                            {m.serial_number}
+                          </Link>
                         </td>
                         <td className="ws-meters-mono">{m.utility_meter_number ?? "—"}</td>
                         <td className="ws-meters-mono">
-                          {METER_DETAIL_NAV_ENABLED ? (
-                            <Link className="ws-meters-drilldown" href={`/meters/${m.id}`} title={m.id}>
-                              {shortId(m.id)}
-                            </Link>
-                          ) : (
-                            <span
-                              className="ws-meters-ident-static"
-                              title={`${m.id} — detail view not available yet`}
-                            >
-                              {shortId(m.id)}
-                            </span>
-                          )}
+                          <Link className="ws-meters-drilldown" href={`/meters/${m.id}`} title={m.id}>
+                            {shortId(m.id)}
+                          </Link>
                         </td>
                         <td>{m.manufacturer_code}</td>
                         <td>{m.meter_model_code}</td>
