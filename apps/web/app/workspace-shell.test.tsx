@@ -44,6 +44,9 @@ describe("WorkspaceShell", () => {
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Meters" })).toHaveAttribute("href", "/meters");
+    expect(screen.getByRole("link", { name: "Connectivity" })).toHaveAttribute("href", "/connectivity");
+    expect(screen.getByRole("link", { name: "Commands" })).toHaveAttribute("href", "/commands");
+    expect(screen.getByRole("link", { name: "Readings" })).toHaveAttribute("href", "/readings");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

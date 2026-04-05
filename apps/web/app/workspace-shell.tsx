@@ -23,6 +23,9 @@ function WorkspaceChrome({ children }: { children: ReactNode }) {
 
   const dashboardActive = pathname === "/";
   const metersActive = pathname === "/meters" || pathname.startsWith("/meters/");
+  const connectivityActive = pathname === "/connectivity";
+  const commandsActive = pathname === "/commands";
+  const readingsActive = pathname === "/readings";
 
   return (
     <div className="ws-root">
@@ -62,6 +65,27 @@ function WorkspaceChrome({ children }: { children: ReactNode }) {
             aria-current={metersActive ? "page" : undefined}
           >
             Meters
+          </Link>
+          <Link
+            href="/connectivity"
+            className={`ws-nav-item${connectivityActive ? " is-active" : ""}`}
+            aria-current={connectivityActive ? "page" : undefined}
+          >
+            Connectivity
+          </Link>
+          <Link
+            href="/commands"
+            className={`ws-nav-item${commandsActive ? " is-active" : ""}`}
+            aria-current={commandsActive ? "page" : undefined}
+          >
+            Commands
+          </Link>
+          <Link
+            href="/readings"
+            className={`ws-nav-item${readingsActive ? " is-active" : ""}`}
+            aria-current={readingsActive ? "page" : undefined}
+          >
+            Readings
           </Link>
         </nav>
       </aside>
