@@ -416,8 +416,9 @@ describe("OperationalHomeModule", () => {
       expect(screen.getByText("Open validation issues")).toBeInTheDocument();
       expect(screen.getByText("Open recovery issues")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Workspace launchpads" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Queues and live activity" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Operator workbench" })).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Primary operational lanes" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Recent command activity" })).toBeInTheDocument();
     });
   });
 

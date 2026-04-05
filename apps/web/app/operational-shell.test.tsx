@@ -389,11 +389,22 @@ describe("OperationalShell", () => {
       "href",
       "/gis-lite",
     );
-    expect(screen.queryByRole("link", { name: "Subscribers" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Accounts" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Subscribers" })).toHaveAttribute(
+      "href",
+      "/subscribers",
+    );
+    expect(screen.getByRole("link", { name: "Accounts" })).toHaveAttribute(
+      "href",
+      "/accounts",
+    );
+    expect(screen.getByRole("link", { name: "Service points" })).toHaveAttribute(
+      "href",
+      "/service-points",
+    );
     expect(
-      screen.queryByRole("link", { name: "Transformers / Substations" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("link", { name: "Transformers / substations" }),
+    ).toHaveAttribute("href", "/transformers-substations");
+    expect(screen.getByText("Legacy workspaces")).toBeInTheDocument();
   });
 
   it("hydrates the shell without mismatching stored API base URL text", async () => {

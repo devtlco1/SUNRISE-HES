@@ -2,6 +2,33 @@
 
 import { type ReactNode } from "react";
 
+export function DashboardPanel({
+  title,
+  description,
+  aside,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  aside?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`dashboard-panel${className ? ` ${className}` : ""}`}>
+      <div className="dashboard-panel-header">
+        <div>
+          <h3>{title}</h3>
+          {description ? <p className="muted">{description}</p> : null}
+        </div>
+        {aside ? <div className="dashboard-panel-aside">{aside}</div> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export function DashboardSection({
   eyebrow,
   title,
@@ -81,5 +108,30 @@ export function DashboardLaunchCard({
       </div>
       <div className="artifact-row">{actions}</div>
     </article>
+  );
+}
+
+export function DashboardTableShell({
+  title,
+  description,
+  aside,
+  children,
+}: {
+  title: string;
+  description?: string;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="dashboard-table-shell">
+      <div className="dashboard-panel-header">
+        <div>
+          <h3>{title}</h3>
+          {description ? <p className="muted">{description}</p> : null}
+        </div>
+        {aside ? <div className="dashboard-panel-aside">{aside}</div> : null}
+      </div>
+      {children}
+    </section>
   );
 }

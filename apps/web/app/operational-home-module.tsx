@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DashboardLaunchCard,
   DashboardMetricCard,
+  DashboardPanel,
   DashboardSection,
+  DashboardTableShell,
 } from "./dashboard-foundation-ui";
 import type { AuthorizedFetch } from "./operational-shell";
 
@@ -863,6 +865,10 @@ export function OperationalHomeModule({
       recentCommands,
     ],
   );
+  const commandFamilyCount = useMemo(
+    () => (recentCommands ? new Set(recentCommands.map((item) => item.command_family)).size : null),
+    [recentCommands],
+  );
 
   return (
     <section className="panel dashboard-home-panel">
@@ -987,8 +993,8 @@ export function OperationalHomeModule({
 
         <DashboardSection
           eyebrow="Priority work"
-          title="Queues and live activity"
-          description="The rebuilt home view keeps operator attention and recent activity together so the first page feels production-shaped before deeper page migration."
+          title="Operator workbench"
+          description="Priority review and migration posture stay close together so the rebuilt home feels like a real control center instead of a landing page with scattered cards."
           aside={
             !isLoadingOverview ? (
               <span className="artifact-pill">
@@ -998,17 +1004,10 @@ export function OperationalHomeModule({
           }
         >
           <div className="dashboard-foundation-priority-grid">
-            <div className="dashboard-foundation-priority-column">
-              <div className="dashboard-foundation-subsection-header">
-                <div>
-                  <h3>Needs operator attention</h3>
-                  <p className="muted">
-                    Derived from existing dashboard signals before drilling into the
-                    monitoring center.
-                  </p>
-                </div>
-              </div>
-
+            <DashboardPanel
+              title="Needs operator attention"
+              description="Derived from existing dashboard signals before drilling into the monitoring center."
+            >
               {isLoadingOverview ? <p className="muted">Loading operator attention handoff...</p> : null}
 
               {!isLoadingOverview ? (
@@ -1051,90 +1050,66 @@ export function OperationalHomeModule({
                   </div>
                 </>
               ) : null}
-            </div>
+            </DashboardPanel>
 
-            <div className="dashboard-foundation-priority-column">
-              <div className="dashboard-foundation-subsection-header">
-                <div>
-                  <h3>Recent command activity</h3>
-                  <p className="muted">
-                    Lightweight recent-commands feed kept close to priority lanes for a
-                    stronger dashboard scan pattern.
-                  </p>
+            <DashboardPanel
+              title="Migration posture"
+              description="Operational coverage and feed quality for the rebuilt home route."
+              aside={<span className="artifact-pill">{pageError ? "Partial" : "Healthy"}</span>}
+            >
+              <div className="dashboard-foundation-priority-column">
+                <div className="dashboard-foundation-lane-grid">
+                  <DashboardMetricCard
+                    label="Recent activity feed"
+                    value={
+                      recentCommands
+                        ? formatCountLabel(recentCommands.length, "item", "items")
+                        : "Unavailable"
+                    }
+                    note={
+                      recentCommands
+                        ? `${commandFamilyCount ?? 0} command families are represented in the current feed.`
+                        : "Recent command activity not available."
+                    }
+                    accent={recentCommands === null ? "warning" : "default"}
+                  />
+                  <DashboardMetricCard
+                    label="Coverage notes"
+                    value={
+                      readingsSummary
+                        ? formatCountLabel(readingsSummary.evaluatedMeters, "meter context", "meter contexts")
+                        : "Unavailable"
+                    }
+                    note={
+                      connectivitySummary
+                        ? `${formatCountLabel(connectivitySummary.contextLoadedMeters, "connectivity context", "connectivity contexts")} currently feed this dashboard.`
+                        : "Connectivity context is not available right now."
+                    }
+                    accent={connectivitySummary ? "positive" : "warning"}
+                  />
                 </div>
-                <span className="artifact-pill">
-                  {recentCommands
-                    ? formatCountLabel(recentCommands.length, "item", "items")
-                    : "Unavailable"}
-                </span>
+
+                {!isLoadingOverview && connectivitySummary?.contextLoadedMeters !== undefined ? (
+                  <p className="muted">
+                    Connectivity incidents were derived for{" "}
+                    {formatCountLabel(
+                      connectivitySummary.contextLoadedMeters,
+                      "meter session context",
+                      "meter session contexts",
+                    )}
+                    . Readings review was derived for{" "}
+                    {readingsSummary
+                      ? formatCountLabel(
+                          readingsSummary.evaluatedMeters,
+                          "meter context",
+                          "meter contexts",
+                        )
+                      : "0 meter contexts"}
+                    {" "}inside the current bounded dashboard scope.
+                  </p>
+                ) : null}
               </div>
-
-              {isLoadingOverview ? <p className="muted">Loading recent command activity...</p> : null}
-
-              {!isLoadingOverview ? (
-                <>
-                  {recentCommands === null ? (
-                    <div className="dashboard-foundation-empty-state">
-                      <strong>Recent activity is unavailable.</strong>
-                      <p className="muted">Recent command activity not available.</p>
-                    </div>
-                  ) : null}
-
-                  {recentCommands !== null && recentCommands.length === 0 ? (
-                    <div className="dashboard-foundation-empty-state">
-                      <strong>No recent command activity.</strong>
-                      <p className="muted">
-                        No recent command activity is currently visible, but the stable
-                        drill-down surfaces remain available from the launch areas above.
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {recentCommands?.length ? (
-                    <div className="command-list">
-                      {recentCommands.map((command) => (
-                        <div key={command.command_id} className="command-list-item">
-                          <div className="command-list-item-header">
-                            <strong>{command.command_template_code}</strong>
-                            <span className="status-pill">
-                              {formatStatusLabel(command.command_status)}
-                            </span>
-                          </div>
-                          <div className="command-list-item-meta">
-                            <span>{formatStatusLabel(command.command_family)}</span>
-                            <span>Meter {command.meter_id}</span>
-                          </div>
-                          <div className="command-list-item-meta">
-                            <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
-                            <span>Updated {formatDateTime(command.latest_updated_at)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {!isLoadingOverview && connectivitySummary?.contextLoadedMeters !== undefined ? (
-                    <p className="muted">
-                      Connectivity incidents were derived for{" "}
-                      {formatCountLabel(
-                        connectivitySummary.contextLoadedMeters,
-                        "meter session context",
-                        "meter session contexts",
-                      )}
-                      . Readings review was derived for{" "}
-                      {readingsSummary
-                        ? formatCountLabel(
-                            readingsSummary.evaluatedMeters,
-                            "meter context",
-                            "meter contexts",
-                          )
-                        : "0 meter contexts"}
-                      {" "}inside the current bounded dashboard scope.
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
+            </DashboardPanel>
           </div>
         </DashboardSection>
 
@@ -1161,6 +1136,79 @@ export function OperationalHomeModule({
               </Link>
             ))}
           </div>
+        </DashboardSection>
+
+        <DashboardSection
+          eyebrow="Activity feed"
+          title="Recent command activity"
+          description="Table-style command activity keeps the rebuilt home closer to modern admin dashboard patterns while reusing the same recent-commands read model."
+        >
+          {isLoadingOverview ? <p className="muted">Loading recent command activity...</p> : null}
+
+          {!isLoadingOverview ? (
+            <>
+              {recentCommands === null ? (
+                <div className="dashboard-foundation-empty-state">
+                  <strong>Recent activity is unavailable.</strong>
+                  <p className="muted">Recent command activity not available.</p>
+                </div>
+              ) : null}
+
+              {recentCommands !== null && recentCommands.length === 0 ? (
+                <div className="dashboard-foundation-empty-state">
+                  <strong>No recent command activity.</strong>
+                  <p className="muted">
+                    No recent command activity is currently visible, but the stable drill-down
+                    surfaces remain available from the launch areas above.
+                  </p>
+                </div>
+              ) : null}
+
+              {recentCommands?.length ? (
+                <DashboardTableShell
+                  title="Live command feed"
+                  description="Recent command snippets from the stable read model."
+                  aside={
+                    <span className="artifact-pill">
+                      {formatCountLabel(recentCommands.length, "item", "items")}
+                    </span>
+                  }
+                >
+                  <table className="dashboard-home-command-table">
+                    <thead>
+                      <tr>
+                        <th>Template</th>
+                        <th>Family</th>
+                        <th>Meter</th>
+                        <th>Outcome</th>
+                        <th>Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentCommands.map((command) => (
+                        <tr key={command.command_id}>
+                          <td>
+                            <strong>{command.command_template_code}</strong>
+                          </td>
+                          <td>{formatStatusLabel(command.command_family)}</td>
+                          <td>{command.meter_id}</td>
+                          <td>
+                            <div className="command-list-item-meta">
+                              <span className="status-pill">
+                                {formatStatusLabel(command.command_status)}
+                              </span>
+                              <span>{formatFamilySummary(command.family_specific_outcome_summary)}</span>
+                            </div>
+                          </td>
+                          <td>{formatDateTime(command.latest_updated_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </DashboardTableShell>
+              ) : null}
+            </>
+          ) : null}
         </DashboardSection>
       </div>
     </section>
