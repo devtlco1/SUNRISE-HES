@@ -324,6 +324,7 @@ describe("ReadingsModule", () => {
     expect(screen.getByText("Report scope")).toBeInTheDocument();
     expect(screen.getByText("Selected report pack")).toBeInTheDocument();
     expect(screen.getByText("Current billing context")).toBeInTheDocument();
+    expect(screen.getByText("Validation / interval visibility workspace")).toBeInTheDocument();
     expect(screen.getByText(/Latest billing snapshot captured/)).toBeInTheDocument();
     expect(screen.getByText("Billing reads table")).toBeInTheDocument();
     expect(screen.getByText("Newest first")).toBeInTheDocument();
@@ -339,14 +340,13 @@ describe("ReadingsModule", () => {
     expect(screen.getByText("Validation center")).toBeInTheDocument();
     expect(screen.getByText("1 open validation issues")).toBeInTheDocument();
     expect(screen.getByText("Validation queue in focus")).toBeInTheDocument();
-    expect(screen.getByText("Interval Quality Flagged")).toBeInTheDocument();
+    expect(screen.getAllByText("Interval Quality Flagged").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Warning")).not.toHaveLength(0);
     expect(screen.getByText("Open")).toBeInTheDocument();
-    expect(screen.getByText("Interval quality is marked Estimated.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Review interval reads" })).toHaveAttribute(
-      "href",
-      "#interval-reads-section",
-    );
+    expect(screen.getAllByText("Interval quality is marked Estimated.").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("link", { name: "Review interval reads" })[0],
+    ).toHaveAttribute("href", "#interval-reads-section");
     expect(screen.getByText("Missing reads / recovery queue")).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -371,6 +371,30 @@ describe("ReadingsModule", () => {
     expect(
       screen.getAllByText("Total Import 123.456 • Reset Reason scheduled_cycle"),
     ).not.toHaveLength(0);
+  });
+
+  it("renders a dedicated interval visibility workspace with freshness, cadence, and anomaly posture", async () => {
+    const { fetchMock } = createMockApi();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderReadingsModuleInShell();
+
+    expect(
+      await screen.findByText("Validation / interval visibility workspace"),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("Latest raw reading freshness")).toBeInTheDocument();
+      expect(screen.getByText("Interval horizon freshness")).toBeInTheDocument();
+      expect(screen.getAllByText("Interval cadence").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Interval posture").length).toBeGreaterThan(0);
+      expect(screen.getByText("Warning validation cues")).toBeInTheDocument();
+      expect(screen.getByText("Interval validation cues")).toBeInTheDocument();
+      expect(screen.getByText("Interval recovery cues")).toBeInTheDocument();
+      expect(screen.getAllByText("15 min cadence").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Lead 2 min").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Interval Quality Flagged").length).toBeGreaterThan(0);
+    });
   });
 
   it("switches the bounded billing reads surface when a different meter is selected", async () => {
@@ -400,13 +424,15 @@ describe("ReadingsModule", () => {
         within(billingPanel as HTMLElement).getByText("1 open validation issues"),
       ).toBeInTheDocument();
       expect(
-        within(billingPanel as HTMLElement).getByText("Billing Context Missing"),
-      ).toBeInTheDocument();
+        within(billingPanel as HTMLElement).getAllByText("Billing Context Missing").length,
+      ).toBeGreaterThan(0);
       expect(
-        within(billingPanel as HTMLElement).getByText(
+        within(
+          billingPanel as HTMLElement,
+        ).getAllByText(
           "No billing read is available for the selected meter in the current bounded readings scope.",
-        ),
-      ).toBeInTheDocument();
+        ).length,
+      ).toBeGreaterThan(0);
       expect(
         within(billingPanel as HTMLElement).getAllByRole("link", {
           name: "Review billing reads",
@@ -419,25 +445,27 @@ describe("ReadingsModule", () => {
         within(billingPanel as HTMLElement).getByText("2 open recovery issues"),
       ).toBeInTheDocument();
       expect(
-        within(billingPanel as HTMLElement).getByText("Missing Billing Read Context"),
-      ).toBeInTheDocument();
+        within(billingPanel as HTMLElement).getAllByText("Missing Billing Read Context").length,
+      ).toBeGreaterThan(0);
       expect(
-        within(billingPanel as HTMLElement).getByText("Missing Recent Reading Update"),
-      ).toBeInTheDocument();
+        within(billingPanel as HTMLElement).getAllByText("Missing Recent Reading Update").length,
+      ).toBeGreaterThan(0);
       expect(
-        within(billingPanel as HTMLElement).getByText(
-          "No billing read is currently available for the selected meter.",
-        ),
-      ).toBeInTheDocument();
+        within(
+          billingPanel as HTMLElement,
+        ).getAllByText("No billing read is currently available for the selected meter.").length,
+      ).toBeGreaterThan(0);
       expect(
-        within(billingPanel as HTMLElement).getByText(
+        within(
+          billingPanel as HTMLElement,
+        ).getAllByText(
           "No recent raw reading update is available for the selected meter.",
-        ),
-      ).toBeInTheDocument();
+        ).length,
+      ).toBeGreaterThan(0);
       expect(
-        within(billingPanel as HTMLElement).getByRole("link", {
+        within(billingPanel as HTMLElement).getAllByRole("link", {
           name: "Review recent reading context",
-        }),
+        })[0],
       ).toHaveAttribute("href", "#recent-reading-context-section");
       const recoveryActionLinks = within(billingPanel as HTMLElement).getAllByRole("link", {
         name: "Open on-demand read handoff",
@@ -757,16 +785,15 @@ describe("ReadingsModule", () => {
     expect(await screen.findByText("Missing reads / recovery queue")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getAllByText(includesText("Stale Interval Window")).length).toBeGreaterThan(0);
-      expect(screen.getByText("Lag 30 min")).toBeInTheDocument();
+      expect(screen.getAllByText("Lag 30 min").length).toBeGreaterThan(0);
       expect(
-        screen.getByText(
+        screen.getAllByText(
           "The latest interval window ends before the most recent raw reading update, indicating a stale interval horizon.",
-        ),
-      ).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Review interval reads" })).toHaveAttribute(
-        "href",
-        "#interval-reads-section",
-      );
+        ).length,
+      ).toBeGreaterThan(0);
+      expect(
+        screen.getAllByRole("link", { name: "Review interval reads" })[0],
+      ).toHaveAttribute("href", "#interval-reads-section");
       const staleRecoveryActionLink = screen.getByRole("link", {
         name: "Open on-demand read handoff",
       });
@@ -888,6 +915,11 @@ describe("ReadingsModule", () => {
       expect(
         screen.getByText("No validation issues match the current bounded selected-meter scope."),
       ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "No interval or validation anomalies are currently derived for the selected meter.",
+        ),
+      ).toBeInTheDocument();
     });
   });
 
@@ -899,7 +931,7 @@ describe("ReadingsModule", () => {
 
     await waitFor(() => {
       expect(
-        screen.queryByText("Loading selected meter readings...") ??
+        screen.queryByText("Loading selected meter readings and validation workspace...") ??
           screen.queryByText("Billing reads table"),
       ).toBeInTheDocument();
     });

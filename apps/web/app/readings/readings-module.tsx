@@ -143,6 +143,18 @@ type SelectedRecoveryIssue = {
   context: string;
 };
 
+type ReadingsVisibilityCue = {
+  id: string;
+  title: string;
+  severity: ValidationIssueSeverity;
+  reason: string;
+  observedAt: string | null;
+  relatedContext: string;
+  relatedSource: string;
+  relatedSectionHref: string;
+  relatedActionLabel: string;
+};
+
 function buildRecoveryActionHref(meterId: string, issue: MissingReadsIssue): string {
   const searchParams = new URLSearchParams({
     meterId,
@@ -326,6 +338,21 @@ function formatDurationFromMs(durationMs: number): string {
     return `${Math.round(durationMs / 60_000)} min`;
   }
   return `${Math.round(durationMs / 3_600_000)} hr`;
+}
+
+function formatIntervalCadenceLabel(intervalSeconds: number | null): string {
+  if (!intervalSeconds || intervalSeconds <= 0) {
+    return "No interval cadence visible";
+  }
+  if (intervalSeconds % 3600 === 0) {
+    const hours = intervalSeconds / 3600;
+    return `${hours} hr cadence`;
+  }
+  if (intervalSeconds % 60 === 0) {
+    const minutes = intervalSeconds / 60;
+    return `${minutes} min cadence`;
+  }
+  return `${intervalSeconds} sec cadence`;
 }
 
 function buildValidationSeverityTone(
@@ -886,6 +913,89 @@ export function ReadingsModule({
     meterReadings.length,
     selectedMeter,
   ]);
+  const intervalCadenceLabel = latestIntervalChannel
+    ? formatIntervalCadenceLabel(latestIntervalChannel.interval_seconds)
+    : loadProfileChannels[0]
+      ? formatIntervalCadenceLabel(loadProfileChannels[0].interval_seconds)
+      : "No interval cadence visible";
+  const intervalFreshnessLabel = latestInterval
+    ? `Window ended ${formatDateTime(latestInterval.interval_end)}`
+    : "No interval horizon visible";
+  const readingFreshnessLabel = latestReading
+    ? `Captured ${formatDateTime(latestReading.captured_at)}`
+    : "No recent raw reading visible";
+  const intervalLagMs =
+    latestInterval && latestReading
+      ? new Date(latestReading.captured_at).getTime() - new Date(latestInterval.interval_end).getTime()
+      : null;
+  const intervalLagLabel =
+    intervalLagMs === null
+      ? "Not available"
+      : intervalLagMs > 0
+        ? `Lag ${formatDurationFromMs(intervalLagMs)}`
+        : intervalLagMs < 0
+          ? `Lead ${formatDurationFromMs(Math.abs(intervalLagMs))}`
+          : "Aligned";
+  const criticalValidationIssueCount = validationIssues.filter(
+    (issue) => issue.severity === "critical",
+  ).length;
+  const warningValidationIssueCount = validationIssues.filter(
+    (issue) => issue.severity === "warning",
+  ).length;
+  const validationIntervalIssueCount = validationIssues.filter((issue) =>
+    issue.issue_type.startsWith("interval_"),
+  ).length;
+  const recoveryIntervalIssueCount = missingReadsIssues.filter(
+    (issue) =>
+      issue.issue_type === "missing_recent_interval_records" ||
+      issue.issue_type === "stale_interval_window",
+  ).length;
+  const readingsVisibilityCues = useMemo(() => {
+    const validationCues: ReadingsVisibilityCue[] = validationIssues.map((issue) => ({
+      id: issue.id,
+      title: formatValidationIssueType(issue.issue_type),
+      severity: issue.severity,
+      reason: issue.reason,
+      observedAt: issue.observed_at,
+      relatedContext: issue.related_context,
+      relatedSource: issue.related_source,
+      relatedSectionHref: issue.related_section_href,
+      relatedActionLabel: issue.related_action_label,
+    }));
+    const recoveryCues: ReadingsVisibilityCue[] = missingReadsIssues.map((issue) => ({
+      id: issue.id,
+      title: formatValidationIssueType(issue.issue_type),
+      severity: issue.severity,
+      reason: issue.reason,
+      observedAt: issue.observed_at,
+      relatedContext: issue.related_context,
+      relatedSource: issue.related_source,
+      relatedSectionHref: issue.related_section_href,
+      relatedActionLabel: issue.related_action_label,
+    }));
+
+    return [...validationCues, ...recoveryCues]
+      .sort((left, right) => {
+        const severityWeight =
+          (left.severity === "critical" ? 0 : 1) - (right.severity === "critical" ? 0 : 1);
+        if (severityWeight !== 0) {
+          return severityWeight;
+        }
+        const rightTime = right.observedAt ? new Date(right.observedAt).getTime() : 0;
+        const leftTime = left.observedAt ? new Date(left.observedAt).getTime() : 0;
+        return rightTime - leftTime;
+      })
+      .slice(0, 5);
+  }, [missingReadsIssues, validationIssues]);
+  const intervalValidationNarrative = latestInterval
+    ? intervalLagMs !== null && intervalLagMs > 0
+      ? `Latest interval horizon trails the most recent raw reading by ${formatDurationFromMs(
+          intervalLagMs,
+        )}.`
+      : `Latest interval horizon is visible with ${intervalCadenceLabel} and current quality ${latestIntervalQualityLabel}.`
+    : loadProfileChannels.length > 0
+      ? `Interval channel context is visible (${intervalChannelsSummary}) but no recent interval records are currently loaded.`
+      : "No interval channel or interval horizon is currently visible for the selected meter.";
   const toggleRecoveryIssueSelection = useCallback(
     (issue: MissingReadsIssue) => {
       if (!selectedMeter) {
@@ -1303,7 +1413,9 @@ export function ReadingsModule({
               </div>
             </div>
 
-            {isLoadingDetail ? <p className="muted">Loading selected meter readings...</p> : null}
+            {isLoadingDetail ? (
+              <p className="muted">Loading selected meter readings and validation workspace...</p>
+            ) : null}
 
             {selectedMeter ? (
               <div className="detail-stack">
@@ -1350,6 +1462,106 @@ export function ReadingsModule({
                     <span className="artifact-pill">
                       Last signal {formatDateTime(selectedMeter.last_seen_at)}
                     </span>
+                  </div>
+                </section>
+
+                <section className="subpanel" id="validation-interval-visibility-section">
+                  <div className="section-heading">
+                    <div>
+                      <h3>Validation / interval visibility workspace</h3>
+                      <p className="muted">
+                        Current freshness, interval cadence, and anomaly posture for the selected
+                        meter using the existing raw reading, billing, interval, and validation
+                        derivations only.
+                      </p>
+                    </div>
+                    <span className="artifact-pill">
+                      {readingsVisibilityCues.length} visibility cue
+                      {readingsVisibilityCues.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  <div className="detail-stack">
+                    <p className="muted">{intervalValidationNarrative}</p>
+
+                    <div className="artifact-row">
+                      <span className="artifact-pill">{intervalCadenceLabel}</span>
+                      <span className="artifact-pill">{readingFreshnessLabel}</span>
+                      <span className="artifact-pill">{intervalFreshnessLabel}</span>
+                      <span className="artifact-pill">{`Interval posture ${intervalLagLabel}`}</span>
+                    </div>
+
+                    <div className="detail-grid">
+                      <div className="stat-card">
+                        <span className="stat-label">Latest raw reading freshness</span>
+                        <strong>{readingFreshnessLabel}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Interval horizon freshness</span>
+                        <strong>{intervalFreshnessLabel}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Interval cadence</span>
+                        <strong>{intervalCadenceLabel}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Interval posture</span>
+                        <strong>{intervalLagLabel}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Critical validation cues</span>
+                        <strong>{String(criticalValidationIssueCount)}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Warning validation cues</span>
+                        <strong>{String(warningValidationIssueCount)}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Interval validation cues</span>
+                        <strong>{String(validationIntervalIssueCount)}</strong>
+                      </div>
+                      <div className="stat-card">
+                        <span className="stat-label">Interval recovery cues</span>
+                        <strong>{String(recoveryIntervalIssueCount)}</strong>
+                      </div>
+                    </div>
+
+                    {readingsVisibilityCues.length === 0 ? (
+                      <p className="muted">
+                        No interval or validation anomalies are currently derived for the selected
+                        meter.
+                      </p>
+                    ) : (
+                      <div className="command-list">
+                        {readingsVisibilityCues.map((cue) => (
+                          <div key={cue.id} className="command-list-item">
+                            <div className="command-list-item-header">
+                              <strong>{cue.title}</strong>
+                              <span
+                                className={`status-pill ${buildValidationSeverityTone(
+                                  cue.severity,
+                                )}`}
+                              >
+                                {formatStatusLabel(cue.severity)}
+                              </span>
+                            </div>
+                            <div className="command-list-item-meta">
+                              <span>{cue.reason}</span>
+                              <span>{formatDateTime(cue.observedAt)}</span>
+                            </div>
+                            <div className="command-list-item-meta">
+                              <span>{cue.relatedContext}</span>
+                              <span>{cue.relatedSource}</span>
+                            </div>
+                            <div className="artifact-row">
+                              <Link className="secondary-button" href={cue.relatedSectionHref}>
+                                {cue.relatedActionLabel}
+                              </Link>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </section>
 
