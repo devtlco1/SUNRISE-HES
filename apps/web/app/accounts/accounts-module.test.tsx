@@ -112,7 +112,9 @@ describe("AccountsModule", () => {
     ).toBeInTheDocument();
     expect(await screen.findAllByText("ACC-1001")).not.toHaveLength(0);
     expect(screen.getAllByText("ACC-1002")).not.toHaveLength(0);
-    expect(screen.getAllByText("Service and meter cues visible").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Subscriber, service, and meter cues visible").length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Open account detail" })).not.toHaveLength(0);
     expect(screen.getAllByRole("link", { name: "Open subscriber detail" }).length).toBeGreaterThan(0);
   });
@@ -141,7 +143,7 @@ describe("AccountsModule", () => {
       }),
     ).toHaveAttribute("href", "/accounts/account-2");
     expect(
-      within(summaryPanel as HTMLElement).getAllByText("Limited operational cues").length,
+      within(summaryPanel as HTMLElement).getAllByText("Subscriber cue only").length,
     ).toBeGreaterThan(0);
     expect(
       within(summaryPanel as HTMLElement).getByRole("link", {

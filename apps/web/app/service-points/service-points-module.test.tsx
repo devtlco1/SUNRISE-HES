@@ -122,6 +122,9 @@ describe("ServicePointsModule", () => {
       await screen.findAllByText("SP-1001"),
     ).not.toHaveLength(0);
     expect(screen.getAllByText("SP-1002")).not.toHaveLength(0);
+    expect(
+      screen.getAllByText("Subscriber and account cues visible").length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText("Coordinates available").length).toBeGreaterThan(0);
     expect(
       screen.getAllByRole("link", { name: "Open service point detail" }),
@@ -154,6 +157,9 @@ describe("ServicePointsModule", () => {
     ).toHaveAttribute("href", "/service-points/service-point-2");
     expect(
       within(summaryPanel as HTMLElement).getAllByText("Location summary incomplete").length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(summaryPanel as HTMLElement).getAllByText("Limited commercial cues").length,
     ).toBeGreaterThan(0);
     expect(
       within(summaryPanel as HTMLElement).getByText("No primary meter"),

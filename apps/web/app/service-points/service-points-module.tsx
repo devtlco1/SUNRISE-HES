@@ -74,6 +74,19 @@ function buildLocationPosture(item: ServicePointListItem): string {
       : "Location summary incomplete";
 }
 
+function buildCommercialPosture(item: ServicePointListItem): string {
+  if (item.linked_subscriber_count > 0 && item.linked_account_count > 0) {
+    return "Subscriber and account cues visible";
+  }
+  if (item.linked_subscriber_count > 0) {
+    return "Subscriber cue visible";
+  }
+  if (item.linked_account_count > 0) {
+    return "Account cue visible";
+  }
+  return "Limited commercial cues";
+}
+
 export function ServicePointsModule({
   authorizedFetch,
 }: {
@@ -181,6 +194,13 @@ export function ServicePointsModule({
         note: `${selectedServicePoint.is_active ? "Active" : "Inactive"} • ${selectedServicePoint.id}`,
       },
       {
+        label: "Commercial posture",
+        value: buildCommercialPosture(selectedServicePoint),
+        note:
+          selectedServicePoint.primary_subscriber_display_name ??
+          "No primary subscriber cue visible",
+      },
+      {
         label: "Premise posture",
         value: formatStatusLabel(selectedServicePoint.premises_type ?? "premise"),
         note: selectedServicePoint.address_line ?? "No address summary recorded",
@@ -189,12 +209,6 @@ export function ServicePointsModule({
         label: "Location posture",
         value: buildLocationPosture(selectedServicePoint),
         note: formatCoordinates(selectedServicePoint.latitude, selectedServicePoint.longitude),
-      },
-      {
-        label: "Commercial linkage",
-        value: `${selectedServicePoint.linked_subscriber_count} subscriber(s) / ${selectedServicePoint.linked_account_count} account(s)`,
-        note:
-          selectedServicePoint.primary_subscriber_display_name ?? "No primary subscriber cue visible",
       },
       {
         label: "Operational linkage",
@@ -315,6 +329,11 @@ export function ServicePointsModule({
                   <div className="command-list-item-badges">
                     <span className="artifact-pill">
                       {formatStatusLabel(item.premises_type ?? "premise")}
+                    </span>
+                    <span
+                      className={`status-pill ${buildStatusTone(buildCommercialPosture(item))}`}
+                    >
+                      {buildCommercialPosture(item)}
                     </span>
                     <span className={`status-pill ${buildStatusTone(buildLocationPosture(item))}`}>
                       {buildLocationPosture(item)}
@@ -440,10 +459,13 @@ export function ServicePointsModule({
 
                 <div className="artifact-row">
                   <span className="artifact-pill">
-                    {buildLocationPosture(selectedServicePoint)}
+                    {buildCommercialPosture(selectedServicePoint)}
                   </span>
                   <span className="artifact-pill">
                     {formatStatusLabel(selectedServicePoint.premises_type ?? "premise")}
+                  </span>
+                  <span className="artifact-pill">
+                    {buildLocationPosture(selectedServicePoint)}
                   </span>
                   <span className="artifact-pill">
                     {selectedServicePoint.primary_subscriber_display_name ?? "No primary subscriber"}

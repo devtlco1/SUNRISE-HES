@@ -481,6 +481,9 @@ export function SubscribersModule({
                     {buildCommercialPosture(selectedSubscriber)}
                   </span>
                   <span className="artifact-pill">
+                    {formatStatusLabel(selectedSubscriber.consumer_type)}
+                  </span>
+                  <span className="artifact-pill">
                     {selectedSubscriber.primary_account_number
                       ? `Account ${selectedSubscriber.primary_account_number}`
                       : "No linked account"}
@@ -489,9 +492,6 @@ export function SubscribersModule({
                     {selectedSubscriber.primary_service_point_code
                       ? `Service point ${selectedSubscriber.primary_service_point_code}`
                       : "No linked service point"}
-                  </span>
-                  <span className="artifact-pill">
-                    {buildIdentifierSummary(selectedSubscriber)}
                   </span>
                 </div>
 

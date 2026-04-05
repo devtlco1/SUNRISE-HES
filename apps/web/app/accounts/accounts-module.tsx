@@ -58,17 +58,17 @@ function formatCountLabel(count: number, singular: string, plural: string): stri
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function buildServicePosture(account: AccountListItem): string {
+function buildCommercialPosture(account: AccountListItem): string {
   if (account.service_point_code && account.primary_meter_serial_number) {
-    return "Service and meter cues visible";
+    return "Subscriber, service, and meter cues visible";
   }
   if (account.service_point_code) {
-    return "Service point visible";
+    return "Subscriber and service cues visible";
   }
   if (account.primary_meter_serial_number) {
-    return "Meter cue visible";
+    return "Subscriber and meter cues visible";
   }
-  return "Limited operational cues";
+  return "Subscriber cue only";
 }
 
 function buildBillingPosture(account: AccountListItem): string {
@@ -185,6 +185,11 @@ export function AccountsModule({
         note: `${formatStatusLabel(selectedAccount.status)} • ${selectedAccount.id}`,
       },
       {
+        label: "Commercial posture",
+        value: buildCommercialPosture(selectedAccount),
+        note: selectedAccount.subscriber_display_name,
+      },
+      {
         label: "Subscriber context",
         value: selectedAccount.subscriber_display_name,
         note: `Subscriber ${selectedAccount.subscriber_id}`,
@@ -192,7 +197,9 @@ export function AccountsModule({
       {
         label: "Service context",
         value: selectedAccount.service_point_code ?? "No linked service point",
-        note: buildServicePosture(selectedAccount),
+        note: selectedAccount.service_point_code
+          ? "Primary service-point cue is visible in the list result"
+          : "No primary service-point cue is visible in the list result",
       },
       {
         label: "Billing posture",
@@ -311,8 +318,10 @@ export function AccountsModule({
                     <span className="artifact-pill">
                       {buildBillingPosture(account)}
                     </span>
-                    <span className={`status-pill ${buildStatusTone(buildServicePosture(account))}`}>
-                      {buildServicePosture(account)}
+                    <span
+                      className={`status-pill ${buildStatusTone(buildCommercialPosture(account))}`}
+                    >
+                      {buildCommercialPosture(account)}
                     </span>
                     <span className="artifact-pill">{account.subscriber_display_name}</span>
                     <span className="artifact-pill">
@@ -422,13 +431,13 @@ export function AccountsModule({
                 {selectedAccountNarrative ? <p className="muted">{selectedAccountNarrative}</p> : null}
 
                 <div className="artifact-row">
+                  <span className="artifact-pill">{buildCommercialPosture(selectedAccount)}</span>
                   <span className="artifact-pill">{buildBillingPosture(selectedAccount)}</span>
-                  <span className="artifact-pill">{buildServicePosture(selectedAccount)}</span>
                   <span className="artifact-pill">{selectedAccount.subscriber_display_name}</span>
                   <span className="artifact-pill">
-                    {selectedAccount.primary_meter_serial_number
-                      ? `Primary meter ${selectedAccount.primary_meter_serial_number}`
-                      : "No primary meter"}
+                    {selectedAccount.service_point_code
+                      ? `Service point ${selectedAccount.service_point_code}`
+                      : "No linked service point"}
                   </span>
                 </div>
 
