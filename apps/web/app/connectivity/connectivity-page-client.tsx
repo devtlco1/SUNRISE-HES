@@ -8,7 +8,7 @@ import { useSession } from "../session-provider";
 import { WorkspaceShell } from "../workspace-shell";
 
 const GIS_WINDOW_LIMIT = 200;
-const RECENT_CHECKIN_ROWS = 12;
+const RECENT_ACTIVITY_ROWS = 8;
 
 type GisEntityRow = {
   meter_id: string;
@@ -150,7 +150,6 @@ function ConnectivityBody() {
   const [errors, setErrors] = useState<string[]>([]);
   const [metersTotal, setMetersTotal] = useState<number | null>(null);
   const [gisItems, setGisItems] = useState<GisEntityRow[]>([]);
-  const [gisTotal, setGisTotal] = useState<number | null>(null);
   const [endpointsTotal, setEndpointsTotal] = useState<number | null>(null);
 
   const [searchDraft, setSearchDraft] = useState("");
@@ -181,12 +180,9 @@ function ConnectivityBody() {
     }
 
     if (settled[1].status === "fulfilled") {
-      const g = settled[1].value;
-      setGisItems(g.items);
-      setGisTotal(g.total);
+      setGisItems(settled[1].value.items);
     } else {
       setGisItems([]);
-      setGisTotal(null);
       nextErrors.push(
         `GIS-lite: ${settled[1].reason instanceof Error ? settled[1].reason.message : String(settled[1].reason)}`,
       );
@@ -234,14 +230,14 @@ function ConnectivityBody() {
     return Array.from(u).sort((a, b) => a.localeCompare(b));
   }, [gisItems]);
 
-  const recentCheckins = useMemo(() => {
+  const recentActivity = useMemo(() => {
     const onlineRows = gisItems.filter(
       (r) => classifyReachabilityFromLastSeen(r.meter_last_seen_at, nowMs) === "online",
     );
     return onlineRows
       .filter((r) => r.meter_last_seen_at)
       .sort((a, b) => Date.parse(b.meter_last_seen_at!) - Date.parse(a.meter_last_seen_at!))
-      .slice(0, RECENT_CHECKIN_ROWS);
+      .slice(0, RECENT_ACTIVITY_ROWS);
   }, [gisItems, nowMs]);
 
   const attentionRows = useMemo(() => {
@@ -280,7 +276,7 @@ function ConnectivityBody() {
       <header className="ws-conn-header">
         <div>
           <h1 className="ws-conn-title">Connectivity</h1>
-          <p className="ws-conn-subtitle">Fleet communication health from registry last-seen and GIS coverage.</p>
+          <p className="ws-conn-subtitle">Fleet reachability and meters to review.</p>
         </div>
         {asOf ? <p className="ws-muted ws-conn-asof">As of {fmtAsOf(asOf)}</p> : null}
       </header>
@@ -296,7 +292,7 @@ function ConnectivityBody() {
       ) : null}
 
       <section className="ws-conn-summary" aria-label="Connectivity summary">
-        <div className="ws-kpi-grid ws-conn-kpi-grid">
+        <div className="ws-kpi-grid ws-conn-kpi-grid ws-conn-kpi-grid--five">
           <SummaryKpi label="Online" value={fmt(buckets.sampleSize ? buckets.online : null)} accent={tonePositiveGreen(buckets.online)} />
           <SummaryKpi label="Offline" value={fmt(buckets.sampleSize ? buckets.offline : null)} accent={tonePositiveRed(buckets.offline)} />
           <SummaryKpi
@@ -306,116 +302,14 @@ function ConnectivityBody() {
           />
           <SummaryKpi label="Fleet meters" value={fmt(metersTotal)} accent="neutral" />
           <SummaryKpi label="Comm endpoints" value={fmt(endpointsTotal)} accent={tonePositiveBlue(endpointsTotal)} />
-          <SummaryKpi label="Live sessions" value="—" accent="muted" />
         </div>
       </section>
 
       <div className="ws-conn-stack">
-        <section className="ws-dash-panel ws-conn-panel" aria-labelledby="conn-overview-h">
-          <h2 className="ws-dash-panel-title" id="conn-overview-h">
-            Connectivity overview
-          </h2>
-          <div className="ws-dash-panel-body ws-conn-overview-body">
-            {loading && gisItems.length === 0 ? (
-              <p className="ws-muted">Loading…</p>
-            ) : buckets.sampleSize === 0 ? (
-              <p className="ws-muted">Data not available yet.</p>
-            ) : (
-              <>
-                <p className="ws-conn-overview-lead">
-                  Reachability uses a <strong>24-hour</strong> online window (UTC). Counts below are from the GIS-lite
-                  window: <span className="ws-metric ws-metric--neutral">{buckets.sampleSize}</span> meters loaded
-                  {gisTotal !== null ? (
-                    <>
-                      {" "}
-                      of <span className="ws-metric ws-metric--neutral">{fmt(gisTotal)}</span> in the fleet registry
-                    </>
-                  ) : null}
-                  .
-                </p>
-                <dl className="ws-conn-dl">
-                  <div>
-                    <dt>Online</dt>
-                    <dd>
-                      <span className="ws-metric ws-metric--success">{fmt(buckets.online)}</span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Offline</dt>
-                    <dd>
-                      <span className="ws-metric ws-metric--danger">{fmt(buckets.offline)}</span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Unknown / not seen</dt>
-                    <dd>
-                      <span className="ws-metric ws-metric--muted">{fmt(buckets.unknown)}</span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>With coordinates</dt>
-                    <dd>
-                      <span className="ws-metric ws-metric--info">
-                        {fmt(gisItems.filter((r) => r.has_coordinates).length)}
-                      </span>
-                    </dd>
-                  </div>
-                </dl>
-              </>
-            )}
-          </div>
-        </section>
-
-        <div className="ws-conn-split">
-          <section className="ws-dash-panel ws-conn-panel" aria-labelledby="conn-live-sessions-h">
-            <h2 className="ws-dash-panel-title" id="conn-live-sessions-h">
-              Live sessions
-            </h2>
-            <div className="ws-dash-panel-body">
-              <p className="ws-muted">Data not available yet.</p>
-            </div>
-          </section>
-
-          <section className="ws-dash-panel ws-conn-panel" aria-labelledby="conn-checkins-h">
-            <h2 className="ws-dash-panel-title" id="conn-checkins-h">
-              Recent check-ins
-            </h2>
-            <div className="ws-dash-panel-body">
-              {gisItems.length === 0 ? (
-                <p className="ws-muted">Data not available yet.</p>
-              ) : recentCheckins.length === 0 ? (
-                <p className="ws-muted">No recent check-ins in sample.</p>
-              ) : (
-                <div className="ws-conn-table-wrap">
-                  <table className="ws-conn-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Serial</th>
-                        <th scope="col">Last seen</th>
-                        <th scope="col">Service point</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentCheckins.map((row) => (
-                        <tr key={row.meter_id}>
-                          <td>
-                            <Link className={serialLinkClass("online")} href={`/meters/${row.meter_id}`}>
-                              {row.meter_serial_number}
-                            </Link>
-                          </td>
-                          <td className="ws-conn-mono">{formatShortWhen(row.meter_last_seen_at)}</td>
-                          <td>{row.service_point_code ?? "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-
-        <section className="ws-dash-panel ws-conn-panel" aria-labelledby="conn-attention-h">
+        <section
+          className="ws-dash-panel ws-conn-panel ws-conn-attention-primary"
+          aria-labelledby="conn-attention-h"
+        >
           <h2 className="ws-dash-panel-title" id="conn-attention-h">
             Meters needing attention
           </h2>
@@ -442,7 +336,7 @@ function ConnectivityBody() {
                     <option value="attention">Offline or unknown</option>
                     <option value="offline">Offline only</option>
                     <option value="unknown">Unknown only</option>
-                    <option value="all">Full sample</option>
+                    <option value="all">All</option>
                   </select>
                 </label>
                 <label className="ws-conn-field">
@@ -466,7 +360,9 @@ function ConnectivityBody() {
               </button>
             </div>
 
-            {gisItems.length === 0 && !loading ? (
+            {loading && gisItems.length === 0 ? (
+              <p className="ws-muted">Loading…</p>
+            ) : gisItems.length === 0 && !loading ? (
               <p className="ws-muted">Data not available yet.</p>
             ) : (
               <div className="ws-conn-table-wrap">
@@ -507,6 +403,44 @@ function ConnectivityBody() {
                         );
                       })
                     )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="ws-dash-panel ws-conn-panel ws-conn-support" aria-labelledby="conn-activity-h">
+          <h2 className="ws-dash-panel-title" id="conn-activity-h">
+            Recent activity
+          </h2>
+          <div className="ws-dash-panel-body ws-conn-support-body">
+            {gisItems.length === 0 && !loading ? (
+              <p className="ws-muted">Data not available yet.</p>
+            ) : recentActivity.length === 0 ? (
+              <p className="ws-muted">No recent activity.</p>
+            ) : (
+              <div className="ws-conn-table-wrap">
+                <table className="ws-conn-table ws-conn-table--compact">
+                  <thead>
+                    <tr>
+                      <th scope="col">Serial</th>
+                      <th scope="col">Last seen</th>
+                      <th scope="col">Service point</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentActivity.map((row) => (
+                      <tr key={row.meter_id}>
+                        <td>
+                          <Link className={serialLinkClass("online")} href={`/meters/${row.meter_id}`}>
+                            {row.meter_serial_number}
+                          </Link>
+                        </td>
+                        <td className="ws-conn-mono">{formatShortWhen(row.meter_last_seen_at)}</td>
+                        <td>{row.service_point_code ?? "—"}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ConnectivityPageClient } from "./connectivity-page-client";
@@ -46,7 +46,7 @@ describe("ConnectivityPageClient", () => {
     window.localStorage.clear();
   });
 
-  it("renders connectivity operations layout when APIs succeed", async () => {
+  it("renders connectivity layout with attention first and compact activity", async () => {
     window.localStorage.setItem("sunrise.web.accessToken", "token-1");
     const now = "2026-04-05T15:00:00.000Z";
     vi.stubGlobal(
@@ -82,10 +82,10 @@ describe("ConnectivityPageClient", () => {
     render(<ConnectivityPageClient />);
 
     expect(await screen.findByRole("heading", { name: "Connectivity" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Connectivity overview" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Live sessions" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Recent check-ins" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Connectivity overview" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Live sessions" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Meters needing attention" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent activity" })).toBeInTheDocument();
 
     expect(await screen.findByRole("link", { name: "SN-ON" })).toHaveAttribute(
       "href",
@@ -95,8 +95,5 @@ describe("ConnectivityPageClient", () => {
       "href",
       "/meters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     );
-    const livePanel = screen.getByRole("heading", { name: "Live sessions" }).closest("section");
-    expect(livePanel).toBeTruthy();
-    expect(within(livePanel!).getByText("Data not available yet.")).toBeInTheDocument();
   });
 });
